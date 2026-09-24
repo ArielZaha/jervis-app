@@ -217,9 +217,23 @@ Rules:
 - Stay on the user's goal; don't open things they didn't ask for."""
 
 
-def risk_of(action: dict, element) -> str:
+# Where Enter sends something to other people (a chat box, an email), unless it's that app's search box.
+MESSAGING = re.compile(r"\b(messages?|reply|comment|chat|post|tweet|e-?mail|mail|compose|whatsapp|telegram|signal|"
+                       r"slack|discord|teams|messenger|imessage|outlook|gmail|inbox|dm)\b", re.I)
+
+
+def _enter_sends(target, observation) -> bool:
+    if target is not None and (target.role == "search field" or re.search(r"\bsearch\b", target.name or "", re.I)):
+        return False
+    context = " ".join(filter(None, [target.name if target else "", target.role if target else "",
+                                     observation.app if observation else "", observation.window if observation else ""]))
+    return bool(MESSAGING.search(context))
+
+
+def risk_of(action: dict, element, observation=None) -> str:
     """Why this step needs the user's OK first, or "" if it doesn't."""
     kind = action.get("action")
+    focused = next((e for e in observation.elements if e.focused), None) if observation else None
     if kind in ("click", "double_click", "click_on"):
         text = " ".join(filter(None, [element.name if element else "", element.value if element else "",
                                       action.get("description", "")]))
@@ -230,10 +244,13 @@ def risk_of(action: dict, element) -> str:
         combo = normalize_keys(action.get("keys", ""))
         if frozenset(combo) in _RISKY_COMBOS:
             return f"press {'+'.join(combo)}"
-        if combo == ["enter"] and element is not None and RISKY_WORDS.search(element.name or ""):
-            return f"press Enter on “{element.name}”"
-    if kind == "type_text" and action.get("press_enter") and element is not None \
-            and re.search(r"\b(message|reply|comment|chat|post|tweet|email)\b", f"{element.name} {element.role}", re.I):
+        if combo == ["enter"]:
+            target = element or focused
+            if target is not None and RISKY_WORDS.search(target.name or ""):
+                return f"press Enter on “{target.name}”"
+            if _enter_sends(target, observation):
+                return "press Enter, which may send what's typed"
+    if kind == "type_text" and action.get("press_enter") and _enter_sends(element or focused, observation):
         return f"send “{action.get('text', '')[:60]}”"
     return ""
 
@@ -380,7 +397,7 @@ class ComputerTask:
                 if kind == "ask_user":
                     return self._finish("completed", action.get("question") or "What should I do?")
                 element = observation.element(action.get("element")) if action.get("element") is not None else None
-                risk = risk_of(action, element)
+                risk = risk_of(action, element, observation)
                 if risk:
                     self._report("waiting", f"Waiting for your OK to {risk}.")
                     if not self.confirm(f"Can I {risk}?"):

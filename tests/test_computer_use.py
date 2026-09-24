@@ -148,6 +148,21 @@ def test_risky_step_runs_after_ok():
     assert ("press", "Send message") in screen.actions
 
 
+def _chat(focused_name, app="WhatsApp", role="text field"):
+    return Observation(app=app, window="Dana", elements=[Element(1, role, focused_name, focused=True, rect=(0, 0, 9, 9))])
+
+
+def test_enter_in_a_chat_needs_ok_even_when_the_box_just_has_focus():
+    assert computer_use.risk_of({"action": "press_keys", "keys": "enter"}, None, _chat("Type a message"))
+    assert computer_use.risk_of({"action": "type_text", "text": "hi", "press_enter": True}, None, _chat(""))
+
+
+def test_enter_in_a_search_box_is_not_treated_as_sending():
+    assert not computer_use.risk_of({"action": "type_text", "text": "invoices", "press_enter": True}, None,
+                                    _chat("Search mail", app="Mail", role="search field"))
+    assert not computer_use.risk_of({"action": "press_keys", "keys": "enter"}, None, _chat("Address", app="Safari"))
+
+
 def test_emergency_stop_shortcut_is_never_pressed():
     screen = FakeScreen()
     ComputerTask("x", screen, ai(("press_keys", {"keys": "ctrl+alt+q"}), ("done", {"summary": "ok"}))).run()
@@ -260,3 +275,20 @@ def test_unavailable_platform_explains_itself():
         def available(self):
             return False, "Jervis needs permission to use this Mac."
     assert ComputerTask("x", NoScreen(), ai()).run() == "Jervis needs permission to use this Mac."
+
+
+def test_screenshots_are_only_looked_at_locally(monkeypatch):
+    """Even with an online AI key, a screenshot goes to the local vision model, at the size it answers about."""
+    import images
+    import screen_vision
+    from PIL import Image
+    sent = {}
+
+    def local(paths, prompt, max_tokens):
+        sent["size"] = Image.open(paths[0]).size
+        return '{"bbox_2d": [0, 0, 20, 10]}'
+    monkeypatch.setattr(images, "_local_vision_call", local)
+    monkeypatch.setattr(images, "_vision_call", lambda *a, **k: pytest.fail("a screenshot went to the online AI"))
+    point = screen_vision.ScreenVision().locate(Image.new("RGB", (2880, 1800)), "the logo", (1440, 900))
+    assert max(sent["size"]) == images.LOCAL_VISION_MAX_DIMENSION
+    assert point == (int(10 * 1440 / sent["size"][0]), int(5 * 900 / sent["size"][1]))

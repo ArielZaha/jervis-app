@@ -42,6 +42,9 @@ function showWindow() {
 
 function setBackendState(state, detail = '') {
   backendState = { state, detail };
+  if (state !== 'running' && controlActive()) {   // the engine went away mid-task: so did the task
+    setControlState({ ...controlState, state: 'stopped', detail: 'Jervis’s engine stopped, so computer control stopped.' });
+  }
   if (state === 'port-changed' && win) { loadPage(); return; }
   if (win && !win.isDestroyed()) win.webContents.send('backend-state', backendState);
 }

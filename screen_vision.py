@@ -10,12 +10,14 @@ import tempfile
 
 import images
 
-GROUNDING_WIDTH = 1024   # the screenshot is scaled to this width, so coordinates map back exactly
+# The screenshot is scaled once, to exactly the size the local model is sent (images.LOCAL_VISION_MAX_DIMENSION),
+# so the positions it answers with map straight back to the screen.
+GROUNDING_MAX = images.LOCAL_VISION_MAX_DIMENSION
 
 
 def available() -> bool:
-    if not images._use_local_vision():
-        return True   # Groq's vision model, with the key
+    """Screenshots are only ever looked at on this computer: a picture of the whole screen can show anything (other
+    windows, notifications), so it never goes to an online service, whatever AI answers the rest."""
     try:
         import local_ai
         import local_llm
@@ -30,7 +32,7 @@ def available() -> bool:
 
 
 def _save(image) -> tuple:
-    scale = GROUNDING_WIDTH / image.width if image.width > GROUNDING_WIDTH else 1.0
+    scale = min(1.0, GROUNDING_MAX / max(image.width, image.height))
     small = image.resize((int(image.width * scale), int(image.height * scale))) if scale != 1.0 else image
     fd, path = tempfile.mkstemp(suffix=".png")
     os.close(fd)
@@ -42,8 +44,8 @@ class ScreenVision:
     def look(self, image, question: str) -> str:
         path, _ = _save(image)
         try:
-            return images._vision_call([path], f"This is a screenshot of the user's screen. {question} "
-                                               "Answer briefly and exactly.", max_tokens=300)
+            return images._local_vision_call([path], f"This is a screenshot of the user's screen. {question} "
+                                                     "Answer briefly and exactly.", max_tokens=300)
         finally:
             os.remove(path)
 
@@ -51,7 +53,7 @@ class ScreenVision:
         """The screen point (in click coordinates) of something visible, or None."""
         path, (w, h) = _save(image)
         try:
-            answer = images._vision_call([path], (
+            answer = images._local_vision_call([path], (
                 f"Find this on the screenshot: {description}. Reply with only JSON: "
                 f'{{"bbox_2d": [x1, y1, x2, y2]}} in pixels of this {w}x{h} image, or {{"bbox_2d": null}} '
                 "if it isn't visible."), max_tokens=80)
