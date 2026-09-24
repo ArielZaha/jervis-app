@@ -78,15 +78,14 @@ def run() -> int:
 
     # Informational only: a build machine has no accessibility permission, and that's fine.
     try:
-        import computer_use  # noqa: F401
-        env = None
         if sys.platform == "win32":
             import screen_windows
-            env = screen_windows.WindowsScreen()
-        elif sys.platform == "darwin":
+            ready, why = screen_windows.WindowsScreen().available()
+        elif sys.platform == "darwin":   # checked without showing macOS's permission prompt
             import screen_mac
-            env = screen_mac.MacScreen()
-        ready, why = env.available() if env else (False, "unsupported here")
+            ready, why = screen_mac.MacScreen.trusted(), "no Accessibility permission yet"
+        else:
+            ready, why = False, "not supported on this system"
         results["computer_control"] = "ok" if ready else f"not ready: {why}"
     except Exception as e:  # noqa: BLE001
         results["computer_control"] = f"not ready: {e}"

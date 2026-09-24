@@ -80,7 +80,7 @@ def test_conversation_gets_no_tools(sentence):
 # ---- real requests still work ----
 def test_open_app_launches_it():
     result, actions = route("open Chrome")
-    assert result and any("Chrome" in a for a in actions)
+    assert result and any("chrome" in a.lower() for a in actions)   # Windows names it "chrome"
 
 
 def test_timer():

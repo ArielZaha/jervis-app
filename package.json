@@ -93,7 +93,7 @@
       "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "artifactName": "Jervis-${version}-${arch}.${ext}",
+      "artifactName": "Jervis-Mac-${arch}.${ext}",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Jervis listens for “Hey Jervis” and for what you ask him.",
         "NSAppleEventsUsageDescription": "Jervis controls apps you ask him to use, like Spotify or your browser.",

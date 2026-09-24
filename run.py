@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 
-VERSION = "v43"  # printed at start, so it is obvious which copy of Jervis is running
+VERSION = "1.0.0"  # printed at start, so it is obvious which copy of Jervis is running
 ROOT = os.path.dirname(os.path.abspath(__file__))
 IS_WIN = sys.platform == "win32"
 VENV = os.path.join(ROOT, "venv")

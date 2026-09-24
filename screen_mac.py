@@ -82,17 +82,27 @@ class MacScreen(computer_use.Environment):
     name = "macOS"
     select_all = ["cmd", "a"]
 
+    _asked = False   # macOS shows its own "allow" prompt only once; after that, open the settings page instead
+
     def __init__(self):
         self._warmed = set()   # apps whose web content accessibility was already switched on
 
     def available(self):
         if AX is None:
             return False, "Computer control needs macOS's accessibility support, which isn't available here."
-        options = {AX.kAXTrustedCheckOptionPrompt: True}   # macOS shows its own "allow" prompt the first time
-        if not AX.AXIsProcessTrustedWithOptions(options):
-            return False, ("Jervis needs permission to use this Mac: open System Settings, Privacy & Security, "
-                           "Accessibility, turn on Jervis, then ask me again.")
-        return True, ""
+        if AX.AXIsProcessTrustedWithOptions({AX.kAXTrustedCheckOptionPrompt: not MacScreen._asked}):
+            return True, ""
+        if MacScreen._asked:
+            import subprocess
+            subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
+        MacScreen._asked = True
+        return False, ("Jervis needs your permission to use this Mac. In System Settings, Privacy & Security, "
+                       "Accessibility, turn on Jervis, then ask me again.")
+
+    @staticmethod
+    def trusted() -> bool:
+        """Whether permission is already given, without asking for it."""
+        return bool(AX is not None and AX.AXIsProcessTrusted())
 
     # ---------- looking ----------
     def _target_app(self):
