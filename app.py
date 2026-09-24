@@ -28,6 +28,7 @@ import webbrowser
 from datetime import datetime, timedelta
 from urllib.parse import quote
 import hmac
+import signal
 import sys
 import urllib.parse
 
@@ -52,6 +53,8 @@ from volume import change_volume
 import documents
 import google_accounts
 import local_llm
+import local_ai
+import stt_local
 import osal
 import calendar_api
 import calendar_time
@@ -332,7 +335,8 @@ def _connection_allowed(websocket) -> bool:
     request = getattr(websocket, "request", None)
     headers = getattr(request, "headers", None) or {}
     origin = (headers.get("Origin") or "").lower()
-    if origin.startswith(("http://", "https://")):
+    allowed = [o.strip().lower() for o in os.getenv("JERVIS_ALLOW_ORIGINS", "").split(",") if o.strip()]  # UI tests only
+    if origin.startswith(("http://", "https://")) and origin not in allowed:
         return False
     if WS_TOKEN:
         query = urllib.parse.urlparse(getattr(request, "path", "") or "").query
@@ -359,10 +363,31 @@ def list_microphones() -> list:
     return names
 
 
+# Listing microphones and voices takes seconds (the audio system and the OS voice list are slow to ask), so they are
+# gathered in the background and cached: Settings opens instantly, and refreshed lists arrive a moment later.
+_devices = {"microphones": None, "voices": None}
+_devices_lock = threading.Lock()
+
+
+def refresh_devices() -> None:
+    if not _devices_lock.acquire(blocking=False):
+        return   # already refreshing
+    try:
+        _devices["microphones"] = list_microphones()
+        _devices["voices"] = osal.list_voices()
+        send_ui_update_once({"type": "settings_devices", "microphones": _devices["microphones"],
+                             "voices": _devices["voices"]})
+    except Exception as e:
+        print(f"Could not list microphones and voices: {e}", flush=True)
+    finally:
+        _devices_lock.release()
+
+
 def settings_payload() -> dict:
-    return {"type": "settings", **settings.public_view(), "microphones": list_microphones(),
-            "voices": osal.list_voices(), "platform": osal.SYSTEM, "dataDir": paths.DATA_DIR,
-            "logFile": logbook.log_path(), "backend": LLM_BACKEND}
+    threading.Thread(target=refresh_devices, daemon=True).start()   # a microphone may have been plugged in since
+    return {"type": "settings", **settings.public_view(), "microphones": _devices["microphones"] or [],
+            "voices": _devices["voices"] or [], "devicesLoading": _devices["microphones"] is None,
+            "platform": osal.SYSTEM, "dataDir": paths.DATA_DIR, "logFile": logbook.log_path(), "backend": LLM_BACKEND}
 
 
 def request_restart(reason: str) -> None:
@@ -379,6 +404,8 @@ def request_restart(reason: str) -> None:
 
 
 settings_changed = threading.Event()   # wakes loops that depend on a setting (the weather city)
+# The AI on this computer: found or installed on first run, with progress shown in the window (see local_ai.py).
+local_ai_manager = local_ai.LocalAI(report=lambda state: send_ui_update("setup", state))
 
 
 async def handle_client(websocket):
@@ -434,8 +461,14 @@ async def handle_client(websocket):
                         announcements.put("Got it — what would you like me to do with this image? I can describe "
                                            "it, read any text in it, compare it with another, or edit it if you tell "
                                            "me how.")
+            elif data.get("type") == "setup_retry":
+                local_ai_manager.start_background()
             elif data.get("type") == "get_settings":
-                payload = await asyncio.get_running_loop().run_in_executor(None, settings_payload)
+                try:
+                    payload = settings_payload()
+                except Exception as e:
+                    print(f"Could not build the settings screen: {e}", flush=True)
+                    payload = {"type": "settings_error", "message": f"Settings couldn't be loaded ({e})."}
                 await websocket.send(json.dumps(payload))
             elif data.get("type") == "set_settings":
                 try:
@@ -2621,26 +2654,40 @@ def check_ai_connection() -> None:
                 problem = (f"Can't reach the online AI service: {diagnose_connection()}."
                            f" (technical detail: {type(e.__cause__ or e).__name__}: {e.__cause__ or e})")
     groq_down_until = time.time() + 3600
-    if local_model and LLM_BACKEND == "auto":
-        print(f"\n*** {problem}\n    Jervis will use the local AI instead: Ollama, model {local_model}. ***\n", flush=True)
+    if LLM_BACKEND == "auto":
+        print(f"\n*** {problem}\n    Jervis will use the local AI instead"
+              + (f" (Ollama, model {local_model})." if local_model else " as soon as its setup finishes.") + " ***\n",
+              flush=True)
     else:
-        print(f"\n*** {problem}\n    No local AI backup either: {local_reason}.\n"
-              "    To get a free AI that runs on this PC, run setup_local_ai.bat (Windows) or:  ollama pull llama3.2 ***\n"
-              "    (Jervis still understands voice commands like opening apps and timers without any AI.)\n", flush=True)
+        print(f"\n*** {problem}\n    (Jervis still understands commands like opening apps and timers without any AI.)\n",
+              flush=True)
+
+
+def local_ai_status_reply() -> str:
+    """What to say when the AI on this computer can't answer yet: how far its setup is, or what went wrong."""
+    state = local_ai_manager.state
+    if state.get("active"):
+        step = next((s for s in state["steps"] if s["state"] == "active"), None)
+        detail = f" ({step['detail'].rstrip('…').rstrip('.')})" if step and step.get("detail") else ""
+        return (f"My AI is still getting ready{detail}. Timers, music, apps and the rest already work, "
+                "so ask me those any time, and ask me this again in a little while.")
+    if state.get("error"):
+        return f"My AI couldn't be set up: {state['error']} {state.get('hint') or ''}".strip()
+    local_ai_manager.start_background()   # it was ready before and stopped: bring it back
+    return "My AI isn't running right now, so I'm starting it again. Ask me again in a moment."
 
 
 def groq_error_reply(error: Exception) -> str:
     if isinstance(error, local_llm.LocalAIUnavailable):
-        return ("I can't reach my online AI, and there's no local AI set up yet. Install Ollama from ollama.com and run "
-                "'ollama pull llama3.2', or run setup_local_ai.bat, and I'll use it automatically.")
+        return local_ai_status_reply()
     status = getattr(error, "status_code", None)
     if status in (401, 403):
-        return "My language model rejected the API key. Check GROQ_API_KEY."
+        return "My online AI rejected the Groq key. Check it in Settings, or switch to the local AI there."
     if status == 429:
         wait = rate_limit_wait(error)
         return ("I've used up the free AI's limit for this minute. "
                 + (f"Ask me again in about {int(wait) + 1} seconds." if wait else "Ask me again in a few seconds.")
-                + " A local AI (setup_local_ai.bat) removes this limit.")
+                + " The local AI (Settings) has no limit.")
     if status == 413:
         return "That was too much for the online AI to handle at once. Try a shorter request."
     if status:
@@ -3045,11 +3092,14 @@ def transcribe(audio, passive=False) -> str:
     tries Whisper first for accuracy. Either falls back to the other on error.
     """
     wav_bytes = audio.get_wav_data(convert_rate=16000, convert_width=2)
-    engines = [("Google", lambda: transcribe_google(audio))]
-    if time.time() >= groq_down_until:  # Whisper needs the online AI; skip it while that is unreachable
-        engines.append(("Whisper", lambda: transcribe_groq(wav_bytes)))
-    if not passive:
-        engines.reverse()
+    local = [("Local Whisper", lambda: stt_local.transcribe(wav_bytes))] if stt_local.ready() else []
+    online_whisper = ([("Whisper", lambda: transcribe_groq(wav_bytes))]
+                      if GROQ_KEY and time.time() >= groq_down_until else [])  # needs the key and a reachable Groq
+    google = [("Google", lambda: transcribe_google(audio))]
+    if passive:   # hears every noise in the room: spare the online limits, prefer this computer
+        engines = local + google + online_whisper
+    else:         # a real request: the most accurate first (Groq's big Whisper when there's a key)
+        engines = online_whisper + local + google
 
     for name, engine in engines:
         try:
@@ -3344,11 +3394,17 @@ def main_loop():
 
 
 if __name__ == "__main__":
+    # The window stops the backend with SIGTERM: turn that into a normal exit, so cleanups (the local AI engine Jervis
+    # started) run instead of leaving it behind.
+    signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
     ws_thread = threading.Thread(target=run_ws_server, daemon=True)
     ws_thread.start()
     ws_loop_ready.wait()
 
     threading.Thread(target=check_ai_connection, daemon=True).start()
+    threading.Thread(target=refresh_devices, daemon=True).start()   # so Settings has them ready
+    if LLM_BACKEND in ("ollama", "auto"):   # the local AI is the AI, or the backup: make sure it's there
+        local_ai_manager.start_background()
     timer_manager.load()  # timers that were running when Jervis was last closed
     threading.Thread(target=telemetry_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()

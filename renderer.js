@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setConnection(false);
     try {
       socket = new WebSocket(new URLSearchParams(location.search).get('ws') || 'ws://127.0.0.1:8765');
-      socket.onopen = () => setConnection(true);
+      socket.onopen = () => { setConnection(true); window.dispatchEvent(new CustomEvent('jervis-connected')); };
       socket.onclose = () => { setConnection(false); scheduleReconnect(); };
       socket.onerror = () => setConnection(false);
       socket.onmessage = handleMessage;
@@ -624,9 +624,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isUser && app.dataset.state === 'thinking') showTyping();
   }
 
+  // Other scripts (panels.js: setup, settings, computer control) talk to the backend through these two.
+  window.jervisSend = (payload) => {
+    if (socket?.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify(payload));
+    return true;
+  };
+
   function handleMessage(event) {
     try {
       const data = JSON.parse(event.data);
+      window.dispatchEvent(new CustomEvent('jervis-message', { detail: data }));
       if (data.sender && (data.text || data.image)) appendChatMessage(data.sender, data.text || '', data.image, data.imageKind);
       if (data.status) setState(data.status);
       if (data.type === 'system_stats' && data.data) updateStats(data.data);

@@ -29,8 +29,15 @@
         <span class="tagline">Personal voice intelligence</span>
       </div>
       <div class="conn" id="connPill"><i></i><span id="connectionText">Connecting…</span><b class="bars" aria-hidden="true"><u></u><u></u><u></u><u></u></b></div>
-      <div class="clock"><span id="uptimeText" title="Session length">00:00</span><span class="sep"></span><span id="dateValue">—</span><strong id="clockValue">00:00</strong></div>
+      <div class="top-right">
+        <button type="button" class="setup-chip" id="setupChip" hidden title="Show the AI setup">AI setup</button>
+        <button type="button" class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        </button>
+        <div class="clock"><span id="uptimeText" title="Session length">00:00</span><span class="sep"></span><span id="dateValue">—</span><strong id="clockValue">00:00</strong></div>
+      </div>
     </header>
+    <div class="engine-banner" id="engineBanner" hidden role="status"><span id="engineText"></span><button type="button" class="ghost" id="engineAction" hidden></button></div>
 
     <main class="layout">
       <!-- ============ Left: system + weather + tips ============ -->
@@ -61,7 +68,7 @@
         </section>
 
         <section class="card weather">
-          <header class="card-head"><h2>Weather</h2><span class="loc" id="cityValue">Ramat Gan, Israel</span></header>
+          <header class="card-head"><h2>Weather</h2><span class="loc" id="cityValue">—</span></header>
           <div class="weather-body">
             <svg class="wx-icon" id="wxIcon" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="8" fill="#ffd166"/><g stroke="#ffd166" stroke-width="2.4" stroke-linecap="round"><path d="M24 6v5M24 37v5M6 24h5M37 24h5M11.3 11.3l3.5 3.5M33.2 33.2l3.5 3.5M11.3 36.7l3.5-3.5M33.2 14.8l3.5-3.5"/></g></svg>
             <div><div class="temp"><span id="tempValue">--</span><sup>°C</sup></div><p id="weatherCond">Syncing…</p></div>
@@ -85,7 +92,7 @@
             <li><b>“Open my calendar”</b><span>Hear your next events, or make a new one by voice</span></li>
             <li><b>“Solve x squared minus 5x plus 6 equals 0”</b><span>Exact answer with the steps</span></li>
             <li><b>Attach a picture</b><span>Paperclip, drag &amp; drop, or paste — then ask “what’s wrong with it?”</span></li>
-            <li><b>“Generate an image of a cyberpunk city”</b><span>Needs OPENAI_API_KEY in .env (see README)</span></li>
+            <li><b>“Generate an image of a cyberpunk city”</b><span>Free, no setup needed</span></li>
             <li><b>Type instead of talking</b><span>Press / or click the box under the orb, then Enter. F = full screen</span></li>
             <li><b>“Do I have unread WhatsApp messages?”</b><span>Then “read them” or “what did Dana write?”</span></li>
             <li><b>“Set a timer for 10 minutes”</b><span>Also: “remind me in an hour to…”</span></li>
@@ -207,6 +214,37 @@
     <img id="lightboxImg" alt="" />
   </div>
 
+  <!-- First start: getting the AI on this computer ready (see local_ai.py). -->
+  <div class="sheet-layer" id="setupLayer" hidden role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+    <div class="sheet-card setup-card">
+      <p class="graph-kicker">First start</p>
+      <h2 id="setupTitle">Getting Jervis ready</h2>
+      <p class="sheet-sub" id="setupSummary"></p>
+      <ol class="setup-steps" id="setupSteps"></ol>
+      <div class="setup-error" id="setupError" hidden><strong id="setupErrorText"></strong><span id="setupHint"></span></div>
+      <div class="sheet-actions">
+        <button type="button" class="sheet-btn primary" id="setupRetry" hidden>Try again</button>
+        <button type="button" class="sheet-btn" id="setupHide">Continue in the background</button>
+      </div>
+      <p class="sheet-note">Timers, music, apps and everything that doesn’t need the AI work while this finishes.</p>
+    </div>
+  </div>
+
+  <div class="sheet-layer" id="settingsLayer" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="sheet-card settings-card">
+      <header class="graph-head">
+        <div class="graph-heading"><p class="graph-kicker">Jervis</p><h2 id="settingsTitle">Settings</h2></div>
+        <div class="head-actions"><button type="button" class="ghost" id="settingsClose" title="Close (Esc)">Close</button></div>
+      </header>
+      <div class="settings-body" id="settingsBody"><p class="sheet-sub">Loading…</p></div>
+      <footer class="settings-foot">
+        <label class="adv-toggle"><input type="checkbox" id="settingsAdvanced" /> Show advanced settings</label>
+        <span class="settings-status" id="settingsStatus" role="status" aria-live="polite"></span>
+        <button type="button" class="sheet-btn primary" id="settingsSave" disabled>Save</button>
+      </footer>
+    </div>
+  </div>
+
   <template id="emptyTpl">
     <div class="empty" id="emptyChat">
       <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12a4 4 0 0 1 4-4h24a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H22l-8 7v-7h-2a4 4 0 0 1-4-4z"/><path d="M17 17h14M17 23h9"/></svg>
@@ -220,5 +258,6 @@
   <script src="earth.js"></script>
   <script src="planet.js"></script>
   <script src="renderer.js"></script>
+  <script src="panels.js"></script>
 </body>
 </html>

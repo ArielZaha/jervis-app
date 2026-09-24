@@ -11,6 +11,8 @@ google-auth-oauthlib
 google-auth-httplib2
 Pillow                     # Image handling: validating, resizing and saving pictures Jervis sees or makes
 openai                     # Optional: image generation/editing (OPENAI_API_KEY). Understanding images uses Groq, no extra key needed.
+faster-whisper             # Speech recognition on this computer: no key, works offline (model downloads on first run)
+numpy
 
 # Windows: exact volume control (without it Jervis presses the keyboard volume keys instead)
 pycaw; sys_platform == "win32"

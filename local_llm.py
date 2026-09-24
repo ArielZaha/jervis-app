@@ -9,7 +9,13 @@ from types import SimpleNamespace
 
 import requests
 
-URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+
+
+def set_url(url: str) -> None:
+    """Where the local AI answers. local_ai.py sets this once it has found or started one."""
+    global URL
+    URL = url.rstrip("/")
 DEFAULT_MODEL = "llama3.2"
 # The best small models for a voice assistant, in the order Jervis prefers to pick from what is installed.
 PREFERRED = ["llama3.2", "llama3.1", "qwen2.5", "qwen3", "gemma3", "phi4-mini", "mistral", "llama3", "gemma2", "phi3"]
@@ -60,11 +66,11 @@ def status() -> tuple:
     try:
         requests.get(f"{URL}/api/tags", timeout=2).raise_for_status()
     except requests.RequestException:
-        return None, "Ollama isn't running (install it from https://ollama.com and start it)"
+        return None, "my local AI isn't running yet (it's still being set up, or it stopped)"
     model = pick_model()
     if not model:
         wanted = os.getenv("OLLAMA_MODEL") or DEFAULT_MODEL
-        return None, f"Ollama is running but the model '{wanted}' isn't installed (run:  ollama pull {wanted})"
+        return None, f"my local AI's model ({wanted}) is still being downloaded"
     return model, ""
 
 
