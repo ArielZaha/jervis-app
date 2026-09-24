@@ -15,6 +15,7 @@ import time
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 import chrome_profiles
+import paths
 
 # Google services where the account matters, and which account they use when nothing else says otherwise.
 SERVICE_DEFAULT = {
@@ -107,7 +108,7 @@ def log_route(kind: str, account: str, profile, url: str, context: str, how: str
     global last_route
     last_route = {"url": url, "context": context, "kind": kind, "at": time.time()}
     try:
-        folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        folder = paths.logs_dir()
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, "routing.log"), "a", encoding="utf-8") as f:
             f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {kind:8} profile={profile} via={how:7} {urlparse(url).netloc} | said: {(context or '')[:120]!r}\n")

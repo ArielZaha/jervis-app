@@ -11,6 +11,7 @@ import time
 
 import chrome_profiles
 import google_accounts
+import paths
 
 MISSING_URL = "https://classroom.google.com/a/missing/all"    # overdue work that was not turned in
 ASSIGNED_URL = "https://classroom.google.com/a/not-turned-in/all"  # work that is assigned and not turned in yet
@@ -66,7 +67,7 @@ def read_page(ids, wait: float = 16.0, poll: float = 1.5) -> dict:
 def _save_debug(result: dict) -> None:
     """Keep what was read (logs/classroom_last.json), so a wrong answer can be looked at and the reading refined."""
     try:
-        folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        folder = paths.logs_dir()
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, "classroom_last.json"), "w", encoding="utf-8") as f:
             json.dump({"at": time.strftime("%Y-%m-%d %H:%M:%S"), **result}, f, ensure_ascii=False, indent=1)

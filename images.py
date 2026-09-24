@@ -28,6 +28,7 @@ from urllib.parse import quote as _urlquote
 import requests
 from PIL import Image, UnidentifiedImageError
 from groq import Groq
+import paths
 
 try:
     from openai import OpenAI
@@ -44,8 +45,8 @@ except ImportError:
     torch = None
     diffusers = None
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-IMAGES_DIR = os.path.join(APP_DIR, "images")
+APP_DIR = paths.RESOURCE_DIR
+IMAGES_DIR = os.path.join(paths.DATA_DIR, "images")
 UPLOADS_DIR = os.path.join(IMAGES_DIR, "uploads")
 GENERATED_DIR = os.path.join(IMAGES_DIR, "generated")
 EDITED_DIR = os.path.join(IMAGES_DIR, "edited")

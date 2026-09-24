@@ -13,9 +13,10 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+import paths
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.readonly"]
-TOKEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".calendar_token.json")
+TOKEN_FILE = os.path.join(paths.DATA_DIR, ".calendar_token.json")
 DEFAULT_DURATION_MIN = 60
 
 

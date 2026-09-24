@@ -14,9 +14,10 @@ from urllib.parse import quote
 import requests
 
 from netflix import resembles  # a search result must actually resemble what was asked for
+import paths
 
 CINEMETA = "https://v3-cinemeta.strem.io/catalog/{kind}/top/search={query}.json"
-_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stremio_cache.json")
+_CACHE_FILE = os.path.join(paths.DATA_DIR, "stremio_cache.json")
 
 
 def _norm(text: str) -> str:

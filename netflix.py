@@ -11,12 +11,13 @@ import re
 from urllib.parse import quote, unquote
 
 import requests
+import paths
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128 Safari/537.36"}
 _TITLE_URL = re.compile(r"netflix\.com/(?:[a-z-]+/)?title/(\d+)")
 _ANCHOR = re.compile(r"<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", re.S)
 _ENDPOINTS = ("https://html.duckduckgo.com/html/", "https://lite.duckduckgo.com/lite/")
-_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "netflix_cache.json")
+_CACHE_FILE = os.path.join(paths.DATA_DIR, "netflix_cache.json")
 
 
 def _load_cache() -> dict:

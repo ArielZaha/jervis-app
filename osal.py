@@ -85,15 +85,23 @@ if ($env:JERVIS_HEBREW -eq '1') {
   foreach ($v in $s.GetInstalledVoices()) {
     if ($v.Enabled -and $v.VoiceInfo.Culture.Name -like 'he*') { $s.SelectVoice($v.VoiceInfo.Name); break }
   }
+} elseif ($env:JERVIS_VOICE) {
+  try { $s.SelectVoice($env:JERVIS_VOICE) } catch { }
 }
 $s.Speak($env:JERVIS_TEXT)
+"""
+_WIN_VOICES = r"""
+Add-Type -AssemblyName System.Speech
+$s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+foreach ($v in $s.GetInstalledVoices()) { if ($v.Enabled) { $v.VoiceInfo.Name + '|' + $v.VoiceInfo.Culture.Name } }
 """
 
 
 def speech_process(text: str):
     """Start speaking `text` and return the running process (so it can be stopped), or None if this machine can't."""
     if IS_MAC:
-        voice = ["-v", "Carmit"] if has_hebrew(text) else []
+        chosen = os.getenv("JERVIS_VOICE", "").strip()
+        voice = ["-v", "Carmit"] if has_hebrew(text) else (["-v", chosen] if chosen else [])
         return subprocess.Popen(["say", *voice, text])
     if IS_WIN:
         env = {**os.environ, "JERVIS_TEXT": text, "JERVIS_HEBREW": "1" if has_hebrew(text) else "0"}
@@ -103,6 +111,28 @@ def speech_process(text: str):
         if shutil.which(tool):
             return subprocess.Popen([tool, text])
     return None
+
+
+
+def list_voices() -> list:
+    """The voices this computer can speak with, as [name, language] pairs, for the Settings screen."""
+    voices = []
+    try:
+        if IS_MAC:
+            out = subprocess.run(["say", "-v", "?"], capture_output=True, text=True, timeout=10).stdout
+            for line in out.splitlines():
+                match = re.match(r"^(.+?)\s{2,}([a-z]{2,3}[_-][A-Za-z0-9]+)\s", line)
+                if match:
+                    voices.append([match.group(1).strip(), match.group(2)])
+        elif IS_WIN:
+            _code, out, _err = run_powershell(_WIN_VOICES, timeout=20)
+            for line in (out or "").splitlines():
+                if "|" in line:
+                    name, culture = line.strip().split("|", 1)
+                    voices.append([name, culture])
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return voices
 
 
 # ---------- notification + chime ----------

@@ -12,6 +12,11 @@ except ImportError as _missing:
         "  Windows: double-click start_jervis.bat (or run:  py -3 run.py)\n"
         "  Mac:     python3 run.py\n"
         "The first run installs everything Jervis needs.\n")
+import paths  # noqa: E402  where Jervis reads his files and where he writes (see paths.py)
+import logbook  # noqa: E402
+import settings  # noqa: E402
+logbook.install()   # before anything prints, so startup problems end up in logs/jervis.log too
+settings.load()     # before any module reads its configuration from the environment
 import platform
 import re
 import shutil
@@ -22,6 +27,9 @@ import traceback
 import webbrowser
 from datetime import datetime, timedelta
 from urllib.parse import quote
+import hmac
+import sys
+import urllib.parse
 
 import speech_recognition as sr
 try:
@@ -60,8 +68,8 @@ from timers import TimerManager, format_duration, parse_timer_command
 from speech_fixes import fix_names
 from timeparse import format_time, parse_start_time
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))  # everything is found relative to the project, wherever it is launched from
-load_dotenv(os.path.join(APP_DIR, ".env"))
+APP_DIR = paths.RESOURCE_DIR  # Jervis's own files; everything he writes goes to paths.DATA_DIR instead
+load_dotenv(os.path.join(APP_DIR, ".env"))  # settings.load() already applied .env; this only keeps old setups identical
 
 GROQ_MODEL = "openai/gpt-oss-20b"
 STT_MODEL = "whisper-large-v3-turbo"
@@ -70,6 +78,20 @@ LLM_BACKEND = (os.getenv("LLM_BACKEND") or "auto").strip().lower()
 groq_down_until = 0.0  # while Groq is known to be unreachable, skip straight to the local AI instead of waiting for timeouts
 GROQ_KEY = (os.getenv("GROQ_API_KEY") or "").strip().strip("\"'")  # tolerate spaces or quotes pasted around the key
 groq_client = Groq(api_key=GROQ_KEY or "missing-key")
+if LLM_BACKEND == "local":
+    LLM_BACKEND = "ollama"
+if not GROQ_KEY and LLM_BACKEND in ("auto", "groq"):
+    LLM_BACKEND = "ollama"   # no online AI key: the AI on this computer is the AI (no account or key needed)
+
+# How this backend was started. The installed app (and `npm start`) runs it as a child of the window, which picks a
+# free port and a secret for the window connection, and restarts the backend when it exits with RESTART_EXIT_CODE.
+SUPERVISED = os.getenv("JERVIS_SUPERVISED") == "1"
+WS_HOST = "127.0.0.1"
+WS_PORT = int(os.getenv("JERVIS_WS_PORT") or 8765)
+WS_TOKEN = os.getenv("JERVIS_WS_TOKEN") or ""
+RESTART_EXIT_CODE = 75
+PORT_BUSY_EXIT_CODE = 76
+AUDIO_OFF = os.getenv("JERVIS_AUDIO", "on").strip().lower() == "off"   # tests: typed input only, replies printed
 
 sp = None
 try:
@@ -80,6 +102,7 @@ try:
                 client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
                 redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8888/callback"),
                 scope="user-modify-playback-state user-read-playback-state",
+                cache_handler=spotipy.cache_handler.CacheFileHandler(cache_path=paths.data(".cache")),
             )
         )
 except Exception as e:
@@ -114,8 +137,7 @@ def get_tts_engine():
         tts_engine = pyttsx3.init()
     return tts_engine
 
-TRANSCRIPTS_DIR = os.path.join(APP_DIR, "transcripts")
-os.makedirs(TRANSCRIPTS_DIR, exist_ok=True)
+TRANSCRIPTS_DIR = paths.transcripts_dir()
 session_file = os.path.join(
     TRANSCRIPTS_DIR, f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 )
@@ -195,8 +217,14 @@ def show_fullscreen():
 
 
 def launch_ui():
-    """Open the Electron window (again, if it was closed). Does nothing while it is running."""
+    """Open the Electron window (again, if it was closed). Does nothing while it is running.
+
+    When the window started this backend (SUPERVISED), the window already exists and owns it: nothing to launch.
+    Otherwise (a backend started by the wake listener or by run.py without the window), the window is started and
+    told to attach to this backend instead of starting a second one."""
     global ui_launched, ui_process
+    if SUPERVISED:
+        return
     if connected_clients or (ui_process is not None and ui_process.poll() is None):
         return
     if ui_failures >= 2 or os.getenv("JERVIS_NO_WINDOW") == "1":
@@ -207,7 +235,8 @@ def launch_ui():
               "  Install it from https://nodejs.org (the LTS version), then start Jervis again.\n", flush=True)
         return
     try:
-        env = {**os.environ, "PATH": os.path.dirname(npm) + os.pathsep + os.environ.get("PATH", "")}  # so npm finds node
+        env = {**os.environ, "PATH": os.path.dirname(npm) + os.pathsep + os.environ.get("PATH", ""),  # so npm finds node
+               "JERVIS_ATTACH_PORT": str(WS_PORT), "JERVIS_WS_TOKEN": WS_TOKEN}
         print("Opening the Jervis window...", flush=True)
         ui_process = subprocess.Popen([npm, "start"], cwd=APP_DIR, env=env)
         ui_launched = True
@@ -252,9 +281,13 @@ def broadcast(sender, text="", image=None, image_kind=None):
     text = str(text).strip() if text else ""
     if not text and not image:
         return
-    with open(session_file, "a", encoding="utf-8") as f:
-        label = "You" if sender == "user" else "Jervis"
-        f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {label}: {PRIVATE_PLACEHOLDER if private else (text or '[image]')}\n")
+    if os.getenv("JERVIS_KEEP_TRANSCRIPTS", "on") != "off":   # the user can switch conversation logs off in Settings
+        try:
+            with open(session_file, "a", encoding="utf-8") as f:
+                label = "You" if sender == "user" else "Jervis"
+                f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {label}: {PRIVATE_PLACEHOLDER if private else (text or '[image]')}\n")
+        except OSError as e:
+            print(f"Could not write the conversation log: {e}", flush=True)
     if ws_loop:
         payload = {"sender": sender, "text": text}
         if image:
@@ -292,8 +325,67 @@ pending_alerts = []  # timer alerts that fired while no window was open; shown w
 alerts_open = 0  # how many alert cards the window is showing
 
 
+def _connection_allowed(websocket) -> bool:
+    """Only Jervis's own window may connect. A web page open in a browser can also reach 127.0.0.1, so browser origins
+    are refused, and when the window gave this backend a secret (JERVIS_WS_TOKEN) the connection must present it."""
+    request = getattr(websocket, "request", None)
+    headers = getattr(request, "headers", None) or {}
+    origin = (headers.get("Origin") or "").lower()
+    if origin.startswith(("http://", "https://")):
+        return False
+    if WS_TOKEN:
+        query = urllib.parse.urlparse(getattr(request, "path", "") or "").query
+        presented = urllib.parse.parse_qs(query).get("token", [""])[0]
+        return hmac.compare_digest(presented, WS_TOKEN)
+    return True
+
+
+def list_microphones() -> list:
+    """Names of the input devices, for the Settings screen (the same order PyAudio numbers them in)."""
+    names = []
+    try:
+        import pyaudio
+        audio = pyaudio.PyAudio()
+        try:
+            for i in range(audio.get_device_count()):
+                info = audio.get_device_info_by_index(i)
+                if int(info.get("maxInputChannels", 0)) > 0 and info.get("name") not in names:
+                    names.append(info.get("name"))
+        finally:
+            audio.terminate()
+    except Exception as e:
+        print(f"Could not list microphones: {e}", flush=True)
+    return names
+
+
+def settings_payload() -> dict:
+    return {"type": "settings", **settings.public_view(), "microphones": list_microphones(),
+            "voices": osal.list_voices(), "platform": osal.SYSTEM, "dataDir": paths.DATA_DIR,
+            "logFile": logbook.log_path(), "backend": LLM_BACKEND}
+
+
+def request_restart(reason: str) -> None:
+    """Restart the backend to apply settings that are read once at startup."""
+    print(f"Restarting to apply new settings ({reason}).", flush=True)
+
+    def restart():
+        time.sleep(0.8)   # let the window receive the reply first
+        if SUPERVISED:
+            os._exit(RESTART_EXIT_CODE)   # the window starts a fresh backend
+        args = sys.argv[1:] if paths.FROZEN else sys.argv
+        os.execv(sys.executable, [sys.executable, *args])
+    threading.Thread(target=restart, daemon=True).start()
+
+
+settings_changed = threading.Event()   # wakes loops that depend on a setting (the weather city)
+
+
 async def handle_client(websocket):
     global alerts_open, fullscreen_pending
+    if not _connection_allowed(websocket):
+        print("Refused a connection that did not come from Jervis's window.", flush=True)
+        await websocket.close(1008, "not allowed")
+        return
     connected_clients.add(websocket)
     try:
         for payload in list(latest_ui_updates.values()) + pending_alerts:
@@ -340,6 +432,25 @@ async def handle_client(websocket):
                         announcements.put("Got it — what would you like me to do with this image? I can describe "
                                            "it, read any text in it, compare it with another, or edit it if you tell "
                                            "me how.")
+            elif data.get("type") == "get_settings":
+                payload = await asyncio.get_running_loop().run_in_executor(None, settings_payload)
+                await websocket.send(json.dumps(payload))
+            elif data.get("type") == "set_settings":
+                try:
+                    result = settings.update(data.get("values") or {})
+                except ValueError as e:
+                    await websocket.send(json.dumps({"type": "settings_error", "message": str(e)}))
+                except OSError as e:
+                    await websocket.send(json.dumps({"type": "settings_error",
+                                                     "message": f"The settings file couldn't be saved: {e}"}))
+                else:
+                    global mic_calibrated
+                    if "JERVIS_MIC" in result["saved"]:
+                        mic_calibrated = False   # a different microphone has a different noise level
+                    settings_changed.set()
+                    await websocket.send(json.dumps({"type": "settings_saved", **result}))
+                    if result["restart"]:
+                        request_restart(", ".join(result["saved"]))
             elif data.get("type") == "alert_dismissed":
                 alerts_open = max(0, alerts_open - int(data.get("count", 1) or 1))
             elif data.get("type") == "snooze":
@@ -359,7 +470,7 @@ def run_ws_server():
         # The default 1 MiB frame limit is fine for ordinary chat/status messages, but an attached image (base64
         # inflates it ~33%, plus the data: URL prefix and JSON envelope) needs real headroom — images.py enforces
         # the actual size policy (MAX_UPLOAD_BYTES) once a message arrives, so this just has to not cut it off first.
-        async with websockets.serve(handle_client, "localhost", 8765, max_size=40 * 1024 * 1024):
+        async with websockets.serve(handle_client, WS_HOST, WS_PORT, max_size=40 * 1024 * 1024):
             ws_loop_ready.set()
             await asyncio.Future()
 
@@ -367,7 +478,10 @@ def run_ws_server():
         loop.run_until_complete(main())
     except OSError as e:
         if e.errno in (48, 98, 10048) or "address already in use" in str(e).lower():   # macOS, Linux, Windows
-            print("\nJervis is already running (his window's connection, port 8765, is taken).\n"
+            if SUPERVISED:
+                print(f"Port {WS_PORT} is taken; the window will pick another one.", flush=True)
+                os._exit(PORT_BUSY_EXIT_CODE)
+            print(f"\nJervis is already running (his window's connection, port {WS_PORT}, is taken).\n"
                   "  Use the copy that is running, or stop it first:  pkill -f app.py   (Windows: close the other Jervis console)\n"
                   "  then start Jervis again.\n", flush=True)
             os._exit(1)
@@ -402,16 +516,24 @@ WEATHER_CODES = {
 def weather_loop():
     while True:
         delay = 600
+        settings_changed.clear()
         try:
-            # Lat/Lon for Ramat Gan, Israel
-            url = "https://api.open-meteo.com/v1/forecast?latitude=32.0809&longitude=34.8142&current=temperature_2m,weather_code"
+            city = os.getenv("WEATHER_CITY", "").strip()
+            place = earth.geocode(city) if city else None
+            if not place:
+                send_ui_update("weather", {"city": "No city set" if not city else f"Can't find {city}",
+                                           "temp": "--", "condition": "Choose your city in Settings"})
+                settings_changed.wait(timeout=600 if not city else 120)
+                continue
+            url = ("https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+                   "&current=temperature_2m,weather_code").format(lat=place["lat"], lon=place["lon"])
             resp = requests.get(url, timeout=8).json()
             current = resp.get("current") or {}
             if "temperature_2m" in current:
                 send_ui_update(
                     "weather",
                     {
-                        "city": "Ramat Gan, Israel",
+                        "city": place["name"],
                         "temp": round(current["temperature_2m"]),
                         "condition": WEATHER_CODES.get(current.get("weather_code"), "Clear sky"),
                     },
@@ -421,7 +543,7 @@ def weather_loop():
         except Exception as e:
             print(f"Weather fetch failed: {e}")
             delay = 30  # retry soon instead of waiting 10 minutes with no data
-        time.sleep(delay)
+        settings_changed.wait(timeout=delay)   # a new city in Settings refreshes the panel right away
 
 
 def get_device_id():
@@ -2527,8 +2649,7 @@ def groq_error_reply(error: Exception) -> str:
 def log_ai_error(error: Exception) -> None:
     """Keep the real reason an AI call failed (the spoken message can't say it), in logs/ai_errors.log."""
     try:
-        os.makedirs(os.path.join(APP_DIR, "logs"), exist_ok=True)
-        with open(os.path.join(APP_DIR, "logs", "ai_errors.log"), "a", encoding="utf-8") as f:
+        with open(os.path.join(paths.logs_dir(), "ai_errors.log"), "a", encoding="utf-8") as f:
             cause = error.__cause__ or error
             f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {type(error).__name__} "
                     f"status={getattr(error, 'status_code', None)} {type(cause).__name__}: {str(error)[:400]}\n")
@@ -2959,11 +3080,65 @@ def listen_or_typed(source):
                 raise
 
 
+mic_problem = ""   # what's wrong with the microphone, shown in the window once (not every retry)
+_MIC_RETRY_SECONDS = 3
+
+
+def open_microphone():
+    """The microphone chosen in Settings (by name), or the system default if none is chosen or it's unplugged."""
+    wanted = os.getenv("JERVIS_MIC", "").strip()
+    if wanted:
+        try:
+            import pyaudio
+            audio = pyaudio.PyAudio()
+            try:
+                for i in range(audio.get_device_count()):
+                    info = audio.get_device_info_by_index(i)
+                    if info.get("name") == wanted and int(info.get("maxInputChannels", 0)) > 0:
+                        return sr.Microphone(device_index=i)
+            finally:
+                audio.terminate()
+            report_mic_problem(f"The microphone \u201c{wanted}\u201d isn't connected; using the system default.",
+                               blocking=False)
+        except Exception as e:
+            print(f"Could not open the chosen microphone: {e}", flush=True)
+    return sr.Microphone()
+
+
+def report_mic_problem(message: str, blocking: bool = True) -> None:
+    """Tell the window (once per distinct problem) and, for a problem that stops listening, wait before retrying so
+    a missing microphone doesn't make Jervis spin at full speed."""
+    global mic_problem
+    if message != mic_problem:
+        mic_problem = message
+        print(message, flush=True)
+        send_ui_update("mic", {"ok": False, "message": message})
+    if blocking:
+        time.sleep(_MIC_RETRY_SECONDS)
+
+
+def clear_mic_problem() -> None:
+    global mic_problem
+    if mic_problem:
+        mic_problem = ""
+        send_ui_update("mic", {"ok": True, "message": ""})
+
+
 def listen(passive=False):
     """Capture one phrase and return its text, or None if nothing usable was heard."""
     global mic_calibrated, last_calibrated_at
+    if AUDIO_OFF:   # test mode: nothing is recorded; typed lines are handled by the main loop
+        time.sleep(0.25)
+        return None
     try:
-        with sr.Microphone() as source:
+        microphone = open_microphone()
+    except OSError as e:
+        report_mic_problem("No microphone found. Plug one in, or choose one in Settings. "
+                           f"(detail: {e})")
+        return None
+    try:
+        with microphone as source:
+            clear_mic_problem() if not mic_problem.startswith("The microphone \u201c") else None
             # Recalibrated once at startup, and again every few minutes while asleep (never mid-conversation, so it
             # can't clip the start of something you're saying), so a room that's gotten noisier or quieter is still
             # tracked, without the fast per-slice decay that used to make Jervis go deaf (see the note by MIN_ENERGY_THRESHOLD).
@@ -3002,9 +3177,14 @@ def listen(passive=False):
     except sr.WaitTimeoutError:
         send_status("sleeping" if passive else "idle")
         return None
+    except OSError as e:   # the device vanished, is busy, or refused to open: say so, and don't retry at full speed
+        send_status("sleeping" if passive else "idle")
+        report_mic_problem(f"The microphone stopped working ({e}). Check it's plugged in, or pick another in Settings.")
+        return None
     except Exception as e:
         print(f"Mic error: {e}")
         send_status("sleeping" if passive else "idle")
+        time.sleep(0.5)
         return None
 
 
@@ -3029,6 +3209,9 @@ def speak(text):
     send_status("speaking")
     print(f"Speaking: {text}")
     interrupt_speech.clear()
+    if AUDIO_OFF:   # test mode: the reply was printed and shown, nothing is played
+        send_status("idle")
+        return
 
     try:
         proc = osal.speech_process(text)
@@ -3092,6 +3275,8 @@ def main_loop():
                 time.sleep(0.3)
                 continue
 
+            if not awake and os.getenv("JERVIS_WAKE_WORD", "on") == "off":
+                awake = True   # Settings: no wake phrase needed, Jervis is always listening while the mic is on
             if not awake:
                 send_status("sleeping")
                 text = listen(passive=True)

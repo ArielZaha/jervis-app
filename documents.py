@@ -8,12 +8,13 @@ import subprocess
 import google_accounts
 import osal
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
+import paths
 
 APP_NAMES = {
     "word": "Word", "pages": "Pages", "textedit": "Notepad" if osal.IS_WIN else "TextEdit", "notes": "Notes",
     "gdocs": "Google Docs",
 }
-DOCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "documents")  # where Notepad files go on Windows
+DOCS_DIR = os.path.join(paths.DATA_DIR, "documents")  # where Notepad files go on Windows
 
 _WRITE = re.compile(
     r"\b(write|type|draft|compose|generate|jot down)\b|"
