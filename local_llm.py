@@ -1,0 +1,88 @@
+"""A local AI through Ollama (https://ollama.com): the backup for when the online AI can't be reached.
+
+Ollama runs models on your own computer, free and offline, and speaks the same chat format as OpenAI, so no extra
+Python package is needed: this only makes plain HTTP calls to http://localhost:11434.
+"""
+import os
+import time
+from types import SimpleNamespace
+
+import requests
+
+URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+DEFAULT_MODEL = "llama3.2"
+# The best small models for a voice assistant, in the order Jervis prefers to pick from what is installed.
+PREFERRED = ["llama3.2", "llama3.1", "qwen2.5", "qwen3", "gemma3", "phi4-mini", "mistral", "llama3", "gemma2", "phi3"]
+
+
+class LocalAIUnavailable(Exception):
+    """Ollama isn't running, or has no model installed."""
+
+
+class _Obj(SimpleNamespace):
+    """Attribute access for JSON, where a missing field is None (the AI response format has many optional fields)."""
+    def __getattr__(self, name):
+        return None
+
+
+def _wrap(value):
+    if isinstance(value, dict):
+        return _Obj(**{k: _wrap(v) for k, v in value.items()})
+    if isinstance(value, list):
+        return [_wrap(v) for v in value]
+    return value
+
+
+def installed_models() -> list:
+    try:
+        response = requests.get(f"{URL}/api/tags", timeout=2)
+        response.raise_for_status()
+        return [m["name"] for m in response.json().get("models", []) if m.get("name")]
+    except (requests.RequestException, ValueError, KeyError):
+        return []
+
+
+def pick_model():
+    """The model to use: OLLAMA_MODEL if set, else the best installed one, else None."""
+    wanted = os.getenv("OLLAMA_MODEL")
+    models = installed_models()
+    if wanted:
+        return wanted if any(m == wanted or m.split(":")[0] == wanted.split(":")[0] for m in models) else None
+    for base in PREFERRED:
+        for name in models:
+            if name.split(":")[0] == base:
+                return name
+    return models[0] if models else None
+
+
+def status() -> tuple:
+    """(model or None, reason if unavailable)."""
+    try:
+        requests.get(f"{URL}/api/tags", timeout=2).raise_for_status()
+    except requests.RequestException:
+        return None, "Ollama isn't running (install it from https://ollama.com and start it)"
+    model = pick_model()
+    if not model:
+        wanted = os.getenv("OLLAMA_MODEL") or DEFAULT_MODEL
+        return None, f"Ollama is running but the model '{wanted}' isn't installed (run:  ollama pull {wanted})"
+    return model, ""
+
+
+def chat(**kwargs):
+    """Same call shape as the online AI (messages, tools, max_tokens...). Returns an OpenAI-style response object."""
+    model, reason = status()
+    if not model:
+        raise LocalAIUnavailable(reason)
+    payload = {"model": model, "messages": kwargs["messages"], "stream": False}
+    for key in ("tools", "tool_choice", "max_tokens", "temperature"):
+        if kwargs.get(key) is not None:
+            payload[key] = kwargs[key]
+    started = time.time()
+    response = requests.post(f"{URL}/v1/chat/completions", json=payload, timeout=180)
+    if response.status_code == 400 and "tools" in payload and "tool" in response.text.lower():
+        payload.pop("tools"), payload.pop("tool_choice", None)  # this model can't call tools: answer in words instead
+        response = requests.post(f"{URL}/v1/chat/completions", json=payload, timeout=180)
+    if response.status_code != 200:
+        raise LocalAIUnavailable(f"the local AI answered with an error ({response.status_code}): {response.text[:200]}")
+    print(f"Local AI ({model}) answered in {time.time() - started:.1f}s", flush=True)
+    return _wrap(response.json())

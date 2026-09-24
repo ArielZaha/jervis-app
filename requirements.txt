@@ -1,0 +1,20 @@
+groq
+pyaudio
+psutil
+python-dotenv
+requests
+SpeechRecognition
+spotipy
+websockets
+google-api-python-client   # Optional: Google Calendar (reading and creating events)
+google-auth-oauthlib
+google-auth-httplib2
+Pillow                     # Image handling: validating, resizing and saving pictures Jervis sees or makes
+openai                     # Optional: image generation/editing (OPENAI_API_KEY). Understanding images uses Groq, no extra key needed.
+
+# Windows: exact volume control (without it Jervis presses the keyboard volume keys instead)
+pycaw; sys_platform == "win32"
+comtypes; sys_platform == "win32"
+
+# Linux only: a last-resort voice (macOS and Windows use their built-in ones)
+pyttsx3; sys_platform == "linux"

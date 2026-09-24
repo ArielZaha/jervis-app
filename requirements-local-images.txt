@@ -1,0 +1,8 @@
+# Optional: genuinely unlimited, free, private image generation on this computer's own GPU (or CPU), instead of a
+# cloud service. NOT installed automatically — these are large (a multi-GB download) and platform-specific, so they
+# only go in when asked for: run.py --local-images (see README.md > Images).
+torch
+diffusers
+transformers
+accelerate
+safetensors

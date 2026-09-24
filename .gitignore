@@ -1,0 +1,37 @@
+# Secrets and personal data: never committed
+.env
+.cache
+.calendar_token.json
+.jervis-netflix-profile/
+transcripts/
+logs/
+images/
+documents/
+timers.json
+*_cache.json
+settings.json
+
+# Environments, dependencies, build output
+venv/
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.electron-cache/
+build/
+dist/
+backend-dist/
+release/
+
+# Old hand-made copies of the app
+*.zip
+
+# The website has its own repository (ArielZaha/jervis)
+website/
+
+# Local tooling
+.DS_Store
+.claude/
+.playwright-cli/
+.impeccable/
+.pytest_cache/
