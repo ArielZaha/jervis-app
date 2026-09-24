@@ -101,7 +101,44 @@ def _local_image_model() -> str:
 
 
 def vision_configured() -> bool:
-    return bool(_groq_key())
+    return True   # with a Groq key it's Groq's vision model, otherwise the local one (set up on first run)
+
+
+def _use_local_vision() -> bool:
+    """The vision model on this computer when there's no Groq key, or when the user chose the local AI only."""
+    return not _groq_key() or (os.getenv("LLM_BACKEND") or "").strip().lower() in ("ollama", "local")
+
+
+LOCAL_VISION_MAX_DIMENSION = 768    # a small local model: the work grows with the picture's area, so keep it modest
+
+
+def _local_vision_call(image_paths: list, prompt: str, max_tokens: int) -> str:
+    import local_llm
+    model = (os.getenv("OLLAMA_VISION_MODEL") or "qwen2.5vl:3b").strip()
+    encoded = []
+    for p in image_paths:
+        data, _mime = _encode_for_transport(Image.open(p), LOCAL_VISION_MAX_DIMENSION)
+        encoded.append(base64.b64encode(data).decode("ascii"))
+    try:
+        response = requests.post(f"{local_llm.URL}/api/chat", timeout=300, json={
+            "model": model, "stream": False, "keep_alive": "10m",
+            "messages": [{"role": "user", "content": prompt, "images": encoded}],
+            "options": {"num_predict": max_tokens, "temperature": 0.2}})
+    except requests.Timeout:
+        raise ImageError("Looking at the picture took too long on this computer. Closing other apps frees memory "
+                         "and helps; a Groq key in Settings makes it fast.")
+    except requests.RequestException:
+        raise ImageError("My local AI isn't running yet (it may still be setting up), so I can't look at pictures "
+                         "right now. Try again in a little while.")
+    if response.status_code == 404:
+        raise ImageError("This computer doesn't have the local vision model (it's installed automatically on "
+                         "computers with 16 GB of memory; Settings can turn it on). A Groq key in Settings works too.")
+    if not response.ok:
+        raise ImageError(f"Looking at the image failed (the local AI answered {response.status_code}).")
+    text = ((response.json().get("message") or {}).get("content") or "").strip()
+    if not text:
+        raise ImageError("The AI didn't return anything for that image. Try again.")
+    return text
 
 
 def generation_configured() -> bool:
@@ -303,6 +340,8 @@ def _vision_call(image_paths: list, prompt: str, max_tokens: int = 700) -> str:
         if not os.path.exists(p):
             raise ImageError("That image is no longer available (it may have been cleared).")
         content.append({"type": "image_url", "image_url": {"url": _data_url_for_api(p)}})
+    if _use_local_vision():
+        return _local_vision_call(image_paths, prompt, max_tokens)
     client = _groq()
     try:
         response = client.chat.completions.create(

@@ -1239,10 +1239,20 @@ last_whatsapp = {"at": 0.0}
 _WA = re.compile(r"\bwhats ?app\b")
 
 
+# A sentence that describes something ("my WhatsApp is full of...", "I was on WhatsApp all day") rather than asks for
+# something. Only used when there's no request word in it, so "is there anything new on WhatsApp" still counts.
+_WA_STATEMENT = re.compile(r"^(?:i|my|our|his|her|their|the|whats ?app)\b.*?\b(?:is|was|were|are|keeps?|kept|got|gets|"
+                           r"has been|have been|had|used to|am)\b")
+_WA_REQUEST_CUE = re.compile(r"\b(?:read|check|show|tell me|open|any|anything|unread|new|missed|what did|what does|"
+                             r"what has|did|who)\b")
+
+
 def parse_whatsapp_request(text: str):
     """Returns {"action": "check" | "read_unread" | "read_chat" | "send", "name": str} or None."""
     n = " ".join(re.sub(r"[^\w' ]", " ", (text or "").lower().replace("\u2019", "'")).split())
     mentioned = bool(_WA.search(n))
+    if mentioned and _WA_STATEMENT.search(n) and not _WA_REQUEST_CUE.search(n):
+        return None   # talking about WhatsApp ("my WhatsApp is full of messages from school") is not asking to read it
     fresh = time.time() - last_whatsapp["at"] < 15 * 60  # right after a WhatsApp answer, "read them" needs no app name
     if not (mentioned or fresh):
         return _implicit_whatsapp_request(n)
@@ -1740,6 +1750,17 @@ def handle_multi_task(text: str):
         _multi_active = False
 
 
+_SERVICE_NAMES = re.compile(r"\b(spotify|youtube|netflix|stremio|google)\b")
+
+
+def is_new_command(text: str, service: str) -> bool:
+    """After "Open Spotify" -> "What would you like to listen to?", is this reply a *different* request (it names
+    another service, or it's a command of its own, like a timer), rather than the answer?"""
+    lowered = (text or "").lower()
+    other = {m for m in _SERVICE_NAMES.findall(lowered) if m != service}
+    return bool(other) or bool(parse_timer_command(text)) or bool(parse_volume_command(text))
+
+
 def handle_direct_command(text: str):
     """Run reliable, explicitly spoken desktop commands without model tool-call guesses."""
     global youtube_active, netflix_active, stremio_active
@@ -1799,7 +1820,7 @@ def handle_direct_command(text: str):
     global pending_spotify_request
     if pending_spotify_request:
         pending, pending_spotify_request = pending_spotify_request, None
-        if time.time() - pending["at"] < 45:
+        if time.time() - pending["at"] < 45 and not is_new_command(text, "spotify"):
             cleaned = " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())
             if re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|stop|nevermind)", cleaned):
                 return "Okay."
@@ -1807,7 +1828,7 @@ def handle_direct_command(text: str):
     global pending_google_search
     if pending_google_search:
         pending, pending_google_search = pending_google_search, None
-        if time.time() - pending["at"] < 45:
+        if time.time() - pending["at"] < 45 and not is_new_command(text, "google"):
             cleaned = " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())
             if re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|stop|nevermind)", cleaned):
                 return "Okay."
@@ -1815,7 +1836,7 @@ def handle_direct_command(text: str):
     global pending_netflix_request
     if pending_netflix_request:
         pending, pending_netflix_request = pending_netflix_request, None
-        if time.time() - pending["at"] < 45:
+        if time.time() - pending["at"] < 45 and not is_new_command(text, "netflix"):
             cleaned = " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())
             if re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|stop|nevermind)", cleaned):
                 return "Okay."
@@ -1823,7 +1844,7 @@ def handle_direct_command(text: str):
     global pending_stremio_request
     if pending_stremio_request:
         pending, pending_stremio_request = pending_stremio_request, None
-        if time.time() - pending["at"] < 45:
+        if time.time() - pending["at"] < 45 and not is_new_command(text, "stremio"):
             cleaned = " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())
             if re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|stop|nevermind)", cleaned):
                 return "Okay."
@@ -2673,7 +2694,8 @@ def local_ai_status_reply() -> str:
                 "so ask me those any time, and ask me this again in a little while.")
     if state.get("error"):
         return f"My AI couldn't be set up: {state['error']} {state.get('hint') or ''}".strip()
-    local_ai_manager.start_background()   # it was ready before and stopped: bring it back
+    if os.getenv("JERVIS_NO_AI_SETUP") != "1":
+        local_ai_manager.start_background()   # it was ready before and stopped: bring it back
     return "My AI isn't running right now, so I'm starting it again. Ask me again in a moment."
 
 
@@ -3403,8 +3425,8 @@ if __name__ == "__main__":
 
     threading.Thread(target=check_ai_connection, daemon=True).start()
     threading.Thread(target=refresh_devices, daemon=True).start()   # so Settings has them ready
-    if LLM_BACKEND in ("ollama", "auto"):   # the local AI is the AI, or the backup: make sure it's there
-        local_ai_manager.start_background()
+    if LLM_BACKEND in ("ollama", "auto") and os.getenv("JERVIS_NO_AI_SETUP") != "1":   # (that switch: tests only)
+        local_ai_manager.start_background()   # the local AI is the AI, or the backup: make sure it's there
     timer_manager.load()  # timers that were running when Jervis was last closed
     threading.Thread(target=telemetry_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()

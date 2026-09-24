@@ -44,7 +44,9 @@ DOWNLOAD_URL = "https://github.com/ollama/ollama/releases/download/{version}/{na
 USER_OLLAMA_URL = "http://127.0.0.1:11434"
 MANAGED_PORT = 11435            # Jervis's own copy: never the port an Ollama the user runs is on
 APPROX_MODEL_BYTES = {"llama3.2": 2_019_393_189, "qwen2.5vl:3b": 3_200_000_000}
-MIN_RAM_FOR_VISION = 7.5 * 1024 ** 3   # "8 GB" machines report a little less
+# The vision model needs room next to the text model and everything else the user has open: on an 8 GB computer
+# it makes the whole machine swap (measured: a screenshot took over 5 minutes on an 8 GB M3). 16 GB is comfortable.
+MIN_RAM_FOR_VISION = 15 * 1024 ** 3   # "16 GB" machines report a little less
 _IS_WIN = platform.system() == "Windows"
 _NO_WINDOW = 0x08000000 if _IS_WIN else 0
 
@@ -90,6 +92,14 @@ def system_ollama():
         candidates = ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama",
                       "/Applications/Ollama.app/Contents/Resources/ollama"]
     return next((c for c in candidates if c and os.path.exists(c)), None)
+
+
+def wants_vision() -> bool:
+    """Whether to use the local vision model: Settings can force it on or off; otherwise only with 16 GB or more."""
+    choice = (os.getenv("JERVIS_LOCAL_VISION") or "auto").strip().lower()
+    if choice in ("on", "off"):
+        return choice == "on"
+    return psutil.virtual_memory().total >= MIN_RAM_FOR_VISION
 
 
 class LocalAI:
@@ -373,13 +383,13 @@ class LocalAI:
         return any(name == wanted or name == base for name in installed)
 
     def _ensure_models(self) -> None:
-        self.use_vision = psutil.virtual_memory().total >= MIN_RAM_FOR_VISION
+        self.use_vision = wants_vision()
         wanted = [self.text_model] + ([self.vision_model] if self.use_vision else [])
         installed = self._installed()
         missing = [m for m in wanted if not self._has(installed, m)]
         if not missing:
             self._step("models", "done", "Models ready." + ("" if self.use_vision else
-                       " (Vision skipped: this computer has less than 8 GB of memory.)"))
+                       " (No vision model: it needs a computer with 16 GB of memory; see Settings.)"))
             return
         self._check_disk(int(sum(APPROX_MODEL_BYTES.get(m, 2.5e9) for m in missing) * 1.1))
         for index, model in enumerate(missing, 1):
