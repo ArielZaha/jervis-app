@@ -20,3 +20,10 @@ comtypes; sys_platform == "win32"
 
 # Linux only: a last-resort voice (macOS and Windows use their built-in ones)
 pyttsx3; sys_platform == "linux"
+
+# Computer control: reading the window in front (accessibility) and screenshots for the optional vision model
+uiautomation; sys_platform == "win32"
+mss
+pyobjc-framework-ApplicationServices; sys_platform == "darwin"
+pyobjc-framework-Quartz; sys_platform == "darwin"
+pyobjc-framework-Cocoa; sys_platform == "darwin"

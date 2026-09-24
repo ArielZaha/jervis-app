@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, systemPreferences, Tray, Menu, nativeImage, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, session, systemPreferences, Tray, Menu, nativeImage, shell, dialog, globalShortcut, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { Backend } = require('./backend');
@@ -118,6 +118,116 @@ ipcMain.handle('set-open-at-login', (_event, on) => {
 });
 ipcMain.on('restart-backend', () => backend && backend.restart());
 
+// ---------- Computer control: the overlay, the emergency shortcut, and getting the window out of the way ----------
+// While Jervis uses the mouse and keyboard, a glowing edge and a bar with Pause and Stop sit on top of everything.
+// The overlay never takes focus and lets clicks through (except on its bar), is left out of screenshots, and goes
+// away a few seconds after the task ends. The backend decides everything; this only shows it and relays buttons.
+const CONTROL_ACTIVE = new Set(['starting', 'observing', 'thinking', 'acting', 'waiting', 'paused']);
+const STOP_ACCELERATOR = 'Control+Alt+Q';
+const STOP_LABEL = process.platform === 'darwin' ? '⌃⌥Q' : 'Ctrl+Alt+Q';
+let overlay = null;
+let overlayReady = false;
+let controlState = null;
+let controlQuestion = null;   // a yes/no question asked while the window is out of the way
+let hideOverlayTimer = null;
+let windowSteppedAside = false;
+
+function controlActive() { return Boolean(controlState && CONTROL_ACTIVE.has(controlState.state)); }
+
+function createOverlay() {
+  const area = screen.getPrimaryDisplay().workArea;   // the screen Jervis works on
+  overlay = new BrowserWindow({
+    ...area,
+    transparent: true, frame: false, hasShadow: false, resizable: false, movable: false, minimizable: false,
+    maximizable: false, fullscreenable: false, focusable: false, skipTaskbar: true, show: false, alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    webPreferences: { preload: path.join(__dirname, 'control-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  overlay.setAlwaysOnTop(true, 'screen-saver');
+  overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  overlay.setIgnoreMouseEvents(true, { forward: true });
+  overlay.setContentProtection(true);   // not in screenshots, so Jervis's own vision never sees it
+  overlay.webContents.on('will-navigate', (event) => event.preventDefault());
+  overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  overlay.webContents.on('did-finish-load', () => {
+    overlayReady = true;
+    if (controlState) overlay.webContents.send('control-event', { type: 'control', data: controlState });
+    if (controlQuestion) overlay.webContents.send('control-event', controlQuestion);
+  });
+  overlay.on('closed', () => { overlay = null; overlayReady = false; });
+  overlay.loadFile('control.html', { query: { shortcut: STOP_LABEL } });
+}
+
+function toOverlay(message) {
+  if (overlay && overlayReady) overlay.webContents.send('control-event', message);
+}
+
+function stepAside() {
+  // The window would cover the app Jervis is working in, and catch his clicks.
+  if (!win || windowSteppedAside || !win.isVisible()) return;
+  windowSteppedAside = true;
+  if (win.isFullScreen()) {
+    win.once('leave-full-screen', () => stepAsideNow());
+    win.setFullScreen(false);
+  } else {
+    stepAsideNow();
+  }
+}
+function stepAsideNow() {
+  if (!win) return;
+  log('Computer control: the window stepped aside.');
+  if (process.platform === 'darwin') app.hide(); else win.minimize();   // the app that was in front comes back
+}
+
+function setControlState(data) {
+  controlState = data;
+  clearTimeout(hideOverlayTimer);
+  if (controlActive()) {
+    if (!overlay) createOverlay();
+    if (!overlay.isVisible()) { overlay.showInactive(); log('Computer control: overlay shown.'); }
+    if (!globalShortcut.isRegistered(STOP_ACCELERATOR)) {
+      const ok = globalShortcut.register(STOP_ACCELERATOR, () => relayControl('control_command', { action: 'stop' }));
+      if (!ok) log(`Could not register the ${STOP_LABEL} stop shortcut (another app has it).`);
+    }
+    stepAside();
+  } else {
+    globalShortcut.unregister(STOP_ACCELERATOR);
+    windowSteppedAside = false;
+    controlQuestion = null;
+    hideOverlayTimer = setTimeout(() => overlay && overlay.hide(), 3600);   // after the "Done" / "Stopped" note
+    log(`Computer control ended (${data.state}).`);
+  }
+  toOverlay({ type: 'control', data });
+}
+
+function relayControl(type, fields) {
+  // Button presses reach the backend through the main window's connection.
+  if (win && !win.isDestroyed()) win.webContents.send('control-relay', { type, ...fields });
+}
+
+ipcMain.on('control-event', (_event, message) => {
+  if (!message || typeof message !== 'object') return;
+  if (message.type === 'control') {
+    setControlState(message.data || {});
+  } else if (message.type === 'control_confirm') {
+    if (controlActive()) { controlQuestion = message; toOverlay(message); }
+    else showWindow();   // asking before starting: the question is in the window
+  } else if (message.type === 'control_confirm_done') {
+    if (controlQuestion && controlQuestion.id === message.id) controlQuestion = null;
+    toOverlay(message);
+  }
+});
+ipcMain.on('control-overlay-action', (_event, action) => {
+  if (['stop', 'pause', 'resume'].includes(action)) relayControl('control_command', { action });
+});
+ipcMain.on('control-overlay-answer', (_event, answer) => {
+  if (answer && typeof answer.id === 'string') relayControl('control_answer', { id: answer.id, allow: answer.allow === true });
+});
+ipcMain.on('control-overlay-hover', (_event, over) => {
+  if (!overlay) return;
+  if (over) overlay.setIgnoreMouseEvents(false); else overlay.setIgnoreMouseEvents(true, { forward: true });
+});
+
 // ---------- Tray: Jervis keeps running (and listening) with the window closed ----------
 function createTray() {
   const file = process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png';
@@ -157,6 +267,7 @@ app.whenReady().then(async () => {
 
 app.on('activate', showWindow);   // macOS: clicking the Dock icon brings the window back
 app.on('before-quit', () => { quitting = true; });
+app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('will-quit', (event) => {
   if (!backend || backend.stopping) return;
   event.preventDefault();

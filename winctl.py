@@ -18,8 +18,15 @@ for _c in "abcdefghijklmnopqrstuvwxyz":
     VK[_c] = ord(_c.upper())
 for _d in "0123456789":
     VK[_d] = ord(_d)
+# The rest of the keyboard, for computer control (screen_windows.py).
+VK.update({"backspace": 0x08, "delete": 0x2E, "insert": 0x2D, "up": 0x26, "down": 0x28, "pageup": 0x21,
+           "pagedown": 0x22, "end": 0x23, "win": 0x5B, "escape": 0x1B, "capslock": 0x14,
+           ";": 0xBA, "=": 0xBB, ",": 0xBC, "-": 0xBD, ".": 0xBE, "/": 0xBF, "`": 0xC0, "[": 0xDB, "\\": 0xDC,
+           "]": 0xDD, "'": 0xDE})
+VK.update({f"f{i}": 0x6F + i for i in range(1, 13)})
 _EXTENDED = {VK["play_pause"], VK["next"], VK["prev"], VK["vol_up"], VK["vol_down"], VK["vol_mute"], VK["home"],
-             VK["left"], VK["right"]}
+             VK["left"], VK["right"], VK["up"], VK["down"], VK["delete"], VK["insert"], VK["pageup"],
+             VK["pagedown"], VK["end"], VK["win"]}
 KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE = 0x1, 0x2, 0x4
 SW_RESTORE = 9
 
@@ -59,7 +66,7 @@ class _KEYBDINPUT(ctypes.Structure):
                 ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
 
 
-class _MOUSEINPUT(ctypes.Structure):  # only here so the union has its real size
+class _MOUSEINPUT(ctypes.Structure):
     _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG), ("mouseData", wintypes.DWORD),
                 ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
 
@@ -85,6 +92,78 @@ def type_text(text: str) -> None:
         array = (_INPUT * len(events))(*events)
         ctypes.windll.user32.SendInput(len(events), array, ctypes.sizeof(_INPUT))
     time.sleep(0.05)
+
+
+# ---------- mouse (computer control) ----------
+MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP = 0x0002, 0x0004
+MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP = 0x0008, 0x0010
+MOUSEEVENTF_WHEEL = 0x0800
+
+
+def make_dpi_aware() -> None:
+    """Use real pixels everywhere, so positions read from the screen and positions clicked are the same numbers."""
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)   # per-monitor
+    except (AttributeError, OSError):
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except (AttributeError, OSError):
+            pass
+
+
+def _mouse(flags: int, data: int = 0) -> None:
+    event = _INPUT(type=0, mi=_MOUSEINPUT(0, 0, data, flags, 0, 0))
+    ctypes.windll.user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(_INPUT))
+
+
+def click(x: int, y: int, button: str = "left", double: bool = False) -> None:
+    _need_windows()
+    ctypes.windll.user32.SetCursorPos(int(x), int(y))
+    time.sleep(0.05)
+    down, up = (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP) if button == "right" else \
+               (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP)
+    for _ in range(2 if double else 1):
+        _mouse(down)
+        _mouse(up)
+        time.sleep(0.06)
+
+
+def scroll(amount: int, x: int = None, y: int = None) -> None:
+    """amount: positive scrolls up, negative down (in notches)."""
+    _need_windows()
+    if x is not None and y is not None:
+        ctypes.windll.user32.SetCursorPos(int(x), int(y))
+    _mouse(MOUSEEVENTF_WHEEL, ctypes.c_uint32(int(amount) * 120).value)
+
+
+def cursor_position() -> tuple:
+    _need_windows()
+    point = wintypes.POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
+    return (point.x, point.y)
+
+
+def window_process_name(hwnd: int) -> str:
+    """The program a window belongs to, e.g. "chrome.exe" (lower case), or "" if it can't be read."""
+    _need_windows()
+    pid = wintypes.DWORD()
+    ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid.value)   # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return ""
+    try:
+        size = wintypes.DWORD(1024)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if ctypes.windll.kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+            return buffer.value.replace("/", "\\").rsplit("\\", 1)[-1].lower()
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+    return ""
+
+
+def foreground_window() -> int:
+    _need_windows()
+    return ctypes.windll.user32.GetForegroundWindow()
 
 
 # ---------- windows ----------

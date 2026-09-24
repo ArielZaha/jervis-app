@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'" />
+  <title>Jervis is using the computer</title>
+  <style>
+    :root {
+      --live: 255 176 72;      /* amber: Jervis has the mouse and keyboard */
+      --stop: 255 107 129;
+      --ink: #fff7ec;
+      --muted: #e9c9a0;
+      --glass: rgb(20 12 4 / .9);
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    }
+    [data-state="paused"], [data-state="waiting"] { --live: 150 190 255; }
+    [data-state="completed"] { --live: 61 242 192; }
+    [data-state="stopped"], [data-state="error"] { --live: 180 186 200; }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+    body { font: 13px/1.4 var(--sans); color: var(--ink); -webkit-font-smoothing: antialiased; user-select: none; }
+
+    /* A glowing edge around the whole screen: impossible to miss, never in the way of a click. */
+    .edge {
+      position: fixed; inset: 0; pointer-events: none;
+      box-shadow: inset 0 0 0 3px rgb(var(--live) / .95), inset 0 0 28px 4px rgb(var(--live) / .45);
+      transition: box-shadow .4s ease, opacity .4s ease;
+      animation: breathe 2.4s ease-in-out infinite;
+    }
+    [data-state="paused"] .edge, [data-state="waiting"] .edge { animation: none; }
+    [data-ended] .edge { opacity: 0; }
+    @keyframes breathe { 50% { box-shadow: inset 0 0 0 3px rgb(var(--live) / .7), inset 0 0 16px 2px rgb(var(--live) / .25); } }
+
+    .bar {
+      position: fixed; left: 0; right: 0; bottom: 22px; margin-inline: auto; width: fit-content;
+      display: flex; align-items: center; gap: 12px;
+      max-width: min(920px, calc(100vw - 32px));
+      padding: 8px 8px 8px 16px;
+      background: var(--glass);
+      border: 1px solid rgb(var(--live) / .7);
+      border-radius: 14px;
+      box-shadow: 0 10px 40px rgb(0 0 0 / .45), 0 0 0 1px rgb(0 0 0 / .4), 0 0 24px rgb(var(--live) / .25);
+      transition: border-color .4s ease, opacity .5s ease, transform .5s ease;
+    }
+    [data-ended] .bar { opacity: 0; transform: translateY(12px); transition-delay: 2.8s; }
+    .badge { display: flex; align-items: center; gap: 8px; flex: none; font: 700 11px/1 var(--mono); letter-spacing: .14em; color: rgb(var(--live)); text-transform: uppercase; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: rgb(var(--live)); box-shadow: 0 0 10px rgb(var(--live)); animation: pulse 1.2s ease-in-out infinite; }
+    [data-state="paused"] .dot, [data-ended] .dot { animation: none; }
+    @keyframes pulse { 50% { opacity: .35; } }
+    .text { min-width: 0; display: flex; flex-direction: column; }
+    .detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .step { color: var(--muted); font: 11px/1.3 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .actions { display: flex; gap: 6px; flex: none; }
+    button {
+      font: 600 12px/1 var(--sans); color: var(--ink); cursor: pointer;
+      padding: 9px 12px; border-radius: 9px; border: 1px solid rgb(255 255 255 / .18); background: rgb(255 255 255 / .08);
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    button:hover { background: rgb(255 255 255 / .16); }
+    button:focus-visible { outline: 2px solid rgb(var(--live)); outline-offset: 2px; }
+    button.stop { background: rgb(var(--stop) / .22); border-color: rgb(var(--stop) / .8); }
+    button.stop:hover { background: rgb(var(--stop) / .38); }
+    button.allow { background: rgb(var(--live) / .25); border-color: rgb(var(--live) / .8); }
+    kbd { font: 500 10px/1 var(--mono); padding: 3px 5px; border-radius: 5px; background: rgb(0 0 0 / .35); color: var(--muted); }
+    [hidden] { display: none !important; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .edge, .dot { animation: none !important; }
+      .bar, .edge { transition: none !important; }
+    }
+  </style>
+</head>
+<body data-state="starting">
+  <div class="edge" aria-hidden="true"></div>
+  <div class="bar" id="bar" role="status" aria-live="polite">
+    <div class="badge"><span class="dot" aria-hidden="true"></span><span id="badge">AI control active</span></div>
+    <div class="text">
+      <span class="detail" id="detail">Getting ready…</span>
+      <span class="step" id="step"></span>
+    </div>
+    <div class="actions" id="controls">
+      <button type="button" id="pause">Pause</button>
+      <button type="button" class="stop" id="stop">Stop <kbd id="shortcut">Ctrl+Alt+Q</kbd></button>
+    </div>
+    <div class="actions" id="question" hidden>
+      <button type="button" class="allow" id="allow">Allow</button>
+      <button type="button" id="deny">Don’t</button>
+    </div>
+  </div>
+  <script src="control.js"></script>
+</body>
+</html>

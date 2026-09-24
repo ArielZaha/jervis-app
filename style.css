@@ -907,3 +907,9 @@ kbd { padding: 1px 6px; border: 1px solid rgb(var(--accent-rgb) / .4); border-ra
   .sheet-card, .sheet-layer { animation: none; }
   .setup-step.active .step-icon { animation: none; border-top-color: rgb(var(--accent-rgb)); }
 }
+
+/* ---------- Computer control: asking before Jervis takes the mouse and keyboard ---------- */
+.control-card { --accent-rgb: 255 176 72; width: min(560px, 94vw); }
+.control-points { margin: 0; padding: 0 0 0 18px; display: grid; gap: 6px; color: var(--muted); font-size: 13.5px; }
+.control-points b { color: var(--text); font-weight: 600; }
+.control-key { font: 500 11px/1 var(--mono); padding: 3px 6px; background: rgb(255 255 255 / .08); border: 1px solid var(--border-strong); color: var(--text); }

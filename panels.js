@@ -313,6 +313,41 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshBanner();
     }
   });
+  // =====================================================================================================
+  // Computer control: the question before Jervis starts, and relaying the overlay's buttons (see main.js)
+  // =====================================================================================================
+  const CONTROL_ACTIVE = new Set(['starting', 'observing', 'thinking', 'acting', 'waiting', 'paused']);
+  const controlLayer = $('controlLayer');
+  for (const key of document.querySelectorAll('.control-key')) key.textContent = process.platform === 'darwin' ? '⌃⌥Q' : 'Ctrl+Alt+Q';
+  let controlStateName = '';
+  let controlAskId = null;
+  function answerControl(allow) {
+    if (controlAskId) window.jervisSend({ type: 'control_answer', id: controlAskId, allow });
+    controlAskId = null;
+    closePanel(controlLayer);
+  }
+  $('controlAllow').addEventListener('click', () => answerControl(true));
+  $('controlDeny').addEventListener('click', () => answerControl(false));
+  controlLayer.addEventListener('keydown', (e) => { if (e.key === 'Escape') answerControl(false); });
+  ipcRenderer.on('control-relay', (_event, message) => window.jervisSend(message));
+  window.addEventListener('jervis-message', (event) => {
+    const data = event.detail || {};
+    if (data.type === 'control' && data.data) {
+      controlStateName = data.data.state;
+      ipcRenderer.send('control-event', data);
+    } else if (data.type === 'control_confirm') {
+      ipcRenderer.send('control-event', data);
+      if (CONTROL_ACTIVE.has(controlStateName)) return;   // the overlay asks while Jervis is working
+      controlAskId = data.id;
+      $('controlQuestion').textContent = data.question;
+      openPanel(controlLayer);
+      $('controlAllow').focus();
+    } else if (data.type === 'control_confirm_done') {
+      ipcRenderer.send('control-event', data);
+      if (data.id === controlAskId) { controlAskId = null; closePanel(controlLayer); }
+    }
+  });
+
   window.addEventListener('jervis-connected', () => {
     if (engineState !== 'failed') { engineState = 'running'; refreshBanner(); }
     if (!settingsLayer.hidden) window.jervisSend({ type: 'get_settings' });

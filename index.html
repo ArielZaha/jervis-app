@@ -230,6 +230,24 @@
     </div>
   </div>
 
+  <div class="sheet-layer" id="controlLayer" hidden role="alertdialog" aria-modal="true" aria-labelledby="controlTitle" aria-describedby="controlQuestion">
+    <div class="sheet-card control-card">
+      <p class="graph-kicker">Computer control</p>
+      <h2 id="controlTitle">Let Jervis use the mouse and keyboard?</h2>
+      <p class="sheet-sub" id="controlQuestion"></p>
+      <ul class="control-points">
+        <li>A glowing edge and a bar with <b>Pause</b> and <b>Stop</b> stay on screen the whole time.</li>
+        <li>Move the mouse, press <kbd class="control-key">Ctrl+Alt+Q</kbd>, or say “stop” to take over at once.</li>
+        <li>He asks before sending, buying, deleting or installing anything, and never types passwords.</li>
+      </ul>
+      <div class="sheet-actions">
+        <button type="button" class="sheet-btn primary" id="controlAllow">Allow</button>
+        <button type="button" class="sheet-btn" id="controlDeny">Not now</button>
+      </div>
+      <p class="sheet-note">You can also answer out loud: “yes” or “no”. Settings → Computer control changes whether he asks.</p>
+    </div>
+  </div>
+
   <div class="sheet-layer" id="settingsLayer" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="sheet-card settings-card">
       <header class="graph-head">

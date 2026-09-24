@@ -55,6 +55,7 @@ import google_accounts
 import local_llm
 import local_ai
 import stt_local
+import computer_use
 import osal
 import calendar_api
 import calendar_time
@@ -212,6 +213,8 @@ fullscreen_pending = False  # a wake-up asked for a full-screen window that has 
 def show_fullscreen():
     """Open the window (if needed) and make it full screen. Used when Jervis is woken up."""
     global fullscreen_pending
+    if control_active():   # the window would cover the app Jervis is working in (and catch his clicks)
+        return
     if connected_clients:
         send_ui_update_once({"type": "fullscreen"})
     else:
@@ -463,6 +466,16 @@ async def handle_client(websocket):
                                            "me how.")
             elif data.get("type") == "setup_retry":
                 local_ai_manager.start_background()
+            elif data.get("type") == "control_answer":
+                answer_control_question(str(data.get("id", "")), data.get("allow") is True)
+            elif data.get("type") == "control_command" and computer_task is not None:
+                action = data.get("action")
+                if action == "stop":
+                    computer_task.stop()
+                elif action == "pause":
+                    computer_task.pause()
+                elif action == "resume":
+                    computer_task.resume()
             elif data.get("type") == "get_settings":
                 try:
                     payload = settings_payload()
@@ -1750,6 +1763,185 @@ def handle_multi_task(text: str):
         _multi_active = False
 
 
+# ---------- Computer control: Jervis using the mouse and keyboard (see computer_use.py) ----------
+computer_task = None            # the ComputerTask that is running, if any
+_control_questions = {}         # question id -> (threading.Event, {"answer": bool | None})
+pending_control_question = None  # {"id", "at"}: the next "yes"/"no" said answers it
+
+_CONTROL_EXPLICIT = re.compile(
+    r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis)[, ]+)?(?:please |can you |could you |would you |go ahead and )*"
+    r"(?:use|control|take control of|take over) (?:my |the )?(?:computer|mouse|screen|pc|mac|laptop)"
+    r"(?:,? (?:and|to|then))? (?P<goal>.+)$", re.I)
+# One on-screen step said plainly ("click Save", "scroll down", "type hello into the search box"). Only phrasings
+# that can't be ordinary conversation: "tap water", "type 2 diabetes in children", "check the box office" don't match.
+_UI_NOUN = r"(?:box|field|bar|search|input|form|chat|message|document|window|tab|terminal|editor|cell|text ?box)"
+_CONTROL_STEP = re.compile(
+    r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis)[, ]+)?(?:please |can you |could you |would you |go ahead and )*"
+    r"(?P<goal>(?:(?:in|on) (?:the )?[\w .'-]{2,40}?,? )?(?:(?:double[- ]?|right[- ]?)?click (?:on )?|tap on )\S.*"
+    r"|scroll (?:up|down|to the (?:top|bottom|end))\b.*"
+    r"|press (?:the )?(?:[\w-]+ )?(?:button|key|enter|return|escape|esc|tab|space ?bar|backspace)\b.*"
+    r"|(?:tick|untick|uncheck) (?:the )?.+"
+    r"|check (?:the )?[\w '-]{1,40}(?:checkbox|check box|tick box)\b.*"
+    r"|(?:type|enter|write|fill in) .+ (?:in|into) (?:the )?(?:[\w'-]+ ){0,3}" + _UI_NOUN + r"\b.*"
+    r"|(?:go to|switch to) the (?:next|previous|first|second|third|last) (?:tab|window)\b.*)$", re.I)
+# Looser: allows the AI's use_computer tool only when the request is plainly about operating something on screen.
+_COMPUTER_HINT = re.compile(
+    r"\b(?:click|double[- ]click|right[- ]click|tap on|scroll|press (?:the|enter|tab|escape)|type (?:it|this|that|in|into)"
+    r"|fill (?:in|out)|tick|untick|check ?box|drag|on (?:my|the) screen|use (?:my|the) (?:computer|mouse|keyboard|pc|mac)"
+    r"|control (?:my|the) (?:computer|mouse|pc|mac)|in (?:the )?settings|toggle|turn (?:on|off) (?:the )?[\w ]{1,30} (?:in|on))\b",
+    re.I)
+_CONTROL_STOP = re.compile(r"(?:stop|stop it|stop now|stop that|cancel|abort|enough|that's enough|take over|"
+                           r"i'll take over|let me do it|stop using (?:my |the )?(?:computer|mouse))")
+_CONTROL_PAUSE = re.compile(r"(?:pause|wait|hold on|hang on|one (?:second|moment|sec))")
+_CONTROL_RESUME = re.compile(r"(?:continue|resume|go on|go ahead|carry on|keep going|you can continue)")
+_YES = re.compile(r"(?:yes|yeah|yep|sure|ok|okay|go ahead|do it|allow|allowed|fine|please do|yes please)")
+_NO = re.compile(r"(?:no|nope|don't|do not|don't do it|cancel|stop|not now|never mind|nevermind)")
+
+
+def parse_computer_task(text: str):
+    """The goal, if this asks Jervis to use the computer (and no other command handled it already)."""
+    n = " ".join(re.sub(r"[^\w'+ ,.-]", " ", (text or "").replace("\u2019", "'")).split())   # keeps "TextEdit" as said
+    match = _CONTROL_EXPLICIT.match(n) or _CONTROL_STEP.match(n)
+    if not match:
+        return None
+    goal = (match.groupdict().get("goal") or n).strip(" ,.")
+    return goal if len(goal) > 3 else None
+
+
+def is_computer_request(text: str) -> bool:
+    return bool(_COMPUTER_HINT.search(text or ""))
+
+
+def tool_use_computer(goal: str = "", **_ignored) -> str:
+    goal = " ".join(str(goal or "").split())[:300]
+    if not goal:
+        return "No task given."
+    return start_computer_task(goal)
+
+
+def computer_environment():
+    if osal.IS_WIN:
+        import screen_windows
+        return screen_windows.WindowsScreen()
+    if osal.IS_MAC:
+        import screen_mac
+        return screen_mac.MacScreen()
+    return computer_use.Environment()   # available() explains it isn't supported here
+
+
+def _ask_ai_for_control(messages, tools):
+    return groq_chat(model=GROQ_MODEL, messages=messages, tools=tools, tool_choice="required")
+
+
+def open_control_question(question: str) -> str:
+    """Show a yes/no question in the window and listen for "yes"/"no". Returns its id for wait_control_answer."""
+    global pending_control_question
+    ask_id = f"q{int(time.time() * 1000)}"
+    _control_questions[ask_id] = (threading.Event(), {"answer": None})
+    pending_control_question = {"id": ask_id, "at": time.time()}
+    send_ui_update_once({"type": "control_confirm", "id": ask_id, "question": question})
+    return ask_id
+
+
+def ask_control_question(question: str, timeout: float = 90.0) -> bool:
+    """Ask the user (in the window and aloud) and wait for yes or no. No answer means no."""
+    ask_id = open_control_question(question)
+    announcements.put(f"{question} Say yes or no.")
+    return wait_control_answer(ask_id, timeout)
+
+
+def wait_control_answer(ask_id: str, timeout: float = 90.0) -> bool:
+    global pending_control_question
+    answered, holder = _control_questions[ask_id]
+    answered.wait(timeout)
+    _control_questions.pop(ask_id, None)
+    if pending_control_question and pending_control_question["id"] == ask_id:
+        pending_control_question = None
+    send_ui_update_once({"type": "control_confirm_done", "id": ask_id})
+    return holder["answer"] is True
+
+
+def answer_control_question(ask_id: str, allow: bool) -> bool:
+    entry = _control_questions.get(ask_id)
+    if not entry:
+        return False
+    entry[1]["answer"] = bool(allow)
+    entry[0].set()
+    return True
+
+
+def _report_control(state: dict) -> None:
+    send_ui_update_once({"type": "control", "data": state})
+
+
+def control_active() -> bool:
+    return computer_task is not None and computer_task.state not in ("completed", "stopped", "error")
+
+
+def start_computer_task(goal: str) -> str:
+    global computer_task
+    mode = (os.getenv("JERVIS_COMPUTER_CONTROL") or "ask").strip().lower()
+    if mode == "off":
+        return "Using the mouse and keyboard is turned off. You can allow it in Settings, under Computer control."
+    if control_active():
+        return "I'm already using the computer. Say stop first if you want me to do this instead."
+    env = computer_environment()
+    ok, why = env.available()
+    if not ok:
+        return why
+
+    question = f"Can I use your mouse and keyboard to {goal}?"
+    ask_id = open_control_question(question) if mode != "on" else None
+
+    def run():
+        global computer_task
+        if ask_id and not wait_control_answer(ask_id):
+            return
+        import screen_vision
+        vision = screen_vision.ScreenVision() if screen_vision.available() else None
+        task = computer_use.ComputerTask(goal, env, _ask_ai_for_control, report=_report_control,
+                                         confirm=ask_control_question, vision=vision)
+        computer_task = task
+        task._report("starting", "Getting out of your way…")   # the window steps aside (see main.js)
+        if connected_clients:
+            time.sleep(1.2)
+        result = task.run()
+        if task.state != "stopped":   # whoever stopped it has already been told
+            announcements.put(result)
+
+    threading.Thread(target=run, daemon=True, name="computer-control").start()
+    if ask_id:
+        return f"{question} Say yes or no."
+    return (f"Okay, I'm using the computer to {goal}. Move the mouse, press {computer_use.STOP_SHORTCUT}, "
+            "or say stop to take over.")
+
+
+def handle_control_voice(text: str):
+    """While Jervis is using the computer (or asking about it): stop, pause, continue, and yes/no answers."""
+    global pending_control_question
+    n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower().replace("\u2019", "'")).split())
+    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jervis|jarvis) ", "", n)   # "Hey Jervis, stop"
+    if pending_control_question and time.time() - pending_control_question["at"] < 120:
+        if _YES.fullmatch(n) and answer_control_question(pending_control_question["id"], True):
+            pending_control_question = None
+            return (f"Okay. Move the mouse, press {computer_use.STOP_SHORTCUT}, or say stop "
+                    "whenever you want to take over.")
+        if _NO.fullmatch(n) and answer_control_question(pending_control_question["id"], False):
+            pending_control_question = None
+            return "Okay, I won't."
+    if control_active():
+        if _CONTROL_STOP.fullmatch(n):
+            computer_task.stop()
+            return "Stopping. You have control."
+        if _CONTROL_PAUSE.fullmatch(n):
+            computer_task.pause()
+            return "Paused. Say continue when you want me to go on."
+        if _CONTROL_RESUME.fullmatch(n) and computer_task.state == "paused":
+            computer_task.resume()
+            return "Continuing."
+    return None
+
+
 _SERVICE_NAMES = re.compile(r"\b(spotify|youtube|netflix|stremio|google)\b")
 
 
@@ -1764,6 +1956,9 @@ def is_new_command(text: str, service: str) -> bool:
 def handle_direct_command(text: str):
     """Run reliable, explicitly spoken desktop commands without model tool-call guesses."""
     global youtube_active, netflix_active, stremio_active
+    control = handle_control_voice(text)
+    if control:
+        return control
     multi = handle_multi_task(text)
     if multi:
         return multi
@@ -1987,6 +2182,9 @@ def handle_direct_command(text: str):
             pending_calendar_choice = {"at": time.time()}
             return f"{opened} Do you want to hear the next events, or make a new one?"
         return opened
+    goal = parse_computer_task(text)
+    if goal:
+        return start_computer_task(goal)
     return None
 
 
@@ -2193,6 +2391,7 @@ TOOL_FUNCTIONS = {
     "compare_images": tool_compare_images,
     "generate_image": tool_generate_image,
     "edit_image": tool_edit_image,
+    "use_computer": tool_use_computer,
 }
 
 TOOLS = [
@@ -2330,6 +2529,20 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "use_computer",
+            "description": "Operate the user's computer with the mouse and keyboard to do a task in an app that is on screen (click buttons, fill in fields, change a setting, move through a website). ONLY call when the user explicitly asks you to do something on their screen that no other tool does. Never for questions, and never to open an app or play music (other tools do that).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "The task, in the user's words, e.g. 'turn on dark mode in Chrome settings'."}
+                },
+                "required": ["goal"],
+            },
+        },
+    },
 ]
 
 SYSTEM_PROMPT = """You are Jervis, an AI desktop assistant.
@@ -2339,6 +2552,7 @@ SYSTEM_PROMPT = """You are Jervis, an AI desktop assistant.
 - Never say you opened, wrote, played or changed something unless a tool result confirmed it. If you cannot do something, say so plainly.
 - You cannot see the user's messages, emails or files. Never claim that they have, or don't have, any unread messages or new mail: say you can't check that. You cannot see their Google Calendar either (a separate feature checks it before you're ever asked) — if a calendar question reaches you, tell the user to say "check my calendar" or "open my calendar" instead of guessing what is on it.
 - Images: the user can attach photos, screenshots or other pictures, and you can create or edit images too. You cannot see an image yourself — only the image tools can. Use analyze_image to describe an attached image or answer a question about it, including a vague follow-up like "what's wrong with it" right after an image was shared (a system message will tell you when one is pending). Use extract_image_text to read text out of an image. Use compare_images once two or more images have been shared. Use generate_image only when explicitly asked to create/draw/make a picture of something, and edit_image only when explicitly asked to change an existing image (remove/add/replace something, change the background or style, etc). Never claim an image was generated, edited or analyzed unless a tool result actually confirmed it. If an image tool result explains what's missing or how to fix it (a setup step, an environment variable, a URL), repeat that specific detail back to the user instead of a vague "I can't do that" — they need to know exactly what to do next.
+- use_computer lets you work in an app on the user's screen with the mouse and keyboard. Call it only when the user explicitly asks you to do something on screen (for example "turn on dark mode in Chrome settings"). The user is asked for permission and can stop you at any time; say in one short sentence what you're starting, never that it's finished.
 - After using a tool, give the user a short natural spoken confirmation.
 - Keep casual answers concise and natural, never emoji.
 - When you recommend a movie or series, always write its exact title in **bold**.
@@ -2621,7 +2835,7 @@ def is_app_command(text: str) -> bool:
 def should_enable_tools(text: str) -> bool:
     """Do not expose tools during ordinary conversation or incomplete phrases."""
     return (is_google_search_command(text) or is_music_command(text) or is_app_command(text) or is_youtube_command(text)
-            or images.is_image_command(text) or images.has_pending_context())
+            or images.is_image_command(text) or images.has_pending_context() or is_computer_request(text))
 
 
 def diagnose_connection(host: str = "api.groq.com") -> str:
@@ -2926,6 +3140,8 @@ def ask_jervis(messages, user_text=""):
                 result = "Image generation was blocked because the user did not explicitly ask to create an image. Respond without generating one."
             elif name == "edit_image" and not images.is_image_edit_command(user_text):
                 result = "Image editing was blocked because the user did not explicitly ask to edit the image. Respond without editing it."
+            elif name == "use_computer" and not is_computer_request(user_text):
+                result = "Using the computer was blocked because the user did not ask for anything to be done on screen. Respond normally."
             elif func:
                 if name == "play_song":
                     args["start_seconds"] = args.get("start_seconds") or parse_start_time(user_text)[0]
