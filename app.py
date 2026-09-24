@@ -237,6 +237,7 @@ def launch_ui():
     try:
         env = {**os.environ, "PATH": os.path.dirname(npm) + os.pathsep + os.environ.get("PATH", ""),  # so npm finds node
                "JERVIS_ATTACH_PORT": str(WS_PORT), "JERVIS_WS_TOKEN": WS_TOKEN}
+        env.pop("ELECTRON_RUN_AS_NODE", None)   # set in VS Code's terminal; it would start Electron as plain Node
         print("Opening the Jervis window...", flush=True)
         ui_process = subprocess.Popen([npm, "start"], cwd=APP_DIR, env=env)
         ui_launched = True
@@ -387,6 +388,7 @@ async def handle_client(websocket):
         await websocket.close(1008, "not allowed")
         return
     connected_clients.add(websocket)
+    print(f"Window connected ({len(connected_clients)} open).", flush=True)
     try:
         for payload in list(latest_ui_updates.values()) + pending_alerts:
             await websocket.send(json.dumps(payload))

@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(socket.readyState)) return;
     setConnection(false);
     try {
-      socket = new WebSocket(new URLSearchParams(location.search).get('ws') || 'ws://localhost:8765');
+      socket = new WebSocket(new URLSearchParams(location.search).get('ws') || 'ws://127.0.0.1:8765');
       socket.onopen = () => setConnection(true);
       socket.onclose = () => { setConnection(false); scheduleReconnect(); };
       socket.onerror = () => setConnection(false);

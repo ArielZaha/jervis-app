@@ -28,6 +28,7 @@ from urllib.parse import quote as _urlquote
 import requests
 from PIL import Image, UnidentifiedImageError
 from groq import Groq
+import importlib.util
 import paths
 
 try:
@@ -35,15 +36,12 @@ try:
 except ImportError:  # the package ships in requirements.txt, but keep this module importable even if it's missing
     OpenAI = None
 
-try:  # optional, heavy, opt-in (see requirements-local-images.txt / run.py --local-images): genuinely unlimited,
-    # free, private image generation on this machine's own GPU, instead of a cloud service. The actual generation
-    # runs in a separate process (local_image_worker.py, via _generate_local) so a hang or crash there can never
-    # affect Jervis itself — torch is only imported here to check it's installed and to pick mps/cuda/cpu.
-    import torch
-    import diffusers  # noqa: F401 — presence check only; the worker process does the real import
-except ImportError:
-    torch = None
-    diffusers = None
+# Optional, heavy, opt-in (see requirements-local-images.txt / run.py --local-images): genuinely unlimited, free,
+# private image generation on this machine's own GPU, instead of a cloud service. The actual generation runs in a
+# separate process (local_image_worker.py, via _generate_local) so a hang or crash there can never affect Jervis.
+# Only checked for here, never imported at startup: importing torch takes seconds (much longer on a cold start), and
+# is only needed when a picture is actually generated locally.
+_LOCAL_IMAGE_PACKAGES = all(importlib.util.find_spec(name) is not None for name in ("torch", "diffusers"))
 
 APP_DIR = paths.RESOURCE_DIR
 IMAGES_DIR = os.path.join(paths.DATA_DIR, "images")
@@ -113,7 +111,7 @@ def generation_configured() -> bool:
 def local_generation_configured() -> bool:
     """Whether torch + diffusers are installed (see requirements-local-images.txt) — the model itself downloads
     on first use, so this doesn't check for that, only that generating locally is possible at all."""
-    return torch is not None and diffusers is not None
+    return _LOCAL_IMAGE_PACKAGES
 
 
 def _groq() -> Groq:
@@ -437,6 +435,7 @@ def _generate_pollinations(prompt: str, size: str) -> dict:
 
 
 def _local_device() -> str:
+    import torch   # only here: see _LOCAL_IMAGE_PACKAGES
     if torch.backends.mps.is_available():
         return "mps"
     if torch.cuda.is_available():

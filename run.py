@@ -218,8 +218,24 @@ def ensure_env_file() -> None:
     env, example = os.path.join(ROOT, ".env"), os.path.join(ROOT, ".env.example")
     if not os.path.exists(env) and os.path.exists(example):
         shutil.copy(example, env)
-        sys.exit("I created a .env file for you. Open it, paste your GROQ_API_KEY (free at console.groq.com), "
-                 "then run this again.")
+        say("Created a .env file for optional settings. No key is needed: Jervis uses the AI on this computer. "
+            "For the faster online AI, add a free Groq key in Settings (or GROQ_API_KEY in .env).")
+
+
+def start_window(npm: str, env: dict) -> int:
+    """Start Jervis's window, which starts and looks after the backend (the same way the installed app does)."""
+    env = {**env, "JERVIS_PYTHON": VENV_PYTHON,
+           "PATH": os.path.dirname(npm) + os.pathsep + env.get("PATH", "")}   # so npm finds node
+    env.pop("ELECTRON_RUN_AS_NODE", None)   # set in VS Code's terminal; it would start Electron as plain Node
+    process = subprocess.Popen([npm, "start"], cwd=ROOT, env=env)
+    try:
+        return process.wait()
+    except KeyboardInterrupt:
+        try:
+            return process.wait(timeout=10)
+        except (KeyboardInterrupt, subprocess.TimeoutExpired):
+            process.terminate()
+            return 0
 
 
 def start_jervis(env: dict) -> int:
@@ -259,4 +275,6 @@ if __name__ == "__main__":
         child_env.pop("JERVIS_SHOW_WINDOW")
         child_env["JERVIS_NO_WINDOW"] = "1"  # don't keep retrying a window that can't start
     say("Starting Jervis. Say 'Hey Jervis' to wake him up. Press Ctrl+C here to quit.")
-    sys.exit(start_jervis(child_env))
+    if child_env.get("JERVIS_NPM"):
+        sys.exit(start_window(npm, child_env))   # the window starts the backend and restarts it when needed
+    sys.exit(start_jervis(child_env))            # no window possible: voice only, as before
