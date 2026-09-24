@@ -1,33 +1,62 @@
 # Jervis
 
-A voice assistant for your computer: say "Hey Jervis", then ask for music, videos, shows, timers, documents and more.
-Runs on **macOS** and **Windows 10/11**.
+A voice assistant for your computer: say "Hey Jervis", then ask for music, videos, shows, timers, documents and more,
+or have him use the mouse and keyboard for you. His AI runs on your own computer: no account and no API key.
+Runs on **Windows 10/11** and **macOS** (Apple silicon). Made by Ariel & Shalev.
 
-## Set up (both systems)
+## Install
 
-1. Install **Python 3.11 or 3.12** (3.13+ may lack prebuilt audio packages on Windows) and **Node.js** (for the window).
-   - macOS: `brew install portaudio` first (needed by the microphone package).
-2. Get a free AI key at <https://console.groq.com>.
-3. Start Jervis:
-   - **macOS:** `python3 run.py`
-   - **Windows:** double-click `start_jervis.bat` (or `python run.py`)
+Download the installer from <https://arielzaha.github.io/jervis/> (or the
+[latest release](https://github.com/ArielZaha/jervis-app/releases/latest)):
 
-   The first run installs everything and creates a `.env` file. Paste your `GROQ_API_KEY` into it and run again.
-   On Windows, if the folder's path contains non-English letters (for example a Hebrew user name), the window can't
-   install there, so `run.py` copies Jervis to `C:\Jervis` by itself and continues from that folder.
-   Jervis's window opens by itself as soon as he starts. It needs **Node.js**: on Windows, `start_jervis.bat` offers to
-   install it for you; otherwise get the LTS version from <https://nodejs.org>. Without Node.js Jervis still works by voice,
-   just without the window, and says so clearly.
-4. Say **"Hey Jervis"**. Optional: run `install_jervis_wake.command` (macOS) or `install_jervis_wake.bat` (Windows) so a
-   tiny listener starts when you sign in and Jervis wakes up when you say the phrase.
+- **Windows:** run `Jervis Setup.exe`. If SmartScreen says "Windows protected your PC", click *More info*, then
+  *Run anyway* (the installer isn't signed with a paid certificate yet). No administrator rights needed; Jervis is
+  added to the Start menu and the desktop.
+- **macOS:** open the `.dmg`, drag Jervis to Applications, open it. The first time, macOS says it can't check it for
+  malware: open *System Settings > Privacy & Security* and click *Open Anyway*.
 
-Spotify control is optional: add `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` to `.env` (Spotify Premium is needed).
+On the first start Jervis downloads his AI engine ([Ollama](https://ollama.com)), the `llama3.2` model and an offline
+speech model (about 3.5 GB on Windows, 2.5 GB on a Mac), with the progress in his window. Everything that doesn't need
+the AI works meanwhile. If you already run Ollama, he uses yours. Then say **"Hey Jervis"**.
+
+Everything else is in **Settings** (the gear at the top right): microphone, voice, the wake phrase, which AI answers,
+computer control, the weather city, privacy, optional services, and starting when you sign in. Settings, logs,
+transcripts and pictures live in `%APPDATA%\Jervis` (Windows) or `~/Library/Application Support/Jervis` (macOS).
+
+## Which AI answers
+
+- **By default, the AI on your computer:** `llama3.2` through Ollama for answers and Whisper (`base.en`, via
+  faster-whisper) for speech. After the first start both work offline. On computers with 16 GB of memory he also
+  installs `qwen2.5vl:3b`, so he can look at pictures and the screen (Settings, AI can turn it on or off).
+- **Optional, faster:** paste a free key from <https://console.groq.com> into Settings, AI. He then answers with
+  `openai/gpt-oss-20b` on Groq and falls back to the local AI by himself when Groq can't be reached or is rate limited.
+  The real reason for any failed AI call is written to `logs/ai_errors.log` in his data folder.
+
+## Computer control
+
+Ask for something on screen, like "click Save", "scroll down", "type hello into the search box" or "use my computer
+to turn on dark mode in Chrome". Jervis works in a loop: he reads the window in front through the system's
+accessibility interface (UI Automation on Windows, the Accessibility API on macOS), picks one action, does it, waits
+for the screen to settle and checks what changed before the next step.
+
+- **Always visible:** while he works, a glowing edge and a bar ("AI control active", the current step, Pause, Stop)
+  sit on top of everything. His own window steps aside.
+- **Instant stop:** move the mouse (he pauses), press **Ctrl+Alt+Q** (**Control-Option-Q** on a Mac), press Stop, or
+  say "stop". Switching to another app also pauses him.
+- **Asks first:** by default before each task (Settings, Computer control: ask / allowed / off), and always before
+  a risky step: sending, posting, buying, deleting, installing, signing out, or pressing Enter in a chat or mail app.
+- **Never:** types into password fields, presses the emergency shortcut, or runs more than 25 steps per task.
+- **Privacy:** screenshots are only looked at by the local vision model and never leave the computer. With a Groq key,
+  the list of buttons and fields in the window goes to Groq along with the request.
+
+On macOS, turn on Jervis in *System Settings > Privacy & Security > Accessibility*; macOS asks the first time.
 
 ## What works where
 
 | Feature | macOS | Windows |
 |---|---|---|
 | Voice, wake phrase, timers, notifications, AI answers, window | yes | yes |
+| Computer control (mouse and keyboard) | yes (Accessibility permission) | yes |
 | Speaking (Hebrew too) | built-in voices | built-in voices (add the Hebrew voice in Windows Settings > Time & language > Speech) |
 | Open any app | yes | yes (everything in the Start menu) |
 | Websites, Netflix / Stremio / YouTube playback | yes | yes |
@@ -35,40 +64,46 @@ Spotify control is optional: add `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` t
 | Next / previous song or video | yes | yes (media keys) |
 | Jump to a minute, restart from the beginning | yes (Chrome) | yes, for a YouTube or Netflix tab that is the *active* tab of its browser window |
 | Close a tab, reuse one tab for a site | any tab in Chrome | the active tab of a browser window (Chrome, Edge, Brave, Firefox) |
-| Volume up / down / set / mute | yes | exact with `pycaw` (installed automatically), else keyboard volume keys |
+| Volume up / down / set / mute | yes | exact with `pycaw` |
 | Write documents | Word, Pages, TextEdit, Notes, Google Docs | Word, Notepad, Google Docs |
 | Edit a document he wrote | yes | Word, Notepad, Google Docs |
 
 ### Permissions
-- **macOS** asks the first time Jervis controls Chrome, Word, Notes, Stremio and so on: click Allow. In Chrome, turn on
-  *View > Developer > Allow JavaScript from Apple Events* for pause / resume / jump. Google Docs and Stremio key presses
-  need *System Settings > Privacy & Security > Accessibility*.
+- **macOS** asks the first time Jervis uses the microphone and the first time he controls Chrome, Word, Notes,
+  Stremio and so on: click Allow. In Chrome, turn on *View > Developer > Allow JavaScript from Apple Events* for
+  pause / resume / jump. Computer control, Google Docs and Stremio key presses need *System Settings > Privacy &
+  Security > Accessibility*.
 - **Windows** needs no special permissions. Word must be installed for Word documents. Because Windows has no
   scripting interface for browsers, Jervis controls them like a person would (finds the window, presses shortcuts), so
   keep the tab you want controlled as the active tab of its window.
 
-## If the online AI can't be reached: a free local AI
+## Run from source, test, build
 
-Some networks block the online AI service (`api.groq.com`). Jervis then answers with a local AI running on your own PC
-through [Ollama](https://ollama.com), free and offline. Set it up once:
+For development. You need Python 3.12 (3.11–3.14 work on macOS; on Windows PyAudio has wheels up to 3.12) and
+Node.js 20. On macOS, `brew install portaudio` first.
 
-- **Windows:** double-click `setup_local_ai.bat` (installs Ollama and downloads a ~2 GB model).
-- **macOS:** `python3 run.py --local-ai`
+```
+python3 run.py                 # makes venv/, installs requirements.txt and the window, starts Jervis
+venv/bin/python -m pytest -q   # the tests (no microphone, network or real apps needed)
+```
 
-After that Jervis switches to it by himself whenever the online AI fails, and says which one he uses when he starts. A small
-local model is less clever and slower than the online one (about 1-10 seconds per answer on a normal PC, more on an old one);
-on a weak PC set `OLLAMA_MODEL=llama3.2:1b` in `.env`. Speech recognition still uses Google's free service, so an internet
-connection is needed for that.
+When running from source, Jervis keeps his files in this folder, and a `.env` file here is imported into Settings the
+first time. `python3 run.py --local-images` adds local picture generation (PyTorch + Diffusers, several GB).
 
-## If Jervis says "I've used up the free AI's limit for this minute"
+Installers are built by GitHub Actions (`.github/workflows/build.yml`) on real Windows and macOS machines: tests, then
+the engine (`jervis-backend.spec`, PyInstaller) and its `--selftest`, then the installer (electron-builder, config in
+`package.json`), then a fresh install test (`tests/installer/`): install, start, quit, check nothing is left running,
+uninstall. Pushing a tag like `v1.0.1` publishes a release. To build locally:
 
-The free online AI allows a limited number of words per minute. Jervis keeps his requests small and waits out short limits by
-himself. If it still happens often, run `setup_local_ai.bat` (a local AI has no limit), or upgrade at console.groq.com.
-When any AI call fails, the real reason is written to `logs/ai_errors.log`.
+```
+pip install -r requirements.txt pyinstaller && npm run backend   # the engine, into backend-dist/
+npm ci && npm run dist                                           # the installer for this system, into release/
+```
 
 ## Google accounts: school vs personal
 
-If you have two Google accounts in Chrome (each in its own Chrome profile), set them in `.env`:
+If you have two Google accounts in Chrome (each in its own Chrome profile), name them in Settings, Optional services
+(or in `.env` when running from source):
 
     GOOGLE_ACCOUNT_LEARNING=school account
     GOOGLE_ACCOUNT_PERSONAL=personal account
@@ -124,11 +159,10 @@ Naming what you want in the same breath ("open Netflix and play the office") ski
 
 ## Google Calendar
 
-Setup once: get a free OAuth client from Google Cloud Console and put it in `.env` (`.env.example` has the exact steps) —
-this needs the extra Python packages in `requirements.txt`, so run Jervis once with `python run.py` (not `python app.py`
-directly) so they install, or run `pip install -r requirements.txt` yourself first. The very first time you use it, a
-browser tab opens once for you to sign in; after that Jervis remembers it (a local file, `.calendar_token.json`, never
-shared and never included in a copy of this folder made for someone else).
+Setup once: get a free Desktop app OAuth client from Google Cloud Console (with the Calendar API turned on) and paste
+its client ID and secret into Settings, Optional services (turn on *Show advanced settings*); `.env.example` has the
+exact steps. The very first time you use it, a browser tab opens once for you to sign in; after that Jervis remembers
+it in a local file, `.calendar_token.json`, in his data folder, never shared.
 
 "Open my calendar" (or "check my calendar", "create a calendar event" on their own) then asks: hear the next events, or
 make a new one?
@@ -189,7 +223,7 @@ What he read is saved in `logs/classroom_last.json`.
 Jervis reads WhatsApp Desktop's local chat data on your Mac, read-only: he cannot send, reply or mark anything as read.
 Message text is only spoken and shown in the window. It is never sent to the online AI, never added to his memory, and never
 written to the transcript files. If macOS blocks access, allow the app that runs Jervis in System Settings > Privacy & Security >
-Full Disk Access. Turn it off with `WHATSAPP_READING=off` in `.env`. WhatsApp only updates its data while it is open, so Jervis
+Full Disk Access. Turn it off in Settings, Privacy. WhatsApp only updates its data while it is open, so Jervis
 says so when what he reads may be old.
 
 ## Images
@@ -213,10 +247,7 @@ free tier between everyone using it (roughly one request every 15 seconds); a fr
 <https://auth.pollinations.ai> removes the watermark and raises that limit, but nothing requires it.
 
 For higher quality, and for **editing** an existing picture (Pollinations only creates new ones, it can't modify one
-you show it), add an OpenAI key to `.env`:
-
-    OPENAI_API_KEY=your-key-here
-
+you show it), paste an OpenAI key into Settings, Optional services
 (create one at <https://platform.openai.com> — "API keys" in your account, and add a small amount of billing credit
 there too, since image generation isn't covered by any free OpenAI tier; `OPENAI_IMAGE_MODEL` in `.env.example` lets
 you pick a different model). When it's set, Jervis prefers it for generating; if it ever fails (no credits, a bad

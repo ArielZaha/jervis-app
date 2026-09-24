@@ -1,17 +1,22 @@
-# Fresh-install test for the Windows build, the way a user installs it:
+# Install test for the Windows build, the way a user installs it:
 #   run "Jervis Setup.exe" silently, check the files and shortcuts, run the engine's self-test, start Jervis, check the
-#   engine comes up, quit it, check nothing is left running, uninstall, check the app and shortcuts are gone.
+#   engine comes up, quit it, check nothing is left running; install again over it (an update) and start and quit
+#   once more; uninstall, check the app and shortcuts are gone.
 #     pwsh tests/installer/windows_smoke.ps1 -Installer "release/Jervis Setup.exe"
 param([Parameter(Mandatory = $true)][string]$Installer)
 $ErrorActionPreference = 'Stop'
 function Fail($message) { Write-Host "FAIL: $message"; exit 1 }
 
+function Install-Jervis($what) {
+  $started = Get-Date
+  $p = Start-Process -FilePath $Installer -ArgumentList '/S' -PassThru -Wait
+  if ($p.ExitCode -ne 0) { Fail "the installer exited with $($p.ExitCode) ($what)" }
+  Write-Host "$what in $([int]((Get-Date) - $started).TotalSeconds)s"
+}
+
 $sizeMb = [math]::Round((Get-Item $Installer).Length / 1MB)
 Write-Host "installer: $Installer ($sizeMb MB)"
-$started = Get-Date
-$p = Start-Process -FilePath $Installer -ArgumentList '/S' -PassThru -Wait
-if ($p.ExitCode -ne 0) { Fail "the installer exited with $($p.ExitCode)" }
-Write-Host "installed in $([int]((Get-Date) - $started).TotalSeconds)s"
+Install-Jervis 'installed'
 
 $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'Jervis.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $exe) { Fail 'Jervis.exe was not installed under %LOCALAPPDATA%\Programs' }
@@ -30,33 +35,41 @@ Remove-Item Env:\JERVIS_DATA_DIR
 if ($LASTEXITCODE -ne 0) { Write-Host $report; Fail 'the engine self-test failed' }
 Write-Host 'engine self-test: passed'
 
-# Start it the way sign-in does (hidden in the tray), without the microphone or the AI download.
-$env:JERVIS_NO_AI_SETUP = '1'; $env:JERVIS_AUDIO = 'off'
-$log = Join-Path $env:APPDATA 'Jervis\logs\jervis.log'
-$started = Get-Date
-Start-Process -FilePath $exe.FullName -ArgumentList '--hidden'
-$ready = $false
-for ($i = 0; $i -lt 120; $i++) {
-  if ((Test-Path $log) -and (Select-String -Path $log -Pattern 'listener is ready' -Quiet)) { $ready = $true; break }
-  Start-Sleep -Seconds 1
-}
-if (-not $ready) {
-  Get-Content (Join-Path $env:APPDATA 'Jervis\logs\window.log') -ErrorAction SilentlyContinue | Select-Object -Last 30
-  Get-Content $log -ErrorAction SilentlyContinue | Select-Object -Last 40
-  Fail 'the engine did not start'
-}
-Write-Host "engine started in $([int]((Get-Date) - $started).TotalSeconds)s"
-if (-not (Get-Process -Name 'jervis-backend' -ErrorAction SilentlyContinue)) { Fail 'engine process missing' }
+function Start-And-Quit($when) {
+  # Start it the way sign-in does (hidden in the tray), without the microphone or the AI download.
+  $env:JERVIS_NO_AI_SETUP = '1'; $env:JERVIS_AUDIO = 'off'
+  $log = Join-Path $env:APPDATA 'Jervis\logs\jervis.log'
+  if (Test-Path $log) { Remove-Item $log }
+  $started = Get-Date
+  Start-Process -FilePath $exe.FullName -ArgumentList '--hidden'
+  $ready = $false
+  for ($i = 0; $i -lt 120; $i++) {
+    if ((Test-Path $log) -and (Select-String -Path $log -Pattern 'listener is ready' -Quiet)) { $ready = $true; break }
+    Start-Sleep -Seconds 1
+  }
+  if (-not $ready) {
+    Get-Content (Join-Path $env:APPDATA 'Jervis\logs\window.log') -ErrorAction SilentlyContinue | Select-Object -Last 30
+    Get-Content $log -ErrorAction SilentlyContinue | Select-Object -Last 40
+    Fail "the engine did not start ($when)"
+  }
+  Write-Host "engine started in $([int]((Get-Date) - $started).TotalSeconds)s ($when)"
+  if (-not (Get-Process -Name 'jervis-backend' -ErrorAction SilentlyContinue)) { Fail "engine process missing ($when)" }
 
-& $exe.FullName --quit
-for ($i = 0; $i -lt 30; $i++) {
-  if (-not (Get-Process -Name 'Jervis' -ErrorAction SilentlyContinue)) { break }
-  Start-Sleep -Seconds 1
+  & $exe.FullName --quit
+  for ($i = 0; $i -lt 30; $i++) {
+    if (-not (Get-Process -Name 'Jervis' -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Seconds 1
+  }
+  if (Get-Process -Name 'Jervis' -ErrorAction SilentlyContinue) { Fail "Jervis did not quit ($when)" }
+  Start-Sleep -Seconds 2
+  if (Get-Process -Name 'jervis-backend' -ErrorAction SilentlyContinue) { Fail "the engine was left running after quitting ($when)" }
+  Write-Host "quit: window and engine both stopped ($when)"
 }
-if (Get-Process -Name 'Jervis' -ErrorAction SilentlyContinue) { Fail 'Jervis did not quit' }
-Start-Sleep -Seconds 2
-if (Get-Process -Name 'jervis-backend' -ErrorAction SilentlyContinue) { Fail 'the engine was left running after quitting' }
-Write-Host 'quit: window and engine both stopped'
+
+Start-And-Quit 'fresh install'
+Install-Jervis 'installed again over it (update)'
+if (-not (Test-Path $exe.FullName)) { Fail 'Jervis.exe is missing after installing over the old copy' }
+Start-And-Quit 'after the update'
 
 $uninstaller = Join-Path $dir 'Uninstall Jervis.exe'
 if (-not (Test-Path $uninstaller)) { Fail 'the uninstaller is missing' }
