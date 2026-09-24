@@ -35,3 +35,6 @@ website/
 .playwright-cli/
 .impeccable/
 .pytest_cache/
+
+# Build logs
+*.log

@@ -22,10 +22,15 @@ function log(message) {
 }
 
 // ---------- One Jervis at a time ----------
-if (!app.requestSingleInstanceLock()) {
+// "Jervis --quit" closes the running copy properly (engine included): used by the install tests and scripts.
+const quitRequested = process.argv.includes('--quit');
+if (!app.requestSingleInstanceLock() || quitRequested) {
   app.quit();   // a second copy would fight the first over the microphone: show the running one instead
 } else {
-  app.on('second-instance', () => showWindow());
+  app.on('second-instance', (_event, argv) => {
+    if (argv.includes('--quit')) { log('Asked to quit by another launch.'); quitting = true; app.quit(); return; }
+    showWindow();
+  });
 }
 
 function showWindow() {
@@ -250,6 +255,7 @@ app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 
 app.whenReady().then(async () => {
+  if (quitRequested) return;   // nothing was running: nothing to do
   // The window listens to the microphone only to measure how loud you are (the orb spins with your voice).
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => callback(permission === 'media'));
   if (process.platform === 'darwin') systemPreferences.askForMediaAccess('microphone').catch(() => {});

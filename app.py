@@ -3632,6 +3632,9 @@ def main_loop():
 
 
 if __name__ == "__main__":
+    if "--selftest" in sys.argv:   # an installed copy checking it has every part (see selftest.py)
+        import selftest
+        sys.exit(selftest.run())
     # The window stops the backend with SIGTERM: turn that into a normal exit, so cleanups (the local AI engine Jervis
     # started) run instead of leaving it behind.
     signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))

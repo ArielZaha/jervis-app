@@ -1,0 +1,111 @@
+# Builds the installers on real Windows and macOS machines, runs the tests, and installs each build fresh to check it.
+# A tag like v1.0.0 also publishes them as a GitHub release.
+name: Build installers
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: --win
+            installer: release/Jervis Setup.exe
+          - os: macos-14
+            platform: --mac
+            installer: release/*.dmg
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: PortAudio (for the microphone package)
+        if: runner.os == 'macOS'
+        run: |
+          brew install portaudio
+          echo "CFLAGS=-I$(brew --prefix)/include" >> "$GITHUB_ENV"
+          echo "LDFLAGS=-L$(brew --prefix)/lib" >> "$GITHUB_ENV"
+
+      - name: Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt pyinstaller
+
+      - name: Tests
+        env:
+          JERVIS_AUDIO: 'off'
+        run: python -m pytest -q
+
+      - name: Build Jervis's engine
+        run: pyinstaller --noconfirm --distpath backend-dist --workpath build/pyinstaller jervis-backend.spec
+
+      - name: Engine self-test
+        shell: bash
+        run: |
+          export JERVIS_DATA_DIR="$RUNNER_TEMP/selftest"
+          ./backend-dist/jervis-backend/jervis-backend --selftest | grep '^SELFTEST'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder ${{ matrix.platform }} --publish never
+
+      - name: Fresh install test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/installer/windows_smoke.ps1 -Installer "release/Jervis Setup.exe"
+
+      - name: Fresh install test (macOS)
+        if: runner.os == 'macOS'
+        run: bash tests/installer/mac_smoke.sh release/*.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jervis-${{ runner.os }}
+          path: ${{ matrix.installer }}
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd installers
+          sha256sum * > SHA256SUMS.txt
+          gh release create "$GITHUB_REF_NAME" * --repo "$GITHUB_REPOSITORY" --title "Jervis $GITHUB_REF_NAME" \
+            --notes "Windows: run Jervis Setup.exe. Mac (Apple Silicon): open the .dmg and drag Jervis to Applications. Checksums in SHA256SUMS.txt."
