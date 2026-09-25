@@ -53,6 +53,11 @@ jobs:
           JERVIS_AUDIO: 'off'
         run: python -m pytest -q
 
+      - name: Computer control on a real desktop (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true   # hosted runners' desktops may not take input; the result is still worth reading
+        run: python tests/installer/windows_control.py
+
       - name: Build Jervis's engine
         run: pyinstaller --noconfirm --distpath backend-dist --workpath build/pyinstaller jervis-backend.spec
 
