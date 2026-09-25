@@ -125,3 +125,19 @@ def test_followup_yields_to_a_different_request():
     assert app.is_new_command("set a timer for 5 minutes", "spotify")
     assert not app.is_new_command("Bohemian Rhapsody by Queen", "spotify")
 
+
+
+def test_spotify_without_keys_uses_the_spotify_app(monkeypatch):
+    """No Spotify keys (every installed copy): Jervis searches in the Spotify app itself and presses play there."""
+    import sys
+    import time
+    from types import SimpleNamespace
+    import spotify_local
+    monkeypatch.setattr(app, "sp", None)
+    monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
+    result, actions = route('play "My Favorite Songs" playlist on spotify')
+    assert "not configured" not in str(result)
+    assert "spotify front" in actions
+    if sys.platform == "darwin":
+        assert "spotify type my favorite songs" in actions
+        assert "spotify keys shift+enter" in actions

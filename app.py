@@ -56,6 +56,7 @@ import local_llm
 import local_ai
 import stt_local
 import computer_use
+import spotify_local
 import osal
 import calendar_api
 import calendar_time
@@ -2141,7 +2142,7 @@ def handle_direct_command(text: str):
     if seek_to is not None:
         if stremio_active and not (youtube_active or netflix_active):
             return "Stremio doesn't let me jump to a time. Drag its progress bar instead."
-        if youtube_active or netflix_active or not sp or youtube_is_playing():
+        if youtube_active or netflix_active or not spotify_available() or youtube_is_playing():
             return control_playback("seek", seek_to)
         return seek_music(seek_to)
     if current_document() and current_document().get("body") and parse_read_document(text):
@@ -2163,7 +2164,8 @@ def handle_direct_command(text: str):
         if stremio_active and not (youtube_active or netflix_active):
             return ("Stremio doesn't let me restart from the beginning. Drag the progress bar back to the start, "
                     "or say pause and I'll toggle playback.")
-        if sp and not (youtube_active or netflix_active) and not youtube_is_playing():
+        if spotify_available() and (spotify_active or spotify_is_playing()) and not (youtube_active or netflix_active) \
+                and not youtube_is_playing():
             seek_music(0)  # nothing video-like is active: the song on Spotify
             return "Starting the song over."
         return control_playback("restart")
@@ -2242,13 +2244,36 @@ def is_google_search_command(text: str) -> bool:
     return "google" in words
 
 
+def spotify_available() -> bool:
+    """Spotify can be controlled: with the user's own Spotify keys (Settings), or through the Spotify app itself."""
+    return bool(sp) or spotify_local.installed()
+
+
+def play_song_locally(request: str, start_seconds=None) -> str:
+    """No Spotify keys: Jervis uses the Spotify app's own search (see spotify_local.py)."""
+    global youtube_active, netflix_active, stremio_active, spotify_active
+    try:
+        playing = spotify_local.play(spotify_local.clean_query(request))
+    except spotify_local.SpotifyLocalError as e:
+        return str(e)
+    except Exception as e:
+        print(f"Spotify (app) failed: {e!r}", flush=True)
+        return "Something went wrong while starting Spotify. Try again, or press play in Spotify."
+    youtube_active = netflix_active = stremio_active = False
+    spotify_active = True
+    where = ""
+    if start_seconds and spotify_local.seek(int(start_seconds)):
+        where = f" from {format_time(int(start_seconds))}"
+    return f"Playing {playing} on Spotify{where}." if playing else "Playing it on Spotify."
+
+
 def play_song(song_name: str, start_seconds=None, **kwargs) -> str:
     """Play a track on Spotify, optionally starting `start_seconds` into it."""
-    if not sp:
-        return "Spotify integration is not configured."
     spoken_seconds, cleaned = parse_start_time(song_name)  # the model may leave "minute two" in the title
     song_name = cleaned or song_name
     start_seconds = start_seconds or spoken_seconds
+    if not sp:
+        return play_song_locally(song_name, start_seconds)
     try:
         results = sp.search(q=song_name, type="track", limit=1)
     except Exception as e:
@@ -2281,7 +2306,9 @@ def play_song(song_name: str, start_seconds=None, **kwargs) -> str:
 
 def seek_music(seconds: int) -> str:
     if not sp:
-        return "Spotify integration is not configured."
+        if spotify_local.seek(int(seconds)):
+            return f"Jumping to {format_time(seconds)}."
+        return "Spotify doesn't let me jump to a time here. Drag its progress bar instead."
     try:
         device_id = get_device_id()
         if not device_id:
@@ -2295,7 +2322,13 @@ def seek_music(seconds: int) -> str:
 def skip_track(direction: str) -> str:
     """Spotify: jump to the next or previous song and say what is playing now."""
     if not sp:
-        return "Spotify integration is not configured."
+        try:
+            now = spotify_local.skip(direction)
+        except spotify_local.SpotifyLocalError as e:
+            return str(e)
+        if now:
+            return f"Now playing {now}."
+        return "Skipped to the next song." if direction == "next" else "Went back to the previous song."
     try:
         device_id = get_device_id()
         if not device_id:
@@ -2324,7 +2357,7 @@ spotify_active = False  # True once Jervis started a song on Spotify; "stop" / "
 
 def resume_music() -> str:
     if not sp:
-        return "Spotify integration is not configured."
+        return "Resuming the music." if spotify_local.resume() else "Spotify isn't open."
     try:
         device_id = get_device_id()
         if not device_id:
@@ -2337,7 +2370,9 @@ def resume_music() -> str:
 
 def spotify_is_playing() -> bool:
     try:
-        return bool(sp and (sp.current_playback() or {}).get("is_playing"))
+        if not sp:
+            return spotify_local.is_playing()
+        return bool((sp.current_playback() or {}).get("is_playing"))
     except Exception:
         return False
 
@@ -2349,7 +2384,7 @@ _NOT_SPOTIFY_STOP = re.compile(r"\b(timer|timers|alarm|reminder|listening|talkin
 def spotify_playback_action(text: str):
     """"Stop it, please", "pause", "stop the sound", "resume" -> "pause" / "resume" when Spotify is what is playing."""
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower()).split())
-    if not sp or _NOT_SPOTIFY_STOP.search(n) or len(n.split()) > 7:
+    if not spotify_available() or _NOT_SPOTIFY_STOP.search(n) or len(n.split()) > 7:
         return None
     if re.search(r"\b(pause|stop|halt|silence|hold on|be quiet|shut up)\b", n):
         action = "pause"
@@ -2364,7 +2399,7 @@ def spotify_playback_action(text: str):
 
 def pause_music(**kwargs) -> str:
     if not sp:
-        return "Spotify integration is not configured."
+        return "Paused playback." if spotify_local.pause() else "Spotify isn't playing anything."
     try:
         device_id = get_device_id()
         if device_id:

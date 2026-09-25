@@ -23,6 +23,15 @@ Everything else is in **Settings** (the gear at the top right): microphone, voic
 computer control, the weather city, privacy, optional services, and starting when you sign in. Settings, logs,
 transcripts and pictures live in `%APPDATA%\Jervis` (Windows) or `~/Library/Application Support/Jervis` (macOS).
 
+## Spotify
+
+Jervis controls the Spotify app on the computer; no keys and no Premium needed. "Play My Favorite Songs on Spotify"
+opens Spotify's Quick Search, types the request and presses Shift+Enter (Spotify's own "play the selected result"), then
+checks the music changed; your own playlists come first. Pause, resume, next and previous use Spotify's AppleScript on a
+Mac and the media keys on Windows; jumping to a minute works on a Mac. On a Mac this needs the Accessibility permission
+(without it Jervis opens the search and you press play). Your own Spotify developer keys in Settings, Optional services,
+switch to Spotify's online interface instead (Premium).
+
 ## Which AI answers
 
 - **By default, the AI on your computer:** `llama3.2` through Ollama for answers and Whisper (`base.en`, via
