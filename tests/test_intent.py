@@ -23,7 +23,7 @@ def sandboxed():
 @pytest.fixture(autouse=True)
 def fresh_state(sandboxed):
     """Each sentence starts from a quiet Jervis: nothing playing, no question waiting for an answer."""
-    for name in ("pending_spotify_request", "pending_google_search", "pending_netflix_request",
+    for name in ("pending_spotify_request", "pending_spotify_play", "pending_google_search", "pending_netflix_request",
                  "pending_stremio_request", "pending_calendar_choice", "pending_dictation"):
         if hasattr(app, name):
             setattr(app, name, None)
@@ -186,3 +186,47 @@ def test_with_the_window_closed_only_his_name_opens_it_and_he_greets(monkeypatch
         app.main_loop()
     assert spoken == ["I'm awake, how can I help you?"]
     assert opened == [True]
+
+
+def test_typos_in_commands_are_understood():
+    assert app.fix_typos("take contorl over my computr") == "take control over my computer"
+    assert app.fix_typos("play it on spotfy") == "play it on spotify"
+    assert app.fix_typos("I like my dog") == "I like my dog"
+
+
+@pytest.mark.parametrize("said", [
+    "take contorl over my computer and type in the search bar for Jane! in spotify.",
+    "take the contorl and search for the song Jane! in spotify.",
+    "search for Jane! on Spotify",
+])
+def test_spotify_search_goes_to_spotify_and_play_it_plays_it(said, monkeypatch):
+    import time
+    from types import SimpleNamespace
+    import spotify_local
+    monkeypatch.setattr(app, "sp", None)
+    monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
+    result, actions = route(said)
+    assert "Jane!" in result and "play it" in result
+    assert "spotify search Jane!" in actions
+    assert not any("computer" in a for a in actions)
+    sandbox.reset()
+    result, actions = route("yes play it")
+    assert "spotify front" in actions
+
+
+@pytest.mark.parametrize("reply", [
+    "The search bar says \"Searching for Jane!\".",
+    "I'm using the computer to search for the song \"Jane!\" in Spotify. The result is a list of tracks.",
+    "The song \"Jane!\" by Janis Ian starts playing on Spotify.",
+])
+def test_replies_claiming_actions_that_never_happened_are_caught(reply):
+    assert app._CLAIMS_ACTION.search(reply)
+
+
+@pytest.mark.parametrize("reply", [
+    "Paris is the capital of France.",
+    "A timer counts down and rings when it's done.",
+    "I can open apps, play music and set timers.",
+])
+def test_ordinary_answers_are_not_mistaken_for_claims(reply):
+    assert not app._CLAIMS_ACTION.search(reply)

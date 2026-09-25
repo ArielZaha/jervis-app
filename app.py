@@ -2006,6 +2006,10 @@ def handle_direct_command(text: str):
     control = handle_control_voice(text)
     if control:
         return control
+    text = fix_typos(text)
+    spotify = handle_spotify_search(text)   # before splitting "take control and search … in Spotify" into parts
+    if spotify:
+        return spotify
     multi = handle_multi_task(text)
     if multi:
         return multi
@@ -2766,6 +2770,59 @@ def handle_timer_command(text: str):
 last_llm_reply = None  # {"text", "at"}: the last answer the AI wrote, for "put this list in a document"
 pending_dictation = None  # {"app", "at"}: Jervis asked what to write, and the next thing you say is the content
 pending_spotify_request = None  # {"at"}: Jervis asked what to listen to, and the next thing you say is a song/artist
+pending_spotify_play = None     # {"query", "at"}: Spotify is showing a search, and "play it" plays it
+
+# Words people mistype when giving orders ("take contorl"), matched loosely so a typo doesn't send a command to the AI.
+_TYPO_TARGETS = ("control", "computer", "spotify", "search")
+
+
+def fix_typos(text: str) -> str:
+    import difflib
+    def fix(match):
+        word = match.group(0)
+        if len(word) < 5 or word.lower() in _TYPO_TARGETS:
+            return word
+        close = difflib.get_close_matches(word.lower(), _TYPO_TARGETS, n=1, cutoff=0.8)
+        return close[0] if close else word
+    return re.sub(r"[A-Za-z]+", fix, text or "")
+
+
+# "Take control (of my computer) and …", said before something Jervis can do directly: the preamble adds nothing.
+_CONTROL_PREAMBLE = re.compile(
+    r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis)[, ]+)?(?:please |can you |could you )*(?:take (?:the )?control"
+    r"(?: (?:over|of))?(?: (?:my|the) (?:computer|mac|pc|laptop|screen))?|use my (?:computer|mac|pc)|control my "
+    r"(?:computer|mac|pc))(?:,? (?:and|to|then))?\s+", re.I)
+_SPOTIFY_SEARCH = re.compile(
+    r"^(?:(?:please|can you|could you|go ahead and) )*(?:search(?: for)?|look up|find|type(?: in)?(?: the search"
+    r"(?: bar| box)?)?(?: for)?)\s+(?P<query>.+?)\s+(?:in|on|with)\s+(?:the\s+)?spotify(?: search(?: bar| box)?)?"
+    r"(?: app)?[.!?]*$", re.I)
+_PLAY_IT = re.compile(r"^(?:yes|yeah|yep|sure|ok|okay)?[, ]*(?:please )?(?:play (?:it|that|this|the first one|the song)"
+                      r"|start it|yes|yeah|yep|sure|go ahead)(?: please)?[.!]*$", re.I)
+
+
+def handle_spotify_search(text: str):
+    """"Search for Jane! in Spotify" opens Spotify's search for it; "play it" then plays it. Spotify requests go to
+    Spotify directly, never through general computer control (which the small local AI can't do reliably)."""
+    global pending_spotify_play
+    if pending_spotify_play and time.time() - pending_spotify_play["at"] < 90 and _PLAY_IT.match((text or "").strip()):
+        query, pending_spotify_play = pending_spotify_play["query"], None
+        return play_song(query)
+    rest = _CONTROL_PREAMBLE.sub("", (text or "").strip(), count=1)
+    if rest != (text or "").strip() and re.search(r"\bspotify\b", rest, re.I):
+        play = parse_spotify_request(rest)
+        if play:
+            return play_song(play[0], start_seconds=play[1])
+    match = _SPOTIFY_SEARCH.match(rest)
+    if not match:
+        return None
+    query = spotify_local.clean_query(re.sub(r"\b(?:the )?(?:song|track|album|artist|playlist)\s+", "",
+                                             match.group("query"), flags=re.I))
+    if not query:
+        return None
+    if not spotify_local.open_search(query):
+        return "Spotify isn't installed on this computer. Get it from spotify.com, then ask me again."
+    pending_spotify_play = {"query": query, "at": time.time()}
+    return f"Here's {query} in Spotify. Say “play it” and I'll start it."
 pending_google_search = None  # {"at"}: Jervis asked what to search, and the next thing you say is the search itself
 pending_netflix_request = None  # {"at"}: Jervis asked what to watch, and the next thing you say is a show/movie title
 pending_stremio_request = None  # {"at"}: same, for Stremio
@@ -3186,6 +3243,13 @@ def _failed_generation_text(error: Exception) -> str:
     return ""
 
 
+ACTION_TOOLS = {"use_computer", "play_song", "pause_music", "open_application", "play_youtube_video"}
+_CLAIMS_ACTION = re.compile(
+    r"\b(?:i'?m (?:now )?(?:using|controlling) (?:the|your) (?:computer|mouse)|i (?:have |'ve )?(?:opened|clicked|typed|"
+    r"searched|started|played|launched|pressed)\b|(?:starts|started|is now|now) playing|is playing now|"
+    r"the (?:search bar|screen|window) (?:says|shows)|the result is a list)", re.I)
+
+
 def ask_jervis(messages, user_text=""):
     tools, tool_choice = select_tools(user_text)
     try:
@@ -3214,6 +3278,11 @@ def ask_jervis(messages, user_text=""):
 
     if not tool_calls:
         content = (msg.content or "").strip()
+        if content and _CLAIMS_ACTION.search(content):
+            # Nothing was done (no tool ran), but the reply says something was: never let that through.
+            print("The AI claimed an action it didn't take; replaced.", flush=True)
+            return ("I didn't do anything on your computer for that. Say it as a command, like “play Jane on Spotify” "
+                    "or “use my computer to open Downloads”.")
         return content if content else "I'm listening. How can I help?"
 
     messages.append({
@@ -3260,6 +3329,11 @@ def ask_jervis(messages, user_text=""):
             result = f"Tool failed: {e}"
 
         messages.append({"role": "tool", "tool_call_id": tc.id, "content": str(result)})
+
+    # An action's own result is exactly what happened ("Playing X on Spotify.", "Can I use your mouse…?"): say that,
+    # rather than letting the AI retell it (a small model turns "Can I…?" into "I'm using the computer…").
+    if len(tool_calls) == 1 and tool_calls[0].function.name in ACTION_TOOLS:
+        return str(result)
 
     try:
         final_response = groq_chat(model=GROQ_MODEL, messages=trim_for_ai(messages))

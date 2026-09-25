@@ -257,6 +257,18 @@ def _close_quick_search() -> None:
         pass
 
 
+def open_search(query: str) -> bool:
+    """Show Spotify's search results for `query` (opening Spotify if needed). False if Spotify isn't installed."""
+    from urllib.parse import quote
+    if not installed():
+        return False
+    if IS_MAC:
+        _mac_open_search(query)
+    elif IS_WIN:
+        os.startfile(f"spotify:search:{quote(query)}")  # type: ignore[attr-defined]
+    return True
+
+
 def _mac_open_search(query: str) -> None:
     from urllib.parse import quote
     subprocess.run(["open", f"spotify:search:{quote(query)}"], check=False)
