@@ -26,7 +26,12 @@ hdiutil detach "$MOUNT" >/dev/null
 APP="$APPS/Jervis.app"
 echo "installed to $APP ($(du -sh "$APP" | cut -f1))"
 
-codesign --verify --deep --strict "$APP" && echo "signature: consistent (ad-hoc)"
+codesign --verify --deep --strict "$APP" && echo "signature: valid"
+REQ="$(codesign -d -r- "$APP" 2>&1 | grep designated)"
+echo "designated requirement: $REQ"
+if [ -n "${JERVIS_MAC_IDENTITY:-}" ] && ! grep -q "certificate leaf" <<<"$REQ"; then
+  echo "FAIL: not signed with Jervis's certificate (permissions would be lost on every update)"; exit 1
+fi
 JERVIS_DATA_DIR="$WORK/selftest" "$APP/Contents/Resources/backend/jervis-backend" --selftest | grep '^SELFTEST' | grep -q '"ok": true' \
   && echo "engine self-test: passed"
 

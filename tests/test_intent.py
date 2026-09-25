@@ -230,3 +230,14 @@ def test_replies_claiming_actions_that_never_happened_are_caught(reply):
 ])
 def test_ordinary_answers_are_not_mistaken_for_claims(reply):
     assert not app._CLAIMS_ACTION.search(reply)
+
+
+def test_take_control_on_my_computer_and_play_goes_to_spotify(monkeypatch):
+    import time
+    from types import SimpleNamespace
+    import spotify_local
+    monkeypatch.setattr(app, "sp", None)
+    monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
+    result, actions = route("take contorl on my computer and play Jane! on spotify")
+    assert "spotify front" in actions
+    assert "permission to take control" not in str(result)

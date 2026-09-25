@@ -83,6 +83,28 @@ jobs:
 
       - run: npm ci
 
+      - name: Signing identity (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MAC_SIGNING_P12: ${{ secrets.MAC_SIGNING_P12 }}
+          MAC_SIGNING_PASSWORD: ${{ secrets.MAC_SIGNING_PASSWORD }}
+        run: |
+          # Every build signed with the same (self-made) certificate: macOS then keeps the permissions people gave
+          # Jervis (Accessibility, microphone) across updates. Without it, each build has a new ad-hoc signature.
+          if [ -z "$MAC_SIGNING_P12" ]; then echo "No signing certificate: ad-hoc signature."; exit 0; fi
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p ci "$KC"
+          security set-keychain-settings "$KC"
+          security unlock-keychain -p ci "$KC"
+          echo "$MAC_SIGNING_P12" | base64 --decode > "$RUNNER_TEMP/sign.p12"
+          security import "$RUNNER_TEMP/sign.p12" -k "$KC" -P "$MAC_SIGNING_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security find-certificate -c "Jervis Code Signing" -p "$KC" > "$RUNNER_TEMP/cert.pem"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cert.pem"
+          security find-identity -v -p codesigning "$KC"
+          echo "JERVIS_MAC_IDENTITY=Jervis Code Signing" >> "$GITHUB_ENV"
+
       - name: Build the installer
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

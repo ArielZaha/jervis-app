@@ -2790,7 +2790,7 @@ def fix_typos(text: str) -> str:
 # "Take control (of my computer) and …", said before something Jervis can do directly: the preamble adds nothing.
 _CONTROL_PREAMBLE = re.compile(
     r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis)[, ]+)?(?:please |can you |could you )*(?:take (?:the )?control"
-    r"(?: (?:over|of))?(?: (?:my|the) (?:computer|mac|pc|laptop|screen))?|use my (?:computer|mac|pc)|control my "
+    r"(?: (?:over|of|on))?(?: (?:my|the) (?:computer|mac|pc|laptop|screen))?|use my (?:computer|mac|pc)|control my "
     r"(?:computer|mac|pc))(?:,? (?:and|to|then))?\s+", re.I)
 _SPOTIFY_SEARCH = re.compile(
     r"^(?:(?:please|can you|could you|go ahead and) )*(?:search(?: for)?|look up|find|type(?: in)?(?: the search"
