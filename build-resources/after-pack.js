@@ -15,7 +15,7 @@ exports.default = async function afterPack(context) {
   execFileSync('codesign', ['--verify', '--deep', '--strict', app], { stdio: 'inherit' });
   const requirement = execFileSync('codesign', ['-d', '-r-', app], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   console.log(`  • signed with ${identity === '-' ? 'an ad-hoc signature' : identity}: ${requirement.trim().split('\n').pop()}`);
-  if (identity !== '-' && !/certificate leaf/.test(requirement)) {
+  if (identity !== '-' && !/certificate (leaf|root) = H/.test(requirement)) {
     throw new Error('The app was not signed with Jervis’s certificate, so macOS would drop permissions on update.');
   }
 };
