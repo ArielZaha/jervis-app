@@ -31,7 +31,7 @@ KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE = 0x1, 0x2, 0x4
 SW_RESTORE = 9
 
 # Titles of browser windows end with the browser's name; the tab title is the part before it.
-BROWSER_SUFFIXES = ("Google Chrome", "Microsoft​ Edge", "Microsoft Edge", "Brave", "Mozilla Firefox", "Opera", "Vivaldi")
+BROWSER_SUFFIXES = ("Google Chrome", "Microsoft Edge", "Brave", "Mozilla Firefox", "Opera", "Vivaldi")
 
 
 def _need_windows() -> None:

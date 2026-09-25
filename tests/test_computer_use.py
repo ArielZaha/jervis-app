@@ -269,6 +269,37 @@ def test_an_ai_that_cant_be_reached_ends_the_task_in_plain_words():
     assert task.state == "error"
 
 
+def test_typing_that_never_arrives_is_put_in_directly():
+    """Keys can get lost (a busy app, a remote desktop): the field is read back and filled in directly."""
+    screen = FakeScreen()
+    screen.type_text = lambda text: screen.actions.append(("lost", text)) or ""   # the keys go nowhere
+    screen.read_value = lambda element: screen.query
+    screen.set_value = lambda element, value: (setattr(screen, "query", value), screen.actions.append(("set", value)))[0] or ""
+    ComputerTask("x", screen, ai(("type_text", {"element": 1, "text": "minecraft"}), ("done", {"summary": "ok"}))).run()
+    assert ("set", "minecraft") in screen.actions and screen.query == "minecraft"
+
+
+def test_the_direct_fallback_never_cuts_a_long_document():
+    screen = FakeScreen()
+    long_text = "x" * 5000
+    doc = Element(1, "text area", "Document", long_text[:200], (10, 10, 600, 400), focused=True)
+    screen.observe = lambda: Observation(app="Editor", window="Doc", elements=[doc])
+    screen.type_text = lambda text: ""                      # the keys go nowhere
+    screen.read_value = lambda element: long_text
+    stored = {}
+    screen.set_value = lambda element, value: stored.setdefault("value", value) and ""
+    ComputerTask("x", screen, ai(("type_text", {"element": 1, "text": " end"}), ("done", {"summary": "ok"}))).run()
+    assert stored["value"] == long_text + " end"
+
+
+def test_typing_that_arrived_is_left_alone():
+    screen = FakeScreen()
+    screen.read_value = lambda element: screen.query
+    screen.set_value = lambda element, value: pytest.fail("set_value used although the typing arrived")
+    ComputerTask("x", screen, ai(("type_text", {"element": 1, "text": "minecraft"}), ("done", {"summary": "ok"}))).run()
+    assert screen.query == "minecraft"
+
+
 def test_stops_after_the_step_limit():
     screen = FakeScreen()
     scroll = screen.scroll

@@ -161,6 +161,14 @@ class Environment:
         """Put the typing cursor in this element. "" when it's there; otherwise why not (then nothing is typed)."""
         return self.press_element(element) or ""
 
+    def read_value(self, element: Element):
+        """The element's current text, read fresh, or None if it can't be read."""
+        return None
+
+    def set_value(self, element: Element, value: str) -> str:
+        """Put this text in the element directly (through accessibility, not keys). "" when done, else why not."""
+        return "not supported here"
+
 
 # ---------- the actions the AI may choose (the only things it can do) ----------
 def _tool(name, description, properties=None, required=()):
@@ -471,6 +479,20 @@ class ComputerTask:
         finally:
             del before
 
+    def _check_typed(self, element: Element, text: str, replacing: bool) -> str:
+        """Keys can get lost (a busy app, a remote desktop): read the field back, and if the text isn't there, put it
+        there directly. Returns "" or what went wrong."""
+        def plain(s):
+            return re.sub(r"[\s,.\u00a0]", "", s or "")
+        time.sleep(0.15)
+        now = self.env.read_value(element)
+        if now is None or plain(text) in plain(now):
+            return ""
+        wanted = text if replacing else now + text   # (now: the whole text; element.value is only its start)
+        problem = self.env.set_value(element, wanted)
+        self.log(f"Computer control: the typed text didn't arrive; set it directly ({problem or 'ok'}).")
+        return f"The typing didn't reach the field ({problem})." if problem else ""
+
     def _finish(self, state: str, message: str) -> str:
         self.result = message
         self._report(state, message)
@@ -650,11 +672,14 @@ class ComputerTask:
                     if problem:
                         return problem   # typing now would land somewhere else
                     time.sleep(0.1)
-                if element is not None and element.role in SINGLE_LINE_ROLES and element.value \
-                        and not action.get("append"):
+                replacing = bool(element is not None and element.role in SINGLE_LINE_ROLES and element.value
+                                 and not action.get("append"))
+                if replacing:
                     self.env.press_keys(list(self.env.select_all))   # replace the old value, don't add to it
                     time.sleep(0.05)
                 result = self.env.type_text(action["text"]) or ""
+                if element is not None and not element.password and not result:
+                    result = self._check_typed(element, action["text"], replacing)
                 if action.get("press_enter"):
                     time.sleep(0.1)
                     self.env.press_keys(["enter"])

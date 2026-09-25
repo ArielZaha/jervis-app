@@ -253,6 +253,18 @@ class MacScreen(computer_use.Environment):
         parent = _attr(focused, "AXParent")   # a combo box's text part is a child of the combo box
         return parent is not None and parent == element.handle
 
+    def read_value(self, element: Element):
+        if element.handle is None:
+            return None
+        value = _attr(element.handle, "AXValue")
+        return value if isinstance(value, str) else None
+
+    def set_value(self, element: Element, value: str) -> str:
+        if element.handle is None:
+            return "this field can't be filled in directly"
+        return "" if AX.AXUIElementSetAttributeValue(element.handle, "AXValue", value) == 0 else \
+            "this field can't be filled in directly"
+
     def focus_element(self, element: Element) -> str:
         self._bring_forward()
         if element.handle is not None:

@@ -108,3 +108,30 @@ def test_ai_question_during_setup_gets_a_clear_answer(backend):
                       lambda m: m.get("sender") == "ai", timeout=40))
     assert reply and reply["text"]
     assert "Traceback" not in reply["text"]
+
+
+def test_the_engine_stops_when_its_window_is_gone(tmp_path):
+    """If the window is ended without stopping the engine (Task Manager, a crash, an installer), the engine must not
+    keep running and listening with nothing on screen."""
+    window = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])   # stands in for the window
+    port = _free_port()
+    env = {**os.environ, "JERVIS_SUPERVISED": "1", "JERVIS_WS_PORT": str(port), "JERVIS_WS_TOKEN": TOKEN,
+           "JERVIS_DATA_DIR": str(tmp_path), "JERVIS_AUDIO": "off", "JERVIS_NO_AI_SETUP": "1", "GROQ_API_KEY": "",
+           "JERVIS_PARENT_PID": str(window.pid)}
+    engine = subprocess.Popen([sys.executable, os.path.join(ROOT, "app.py")], cwd=ROOT, env=env,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            with socket.socket() as s:
+                if s.connect_ex(("127.0.0.1", port)) == 0:
+                    break
+            time.sleep(0.3)
+        assert engine.poll() is None, "the engine didn't start"
+        window.kill()
+        window.wait()
+        engine.wait(timeout=15)   # raises if it keeps running
+    finally:
+        for process in (engine, window):
+            if process.poll() is None:
+                process.kill()

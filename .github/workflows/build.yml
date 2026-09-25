@@ -67,6 +67,14 @@ jobs:
           export JERVIS_DATA_DIR="$RUNNER_TEMP/selftest"
           ./backend-dist/jervis-backend/jervis-backend --selftest | grep '^SELFTEST'
 
+      - name: Offline speech in a folder with Hebrew letters (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:JERVIS_DATA_DIR = Join-Path $env:RUNNER_TEMP 'ג׳רוויס בדיקה'
+          ./backend-dist/jervis-backend/jervis-backend.exe --selftest --speech | Select-String '^SELFTEST'
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - uses: actions/setup-node@v5
         with:
           node-version: 20

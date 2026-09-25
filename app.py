@@ -594,6 +594,28 @@ def weather_loop():
         settings_changed.wait(timeout=delay)   # a new city in Settings refreshes the panel right away
 
 
+def tool_get_weather() -> str:
+    """The get_weather tool: a one-shot lookup for a spoken/typed weather question (weather_loop above only ever
+    pushes to the on-screen panel, so a direct question like "what's the weather" had no answer before this)."""
+    city = os.getenv("WEATHER_CITY", "").strip()
+    if not city:
+        return "No weather city is set. Tell the user to set one in Settings, General, Weather city."
+    try:
+        place = earth.geocode(city)
+        if not place:
+            return f"Could not find “{city}”. Tell the user to check the city spelling in Settings."
+        url = ("https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+               "&current=temperature_2m,weather_code").format(lat=place["lat"], lon=place["lon"])
+        current = requests.get(url, timeout=8).json().get("current") or {}
+        if "temperature_2m" not in current:
+            return "The weather service didn't return current conditions. Tell the user to try again shortly."
+        condition = WEATHER_CODES.get(current.get("weather_code"), "clear sky")
+        return f"It's currently {round(current['temperature_2m'])}°C and {condition.lower()} in {place['name']}."
+    except Exception as e:
+        print(f"Weather tool fetch failed: {e}")
+        return "The weather service could not be reached right now. Tell the user to try again shortly."
+
+
 def get_device_id():
     if not sp:
         return None
@@ -2409,6 +2431,7 @@ TOOL_FUNCTIONS = {
     "generate_image": tool_generate_image,
     "edit_image": tool_edit_image,
     "use_computer": tool_use_computer,
+    "get_weather": tool_get_weather,
 }
 
 TOOLS = [
@@ -2554,10 +2577,18 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "goal": {"type": "string", "description": "The task, in the user's words, e.g. 'turn on dark mode in Chrome settings'."}
+                    "goal": {"type": "string", "description": "The task, in the user's words, e.g. 'scroll down' or 'fill in this form'."}
                 },
                 "required": ["goal"],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the current weather for the city set in Settings. ONLY call when the user explicitly asks about the weather (e.g. 'what's the weather', 'is it raining', 'how hot is it outside').",
+            "parameters": {"type": "object", "properties": {}},
         },
     },
 ]
@@ -2565,11 +2596,13 @@ TOOLS = [
 SYSTEM_PROMPT = """You are Jervis, an AI desktop assistant.
 - NEVER execute tools unless the user explicitly commands an action (e.g., 'open application', 'play music').
 - If the user asks general questions or makes conversational statements like 'can you hear me' or 'hello', DO NOT call tools. Respond naturally in 1-2 sentences.
+- A statement that only mentions an app, website or topic in passing (e.g. "I installed Chrome yesterday") is not a request: reply to what the user actually said, and never bring up, offer, or describe an unrelated action, setting, or example from your own instructions.
 - NEVER search the web or open a browser unless the user explicitly says the word 'Google'. For example: 'Google the weather in Tel Aviv.'
 - Never say you opened, wrote, played or changed something unless a tool result confirmed it. If you cannot do something, say so plainly.
 - You cannot see the user's messages, emails or files. Never claim that they have, or don't have, any unread messages or new mail: say you can't check that. You cannot see their Google Calendar either (a separate feature checks it before you're ever asked) — if a calendar question reaches you, tell the user to say "check my calendar" or "open my calendar" instead of guessing what is on it.
 - Images: the user can attach photos, screenshots or other pictures, and you can create or edit images too. You cannot see an image yourself — only the image tools can. Use analyze_image to describe an attached image or answer a question about it, including a vague follow-up like "what's wrong with it" right after an image was shared (a system message will tell you when one is pending). Use extract_image_text to read text out of an image. Use compare_images once two or more images have been shared. Use generate_image only when explicitly asked to create/draw/make a picture of something, and edit_image only when explicitly asked to change an existing image (remove/add/replace something, change the background or style, etc). Never claim an image was generated, edited or analyzed unless a tool result actually confirmed it. If an image tool result explains what's missing or how to fix it (a setup step, an environment variable, a URL), repeat that specific detail back to the user instead of a vague "I can't do that" — they need to know exactly what to do next.
-- use_computer lets you work in an app on the user's screen with the mouse and keyboard. Call it only when the user explicitly asks you to do something on screen (for example "turn on dark mode in Chrome settings"). The user is asked for permission and can stop you at any time; say in one short sentence what you're starting, never that it's finished.
+- use_computer lets you work in an app on the user's screen with the mouse and keyboard. Call it only when the user explicitly asks you to do something on screen (for example "scroll down" or "fill in this form"). The user is asked for permission and can stop you at any time; say in one short sentence what you're starting, never that it's finished.
+- get_weather answers a direct weather question with the city set in Settings. Call it only when the user is actually asking about the weather.
 - After using a tool, give the user a short natural spoken confirmation.
 - Keep casual answers concise and natural, never emoji.
 - When you recommend a movie or series, always write its exact title in **bold**.
@@ -2849,10 +2882,23 @@ def is_app_command(text: str) -> bool:
     return parse_open_request(text) is not None
 
 
+def is_weather_command(text: str) -> bool:
+    """Only allow the weather tool for an explicit question, not a passing mention of the word (e.g. "I was
+    talking about the weather yesterday" must not trigger it)."""
+    normalized = " ".join((text or "").lower().strip().split())
+    return bool(
+        re.search(r"\b(what'?s|what is|how'?s|how is|check|tell me)\b.*\bweather\b", normalized)
+        or re.search(r"\bweather\b.*\b(like|today|now|outside|forecast)\b", normalized)
+        or re.search(r"\bis it (raining|snowing|sunny|cloudy|cold|hot|windy)\b", normalized)
+        or re.search(r"\b(temperature|forecast)\b.*\b(outside|today|now)\b", normalized)
+    )
+
+
 def should_enable_tools(text: str) -> bool:
     """Do not expose tools during ordinary conversation or incomplete phrases."""
     return (is_google_search_command(text) or is_music_command(text) or is_app_command(text) or is_youtube_command(text)
-            or images.is_image_command(text) or images.has_pending_context() or is_computer_request(text))
+            or images.is_image_command(text) or images.has_pending_context() or is_computer_request(text)
+            or is_weather_command(text))
 
 
 def diagnose_connection(host: str = "api.groq.com") -> str:
@@ -3159,6 +3205,8 @@ def ask_jervis(messages, user_text=""):
                 result = "Image editing was blocked because the user did not explicitly ask to edit the image. Respond without editing it."
             elif name == "use_computer" and not is_computer_request(user_text):
                 result = "Using the computer was blocked because the user did not ask for anything to be done on screen. Respond normally."
+            elif name == "get_weather" and not is_weather_command(user_text):
+                result = "The weather tool was blocked because the user did not explicitly ask about the weather. Respond normally."
             elif func:
                 if name == "play_song":
                     args["start_seconds"] = args.get("start_seconds") or parse_start_time(user_text)[0]
@@ -3648,6 +3696,33 @@ def main_loop():
         speak(spoken_version(reply))
 
 
+def watch_parent_window() -> None:
+    """The engine never outlives its window. If the window is ended without being able to stop the engine (Task
+    Manager, a crash, an installer ending it), the engine would otherwise keep listening with nothing on screen."""
+    try:
+        window = psutil.Process(int(os.getenv("JERVIS_PARENT_PID") or 0))
+    except (ValueError, psutil.Error):
+        return
+    while True:
+        time.sleep(2)
+        if not window.is_running():   # (also false if the id now belongs to another program)
+            print("Jervis's window is gone, so the engine is stopping too.", flush=True)
+            shutdown_now()
+
+
+def shutdown_now() -> None:
+    """Stop what Jervis started (a computer-control task, his local AI) and exit, from any thread."""
+    try:
+        if computer_task is not None:
+            computer_task.stop()
+        local_ai_manager.stop()
+    except Exception:
+        traceback.print_exc()
+    finally:
+        sys.stdout.flush()
+        os._exit(0)
+
+
 if __name__ == "__main__":
     if "--selftest" in sys.argv:   # an installed copy checking it has every part (see selftest.py)
         import selftest
@@ -3655,6 +3730,8 @@ if __name__ == "__main__":
     # The window stops the backend with SIGTERM: turn that into a normal exit, so cleanups (the local AI engine Jervis
     # started) run instead of leaving it behind.
     signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
+    if SUPERVISED and os.getenv("JERVIS_PARENT_PID"):
+        threading.Thread(target=watch_parent_window, daemon=True, name="parent-watch").start()
     ws_thread = threading.Thread(target=run_ws_server, daemon=True)
     ws_thread.start()
     ws_loop_ready.wait()

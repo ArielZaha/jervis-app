@@ -90,6 +90,25 @@ def run() -> int:
     except Exception as e:  # noqa: BLE001
         results["computer_control"] = f"not ready: {e}"
 
+    if "--speech" in sys.argv:   # also download the speech model and run it (needs the internet, ~150 MB)
+        def speech():
+            import io
+            import time
+            import wave
+            import paths
+            import stt_local
+            stt_local.ensure_model()
+            clip = io.BytesIO()
+            with wave.open(clip, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(16000)
+                w.writeframes(b"\0\0" * 16000)
+            started = time.time()
+            stt_local.transcribe(clip.getvalue())
+            return f"ok (model in {paths.models_dir()}, ran in {time.time() - started:.1f}s)"
+        ok = _check(results, "offline_speech", speech) and ok
+
     results["python"] = sys.version.split()[0]
     results["frozen"] = bool(getattr(sys, "frozen", False))
     print("SELFTEST " + json.dumps({"ok": ok, "checks": results}, ensure_ascii=False), flush=True)

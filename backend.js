@@ -92,6 +92,7 @@ class Backend {
     const env = {
       ...process.env,
       JERVIS_SUPERVISED: '1',
+      JERVIS_PARENT_PID: String(process.pid),   // the engine stops by itself if this window is gone
       JERVIS_WS_PORT: String(this.port),
       JERVIS_WS_TOKEN: this.token,
       PYTHONUNBUFFERED: '1',

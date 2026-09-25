@@ -138,6 +138,23 @@ class WindowsScreen(computer_use.Environment):
             return False
         return winctl.window_process_name(front) != winctl.window_process_name(target)   # a dialog of the same app is fine
 
+    def read_value(self, element: Element):
+        try:
+            pattern = element.handle.GetPattern(auto.PatternId.ValuePattern) if element.handle is not None else None
+            return None if pattern is None else (pattern.Value or "")
+        except Exception:
+            return None
+
+    def set_value(self, element: Element, value: str) -> str:
+        try:
+            pattern = element.handle.GetPattern(auto.PatternId.ValuePattern) if element.handle is not None else None
+            if pattern is None or pattern.IsReadOnly:
+                return "this field can't be filled in directly"
+            pattern.SetValue(value)
+            return ""
+        except Exception as e:
+            return f"{type(e).__name__}"
+
     def focus_element(self, element: Element) -> str:
         self._bring_forward()
         control = element.handle

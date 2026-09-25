@@ -43,5 +43,15 @@ sleep 1
 if pgrep -f "$ENGINE" >/dev/null; then echo "FAIL: the engine was left running after quitting"; exit 1; fi
 echo "quit: window and engine both stopped"
 
+# His window ended by force (a crash, Activity Monitor): the engine must not keep running on its own.
+: > "$LOG"
+"$APP/Contents/MacOS/Jervis" --hidden >> "$WORK/window.out" 2>&1 &
+PID=$!
+for _ in $(seq 1 120); do grep -q "listener is ready" "$LOG" 2>/dev/null && break; sleep 1; done
+kill -9 "$PID"
+for i in $(seq 1 15); do pgrep -f "$ENGINE" >/dev/null || break; sleep 1; done
+if pgrep -f "$ENGINE" >/dev/null; then echo "FAIL: the engine kept running after its window was ended"; exit 1; fi
+echo "window ended by force: the engine stopped by itself within ${i}s"
+
 rm -rf "$WORK"
 echo "PASS"

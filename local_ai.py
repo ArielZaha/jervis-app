@@ -213,7 +213,9 @@ class LocalAI:
             return
         binary = self._managed_binary() or self._download_engine()
         self._step("engine", "active", "Starting the AI engine…")
-        self._start_serve(binary, models_dir=paths.data_dir("models", "ollama"))
+        ollama_models = os.path.join(paths.models_dir(), "ollama")
+        os.makedirs(ollama_models, exist_ok=True)
+        self._start_serve(binary, models_dir=ollama_models)
         self._step("engine", "done", "AI engine running.")
 
     def _use(self, url: str) -> None:

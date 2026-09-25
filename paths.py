@@ -74,5 +74,23 @@ def logs_dir() -> str:
 
 
 def models_dir() -> str:
-    """Downloaded AI models (speech recognition, and the local AI when Jervis runs it himself)."""
-    return data_dir("models")
+    """Downloaded AI models (speech recognition, and the local AI when Jervis runs it himself).
+
+    On Windows the speech engine opens its model files with narrow (ANSI) paths, which break when the user's folder
+    has letters outside English, e.g. a Hebrew user name. There the models go to an ASCII-only path instead: the
+    folder's short 8.3 name if Windows has one, else a folder under ProgramData."""
+    folder = data_dir("models")
+    if os.name != "nt" or folder.isascii():
+        return folder
+    try:
+        import ctypes
+        buffer = ctypes.create_unicode_buffer(1024)
+        if ctypes.windll.kernel32.GetShortPathNameW(folder, buffer, 1024) and buffer.value.isascii():
+            return buffer.value
+    except (AttributeError, OSError):
+        pass
+    import hashlib
+    who = hashlib.sha1(DATA_DIR.encode("utf-8")).hexdigest()[:10]
+    fallback = os.path.join(os.environ.get("PROGRAMDATA") or "C:\\ProgramData", "Jervis", who, "models")
+    os.makedirs(fallback, exist_ok=True)
+    return fallback

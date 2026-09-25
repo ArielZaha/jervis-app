@@ -73,6 +73,7 @@
       "oneClick": true,
       "perMachine": false,
       "allowElevation": false,
+      "include": "build-resources/installer.nsh",
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "Jervis",
