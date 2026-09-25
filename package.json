@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "electron": "^32.0.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^26.15.3"
   },
   "build": {
     "appId": "io.github.arielzaha.jervis",
@@ -56,6 +56,9 @@
       }
     ],
     "asar": true,
+    "toolsets": {
+      "nsis": "1.2.1"
+    },
     "afterPack": "build-resources/after-pack.js",
     "win": {
       "target": [

@@ -10,6 +10,10 @@ DATA="$HOME/Library/Application Support/Jervis"
 LOG="$DATA/logs/jervis.log"
 ENGINE="Jervis.app/Contents/Resources/backend/jervis-backend"
 
+# Whatever happens, leave nothing running and nothing mounted.
+cleanup() { pkill -f "$APPS/Jervis.app/Contents/MacOS/Jervis" 2>/dev/null || true; hdiutil detach "$MOUNT" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
 hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MOUNT" >/dev/null
 cp -R "$MOUNT/Jervis.app" "$APPS/"
 hdiutil detach "$MOUNT" >/dev/null
@@ -22,6 +26,7 @@ JERVIS_DATA_DIR="$WORK/selftest" "$APP/Contents/Resources/backend/jervis-backend
 
 # Start the app the way a user would (hidden in the tray, as at sign-in), without the microphone or the AI download.
 export JERVIS_NO_AI_SETUP=1 JERVIS_AUDIO=off
+rm -f "$LOG"   # a log left by an earlier run must not count as this start
 : > "$WORK/window.out"
 START=$(date +%s)
 "$APP/Contents/MacOS/Jervis" --hidden >> "$WORK/window.out" 2>&1 &
