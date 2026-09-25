@@ -249,6 +249,7 @@ def test_take_control_and_spotify_is_done_visibly_step_by_step(said, monkeypatch
         if app.computer_task is not None and app.computer_task.state in ("completed", "error", "stopped"):
             break
         time.sleep(0.02)
+    actions = list(sandbox.actions)   # the task runs on its own thread: read what it did once it's finished
     typed = [a for a in actions if a.startswith("spotify type ")]
     assert "spotify front" in actions and "spotify keys cmd+k" in actions
     assert "".join(a[len("spotify type "):] for a in typed) == "Jane!" and len(typed) == 5   # letter by letter

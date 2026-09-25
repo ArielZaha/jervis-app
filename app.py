@@ -2809,6 +2809,9 @@ _SPOTIFY_SEARCH = re.compile(
     r"^(?:(?:please|can you|could you|go ahead and) )*(?:search(?: for)?|look up|find|type(?: in)?(?: the search"
     r"(?: bar| box)?)?(?: for)?)\s+(?P<query>.+?)\s+(?:in|on|with)\s+(?:the\s+)?spotify(?: search(?: bar| box)?)?"
     r"(?: app)?[.!?]*$", re.I)
+_SPOTIFY_PLAY = re.compile(
+    r"^(?:(?:please|can you|could you|go ahead and) )*(?:play|put on|start|listen to)\s+(?P<query>.+?)\s+"
+    r"(?:on|in|with|using|from)\s+(?:the\s+)?spotify(?: app)?[.!?]*$", re.I)
 _PLAY_IT = re.compile(r"^(?:yes|yeah|yep|sure|ok|okay)?[, ]*(?:please )?(?:play (?:it|that|this|the first one|the song)"
                       r"|start it|yes|yeah|yep|sure|go ahead)(?: please)?[.!]*$", re.I)
 
@@ -2823,9 +2826,9 @@ def handle_spotify_search(text: str):
     rest = _CONTROL_PREAMBLE.sub("", (text or "").strip(), count=1)
     if rest != (text or "").strip() and re.search(r"\bspotify\b", rest, re.I):
         # "Take control … and play X on Spotify": you asked to see it done, so it's done visibly, step by step.
-        play = parse_spotify_request(rest)
+        play = _SPOTIFY_PLAY.match(rest)          # (keeps the request exactly as written: "Jane!", not "jane")
         search = _SPOTIFY_SEARCH.match(rest)
-        wanted = play[0] if play else (search.group("query") if search else "")
+        wanted = (play or search).group("query") if (play or search) else ""
         wanted = spotify_local.clean_query(re.sub(r"\b(?:the )?(?:song|track|album|artist|playlist)\s+", "", wanted,
                                                   flags=re.I))
         if wanted:
