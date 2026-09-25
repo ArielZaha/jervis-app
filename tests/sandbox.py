@@ -125,6 +125,12 @@ def install() -> None:
     for method in ("get", "post", "put", "delete", "head"):
         setattr(requests, method, _fake_http(method))
     requests.Session.request = lambda self, method, url, *a, **k: _fake_http(method.lower())(url)
+    # Windows key presses, clicks and window switching go straight to the system, not through subprocess
+    import winctl
+    if winctl.IS_WIN:
+        _saved[0].extend((winctl, n, getattr(winctl, n)) for n in ("_send", "focus"))
+        winctl._send = lambda events, strict=False: actions.append(f"input {len(events)} events")
+        winctl.focus = lambda hwnd: actions.append(f"focus window {hwnd}") or True
 
 
 def uninstall() -> None:

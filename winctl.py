@@ -40,19 +40,36 @@ def _need_windows() -> None:
 
 
 # ---------- keyboard ----------
-def _key_event(vk: int, up: bool) -> None:
+class InputRefused(OSError):
+    """Windows didn't take the key presses or clicks: the screen is locked, or the window in front runs as
+    administrator while Jervis doesn't (Windows then protects it from other programs' input)."""
+
+
+def _send(events: list, strict: bool = False) -> None:
+    """Hand input events to Windows. strict: raise InputRefused if Windows didn't take them all (computer control
+    must know; the older voice commands carry on as they always did)."""
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    array = (_INPUT * len(events))(*events)
+    sent = user32.SendInput(len(events), array, ctypes.sizeof(_INPUT))
+    if strict and sent != len(events):
+        raise InputRefused(f"Windows took {sent} of {len(events)} input events (error {ctypes.get_last_error()}).")
+
+
+def _key_event(vk: int, up: bool, strict: bool = False) -> None:
     flags = (KEYEVENTF_EXTENDEDKEY if vk in _EXTENDED else 0) | (KEYEVENTF_KEYUP if up else 0)
-    ctypes.windll.user32.keybd_event(vk, 0, flags, 0)
+    _send([_INPUT(type=1, ki=_KEYBDINPUT(vk, 0, flags, 0, 0))], strict)
 
 
-def press(*names: str) -> None:
+def press(*names: str, strict: bool = False) -> None:
     """Press keys together, e.g. press("ctrl", "l") or press("space")."""
     _need_windows()
     codes = [VK[n] for n in names]
-    for code in codes:
-        _key_event(code, False)
-    for code in reversed(codes):
-        _key_event(code, True)
+    try:
+        for code in codes:
+            _key_event(code, False, strict)
+    finally:
+        for code in reversed(codes):   # always let go, so no key is left held down
+            _key_event(code, True)
     time.sleep(0.03)
 
 
@@ -78,7 +95,7 @@ class _INPUT(ctypes.Structure):
     _fields_ = [("type", wintypes.DWORD), ("u", _U)]
 
 
-def type_text(text: str) -> None:
+def type_text(text: str, strict: bool = False) -> None:
     """Type text into the focused window, any language (sends Unicode characters, not key codes)."""
     _need_windows()
     events = []
@@ -89,8 +106,7 @@ def type_text(text: str) -> None:
             for flags in (KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP):
                 events.append(_INPUT(type=1, ki=_KEYBDINPUT(0, unit, flags, 0, 0)))
     if events:
-        array = (_INPUT * len(events))(*events)
-        ctypes.windll.user32.SendInput(len(events), array, ctypes.sizeof(_INPUT))
+        _send(events, strict)
     time.sleep(0.05)
 
 
@@ -112,8 +128,7 @@ def make_dpi_aware() -> None:
 
 
 def _mouse(flags: int, data: int = 0) -> None:
-    event = _INPUT(type=0, mi=_MOUSEINPUT(0, 0, data, flags, 0, 0))
-    ctypes.windll.user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(_INPUT))
+    _send([_INPUT(type=0, mi=_MOUSEINPUT(0, 0, data, flags, 0, 0))], strict=True)   # only computer control clicks
 
 
 def click(x: int, y: int, button: str = "left", double: bool = False) -> None:
@@ -164,6 +179,15 @@ def window_process_name(hwnd: int) -> str:
 def foreground_window() -> int:
     _need_windows()
     return ctypes.windll.user32.GetForegroundWindow()
+
+
+def window_title(hwnd: int) -> str:
+    _need_windows()
+    user32 = ctypes.windll.user32
+    length = user32.GetWindowTextLengthW(hwnd)
+    buffer = ctypes.create_unicode_buffer(length + 1)
+    user32.GetWindowTextW(hwnd, buffer, length + 1)
+    return buffer.value
 
 
 # ---------- windows ----------

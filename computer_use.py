@@ -305,6 +305,10 @@ class AIError(Exception):
     """The AI couldn't be asked what to do next. The message is for the user."""
 
 
+class InputBlocked(Exception):
+    """The system refused the key presses or clicks, so no step can work."""
+
+
 class ComputerTask:
     """One goal, carried out step by step on its own thread. Drive it with pause(), resume(), stop()."""
 
@@ -441,7 +445,12 @@ class ComputerTask:
                     continue
                 description = self._describe(action, element)
                 self._report("acting", description[0].upper() + description[1:])
-                outcome = self._execute(action, element, observation)
+                try:
+                    outcome = self._execute(action, element, observation)
+                except InputBlocked:
+                    return self._finish("error", "Windows is blocking my key presses and clicks: the screen may be "
+                                                 "locked, or the app in front runs as administrator. You have control "
+                                                 "again.")
                 after = self._settle(observation)
                 last_change = f"{outcome} {describe_change(observation, after)}".strip()
                 self.history.append((description, last_change))
@@ -675,5 +684,7 @@ class ComputerTask:
                 return self.env.click(point) or ""
         except Exception as e:   # one failed step is reported back to the AI, it never ends Jervis
             self.log(f"Computer control action failed: {type(e).__name__}: {e}")
+            if type(e).__name__ == "InputRefused":   # nothing more can work: see winctl.InputRefused
+                raise InputBlocked() from e
             return f"That action failed ({type(e).__name__}: {str(e)[:120]})."
         return ""

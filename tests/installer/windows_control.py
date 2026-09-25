@@ -47,6 +47,18 @@ def main() -> int:
         print(f"in front: {observation.app!r} / {observation.window!r}, {len(observation.elements)} elements")
         for element in observation.elements[:25]:
             print("  ", element.describe())
+        front = winctl.foreground_window()
+        print(f"foreground before: {winctl.window_process_name(front)!r} {winctl.window_title(front)!r}")
+        typing = env.type_text
+
+        def type_and_report(text):   # what Windows thinks is in front and held down, right before the keys go
+            import ctypes
+            held = {name: bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
+                    for name, vk in (("win", 0x5B), ("rwin", 0x5C), ("shift", 0x10), ("ctrl", 0x11), ("alt", 0x12))}
+            now = winctl.foreground_window()
+            print(f"typing into: {winctl.window_process_name(now)!r} {winctl.window_title(now)!r}; held: {held}")
+            return typing(text)
+        env.type_text = type_and_report
         target = next((e for e in observation.elements if e.role in EDITABLE), None)
         if target is None:
             print("FAIL: no text area found in Notepad")

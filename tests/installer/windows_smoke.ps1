@@ -7,10 +7,16 @@ param([Parameter(Mandatory = $true)][string]$Installer)
 $ErrorActionPreference = 'Stop'
 function Fail($message) { Write-Host "FAIL: $message"; exit 1 }
 
+function Show-Crashes {
+  # Which program and module crashed, from Windows' own crash records (Application Error / Windows Error Reporting)
+  Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = 1000, 1001; StartTime = (Get-Date).AddMinutes(-15) } `
+    -ErrorAction SilentlyContinue | Select-Object -First 4 | ForEach-Object { Write-Host "---- event $($_.Id)"; Write-Host $_.Message }
+}
+
 function Install-Jervis($what) {
   $started = Get-Date
   $p = Start-Process -FilePath $Installer -ArgumentList '/S' -PassThru -Wait
-  if ($p.ExitCode -ne 0) { Fail "the installer exited with $($p.ExitCode) ($what)" }
+  if ($p.ExitCode -ne 0) { Show-Crashes; Fail "the installer exited with $($p.ExitCode) ($what)" }
   Write-Host "$what in $([int]((Get-Date) - $started).TotalSeconds)s"
 }
 

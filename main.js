@@ -184,7 +184,9 @@ function stepAside() {
 function stepAsideNow() {
   if (!win) return;
   log('Computer control: the window stepped aside.');
-  if (process.platform === 'darwin') app.hide(); else win.minimize();   // the app that was in front comes back
+  // Only this window: app.hide() on a Mac would hide the overlay too. Before each click or key press the engine puts
+  // the app being worked in first (screen_mac.py / screen_windows.py).
+  if (process.platform === 'darwin') win.hide(); else win.minimize();
 }
 
 function setControlState(data) {
@@ -192,7 +194,11 @@ function setControlState(data) {
   clearTimeout(hideOverlayTimer);
   if (controlActive()) {
     if (!overlay) createOverlay();
-    if (!overlay.isVisible()) { overlay.showInactive(); log('Computer control: overlay shown.'); }
+    if (!overlay.isVisible()) {
+      overlay.setBounds(screen.getPrimaryDisplay().workArea);   // the display may have changed since last time
+      overlay.showInactive();
+      log('Computer control: overlay shown.');
+    }
     if (!globalShortcut.isRegistered(STOP_ACCELERATOR)) {
       const ok = globalShortcut.register(STOP_ACCELERATOR, () => relayControl('control_command', { action: 'stop' }));
       if (!ok) log(`Could not register the ${STOP_LABEL} stop shortcut (another app has it).`);

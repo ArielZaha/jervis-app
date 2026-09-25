@@ -190,7 +190,7 @@ class WindowsScreen(computer_use.Environment):
 
     def type_text(self, text: str) -> str:
         self._bring_forward()
-        winctl.type_text(text)
+        winctl.type_text(text, strict=True)
         return ""
 
     def press_keys(self, keys: list) -> str:
@@ -201,7 +201,7 @@ class WindowsScreen(computer_use.Environment):
                 return f"Unknown key “{key}”."
             names.append(key)
         self._bring_forward()
-        winctl.press(*names)
+        winctl.press(*names, strict=True)
         return ""
 
     def scroll(self, amount: int, point=None) -> str:

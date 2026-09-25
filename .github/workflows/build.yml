@@ -79,6 +79,12 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder ${{ matrix.platform }} --publish never
 
+      - name: Installer reliability (Windows, diagnostic)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: ./tests/installer/windows_stress.ps1 -Installer "release/Jervis Setup.exe" -Rounds 6
+
       - name: Fresh install test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
