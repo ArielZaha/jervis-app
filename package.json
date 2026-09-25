@@ -3,7 +3,7 @@
   "productName": "Jervis",
   "version": "1.0.1",
   "description": "Jervis, a voice assistant that runs on your own computer",
-  "author": "Ariel & Shalev",
+  "author": "Ariel and Shalev",
   "homepage": "https://arielzaha.github.io/jervis/",
   "license": "UNLICENSED",
   "private": true,
@@ -22,7 +22,7 @@
   "build": {
     "appId": "io.github.arielzaha.jervis",
     "productName": "Jervis",
-    "copyright": "© 2026 Ariel & Shalev",
+    "copyright": "© 2026 Ariel and Shalev",
     "directories": {
       "output": "release",
       "buildResources": "build-resources"

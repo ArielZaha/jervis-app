@@ -82,7 +82,13 @@ class _Tee:
         if self._stream is not None:
             try:
                 self._stream.write(text)
-            except (OSError, ValueError, UnicodeEncodeError):
+            except UnicodeEncodeError:   # a console that can't show some letters (e.g. Hebrew): escape them
+                encoding = getattr(self._stream, "encoding", None) or "ascii"
+                try:
+                    self._stream.write(text.encode(encoding, "backslashreplace").decode(encoding))
+                except (OSError, ValueError, LookupError, UnicodeError):
+                    pass
+            except (OSError, ValueError):
                 pass
         self._buffer += text
         if "\n" in self._buffer:

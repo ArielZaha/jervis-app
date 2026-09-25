@@ -111,7 +111,7 @@ def run() -> int:
 
     results["python"] = sys.version.split()[0]
     results["frozen"] = bool(getattr(sys, "frozen", False))
-    print("SELFTEST " + json.dumps({"ok": ok, "checks": results}, ensure_ascii=False), flush=True)
+    print("SELFTEST " + json.dumps({"ok": ok, "checks": results}), flush=True)   # ASCII: any console can show it
     return 0 if ok else 1
 
 

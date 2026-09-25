@@ -72,8 +72,9 @@ jobs:
         shell: pwsh
         run: |
           $env:JERVIS_DATA_DIR = Join-Path $env:RUNNER_TEMP 'ג׳רוויס בדיקה'
-          ./backend-dist/jervis-backend/jervis-backend.exe --selftest --speech | Select-String '^SELFTEST'
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $report = ./backend-dist/jervis-backend/jervis-backend.exe --selftest --speech | Select-String '^SELFTEST'
+          Write-Host $report
+          if ($LASTEXITCODE -ne 0 -or -not ("$report" -match '"offline_speech": "ok')) { exit 1 }
 
       - uses: actions/setup-node@v5
         with:
