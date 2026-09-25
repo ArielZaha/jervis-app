@@ -141,3 +141,48 @@ def test_spotify_without_keys_uses_the_spotify_app(monkeypatch):
     if sys.platform == "darwin":
         assert "spotify type my favorite songs" in actions
         assert "spotify keys shift+enter" in actions
+
+
+@pytest.mark.parametrize("said", ["Wake up Jervis", "Hey Jervis", "Hello Jervis", "hello jarvis", "hey jarvis can you hear me"])
+def test_wake_phrases(said):
+    assert app.is_wake_command(said)
+
+
+@pytest.mark.parametrize("said", ["hello", "hi there", "hey", "this is a hint", "I said hello to my brother"])
+def test_greetings_without_his_name_dont_wake_him(said):
+    assert not app.is_wake_command(said)
+
+
+def test_closing_the_window_puts_him_to_sleep_and_the_wake_phrase_greets():
+    app.awake = True
+    app.set_window_visible(False)
+    assert app.awake is False and app.window_visible is False
+    app.set_window_visible(True)
+    assert app.AWAKE_GREETING == "I'm awake, how can I help you?"
+
+
+def test_with_the_window_closed_only_his_name_opens_it_and_he_greets(monkeypatch):
+    """Jervis's real listening loop, with the microphone replaced by what was said."""
+    said = iter(["some chatter about dinner", "hello", "Hey Jervis"])
+
+    class Done(Exception):
+        pass
+
+    def heard(passive=False):
+        try:
+            return next(said)
+        except StopIteration:
+            raise Done
+    spoken, opened = [], []
+    monkeypatch.setattr(app, "listen", heard)
+    monkeypatch.setattr(app, "speak", spoken.append)
+    monkeypatch.setattr(app, "broadcast", lambda *a, **k: None)
+    monkeypatch.setattr(app, "send_status", lambda status: None)
+    monkeypatch.setattr(app, "show_fullscreen", lambda: opened.append(True))
+    monkeypatch.delenv("JERVIS_WAKE_WORD", raising=False)
+    app.awake = True
+    app.set_window_visible(False)   # the window was closed: he's asleep, listening for his name
+    with pytest.raises(Done):
+        app.main_loop()
+    assert spoken == ["I'm awake, how can I help you?"]
+    assert opened == [True]

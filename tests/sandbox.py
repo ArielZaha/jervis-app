@@ -129,7 +129,7 @@ def install() -> None:
     import spotify_local
     _saved[0].extend((spotify_local, n, getattr(spotify_local, n))
                      for n in ("_mac_bring_forward", "_win_bring_forward", "_mac_keys", "_mac_type", "_osa", "running",
-                               "installed", "_mac_can_press_keys"))
+                               "installed", "_mac_can_press_keys", "_mac_ask_for_accessibility"))
     spotify_local._mac_bring_forward = spotify_local._win_bring_forward = lambda: actions.append("spotify front") or True
     spotify_local._mac_keys = lambda *keys: actions.append("spotify keys " + "+".join(keys))
     spotify_local._mac_type = lambda text: actions.append(f"spotify type {text}")
@@ -137,6 +137,7 @@ def install() -> None:
     spotify_local.running = lambda: False
     spotify_local.installed = lambda: True
     spotify_local._mac_can_press_keys = lambda: True
+    spotify_local._mac_ask_for_accessibility = lambda: actions.append("ask for accessibility")
     # Windows key presses, clicks and window switching go straight to the system, not through subprocess
     import winctl
     if winctl.IS_WIN:

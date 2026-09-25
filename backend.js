@@ -87,12 +87,20 @@ class Backend {
     this.spawn();
   }
 
+  // Opened by "Hey Jervis" (wake/jervis_wake.py): only the first engine greets, not one restarted later.
+  consumeWakeGreeting() {
+    const woken = process.env.JERVIS_WOKEN_BY_VOICE === '1';
+    delete process.env.JERVIS_WOKEN_BY_VOICE;
+    return woken ? '1' : '';
+  }
+
   spawn() {
     const { file, args, cwd } = this.command();
     const env = {
       ...process.env,
       JERVIS_SUPERVISED: '1',
       JERVIS_PARENT_PID: String(process.pid),   // the engine stops by itself if this window is gone
+      JERVIS_WOKEN_BY_VOICE: this.consumeWakeGreeting(),
       JERVIS_WS_PORT: String(this.port),
       JERVIS_WS_TOKEN: this.token,
       PYTHONUNBUFFERED: '1',

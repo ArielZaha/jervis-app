@@ -155,7 +155,12 @@ mic_muted = threading.Event()
 # Wake-word state: Jervis stays passively listening (only checking for the
 # wake phrase) until woken, then behaves exactly as before until a shutdown
 # phrase puts it back to sleep instead of exiting the process.
-WAKE_PHRASES = ["hi", "hello", "wake up jervis", "wake up jarvis", "hey jervis", "ok jervis", "okay jervis"]
+# Only his name wakes him: a bare "hi" or "hello" said in the room would open his window at random, now that he keeps
+# listening with the window closed. Speech recognition often writes "Jarvis", so both spellings count.
+WAKE_PHRASES = [f"{greeting} {name}" for name in ("jervis", "jarvis")
+                for greeting in ("wake up", "hey", "hello", "hi", "ok", "okay")]
+AWAKE_GREETING = "I'm awake, how can I help you?"
+window_visible = True   # the window tells us when it's closed (hidden) or shown again
 awake = False
 ui_launched = False
 youtube_active = False  # True once Jervis started a YouTube video; routes pause/resume there.
@@ -467,6 +472,8 @@ async def handle_client(websocket):
                                            "me how.")
             elif data.get("type") == "setup_retry":
                 local_ai_manager.start_background()
+            elif data.get("type") == "window_visibility":
+                set_window_visible(data.get("visible") is not False)
             elif data.get("type") == "control_answer":
                 answer_control_question(str(data.get("id", "")), data.get("allow") is True)
             elif data.get("type") == "control_command" and computer_task is not None:
@@ -3643,6 +3650,8 @@ def main_loop():
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     chat_history = messages
     print("Jervis background listener is ready. Say 'Wake Up Jervis'.")
+    if os.environ.pop("JERVIS_WOKEN_BY_VOICE", "") == "1":   # opened by Jervis Wake (wake/): greet right away
+        greet_after_voice_launch()
 
     while True:
         while not announcements.empty():  # timers that finished: say so, awake or asleep
@@ -3673,9 +3682,8 @@ def main_loop():
                 if text and is_wake_command(text):
                     awake = True
                     show_fullscreen()
-                    welcome = "I'm awake. How can I help?"
-                    broadcast("ai", welcome)
-                    speak(welcome)
+                    broadcast("ai", AWAKE_GREETING)
+                    speak(AWAKE_GREETING)
                 continue
 
             text = listen()
@@ -3687,8 +3695,9 @@ def main_loop():
         if not typed:
             text = fix_names(text) or text  # "Streamio", "Stream here" -> "stremio", etc.
             if is_explicit_wake(text):  # "Hey Jervis" while already awake: bring the window up, full screen
+                reopened = not window_visible
                 show_fullscreen()
-                here = "I'm here."
+                here = AWAKE_GREETING if reopened else "I'm here."
                 broadcast("ai", here)
                 speak(here)
                 continue
@@ -3729,6 +3738,28 @@ def main_loop():
         messages.append({"role": "assistant", "content": reply})
         broadcast("ai", reply)
         speak(spoken_version(reply))
+
+
+def greet_after_voice_launch() -> None:
+    """Jervis was opened by saying "Hey Jervis" while he was closed (see wake/jervis_wake.py): once his window is up,
+    show it and answer, then listen for the command right away."""
+    global awake
+    awake = True
+    deadline = time.time() + 25
+    while not connected_clients and time.time() < deadline:   # the window starts alongside the engine
+        time.sleep(0.2)
+    show_fullscreen()
+    broadcast("ai", AWAKE_GREETING)
+    speak(AWAKE_GREETING)
+
+
+def set_window_visible(visible: bool) -> None:
+    """Closing the window puts Jervis back to sleep: he keeps listening, and the wake phrase opens him again. (Not
+    while he's using the computer: then his window only steps aside.)"""
+    global window_visible, awake
+    window_visible = visible
+    if not visible and not control_active():
+        awake = False
 
 
 def watch_parent_window() -> None:

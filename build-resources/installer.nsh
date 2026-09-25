@@ -28,6 +28,14 @@
   ${Loop}
 !macroend
 
+; Uninstalling also removes starting at sign-in (main.js writes it as "Jervis"), so Windows doesn't keep trying to start
+; a Jervis that is gone. Not when an update runs this uninstaller: the new version keeps the user's choice.
+!macro customUnInstall
+  ${ifNot} ${isUpdated}
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Jervis"
+  ${endIf}
+!macroend
+
 !macro customCheckAppRunning
   ${Do}
     !insertmacro _JERVIS_RUNNING $R0

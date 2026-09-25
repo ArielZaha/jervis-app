@@ -330,6 +330,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('controlDeny').addEventListener('click', () => answerControl(false));
   controlLayer.addEventListener('keydown', (e) => { if (e.key === 'Escape') answerControl(false); });
   ipcRenderer.on('control-relay', (_event, message) => window.jervisSend(message));
+  // Whether the window is open or closed (hidden in the tray), for the engine: see set_window_visible in app.py.
+  let windowVisible = true;
+  ipcRenderer.on('window-visibility', (_event, visible) => {
+    windowVisible = Boolean(visible);
+    window.jervisSend({ type: 'window_visibility', visible: windowVisible });
+  });
+  window.addEventListener('jervis-connected', () => window.jervisSend({ type: 'window_visibility', visible: windowVisible }));
   window.addEventListener('jervis-message', (event) => {
     const data = event.detail || {};
     if (data.type === 'control' && data.data) {

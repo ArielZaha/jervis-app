@@ -77,6 +77,9 @@ function Quit-Jervis($when) {
 }
 
 Start-Jervis 'fresh install'
+$run = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue).Jervis
+if (-not $run -or $run -notmatch '--hidden') { Fail "Jervis isn't set to start (hidden) when you sign in: '$run'" }
+Write-Host "starts at sign-in, hidden: $run"
 Quit-Jervis 'fresh install'
 
 # An update while he runs: the installer closes him (window and engine) by itself and replaces his files.
@@ -117,5 +120,6 @@ for ($i = 0; $i -lt 30; $i++) { if (-not (Test-Path $exe.FullName)) { break }; S
 if (Test-Path $exe.FullName) { Fail 'Jervis.exe is still there after uninstalling' }
 if (Jervis-Running) { Fail 'Jervis is still running after uninstalling' }
 foreach ($shortcut in @($desktop, $startMenu)) { if (Test-Path $shortcut) { Fail "shortcut left behind: $shortcut" } }
+if ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue).Jervis) { Fail 'the sign-in entry was left behind' }
 Write-Host 'uninstall (while running): app and shortcuts removed, Jervis closed (settings and history are kept in %APPDATA%\Jervis)'
 Write-Host 'PASS'

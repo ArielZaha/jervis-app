@@ -11,7 +11,13 @@ LOG="$DATA/logs/jervis.log"
 ENGINE="Jervis.app/Contents/Resources/backend/jervis-backend"
 
 # Whatever happens, leave nothing running and nothing mounted.
-cleanup() { pkill -f "$APPS/Jervis.app/Contents/MacOS/Jervis" 2>/dev/null || true; hdiutil detach "$MOUNT" >/dev/null 2>&1 || true; }
+cleanup() {
+  pkill -f "$APPS/Jervis.app/Contents/MacOS/Jervis" 2>/dev/null || true
+  hdiutil detach "$MOUNT" >/dev/null 2>&1 || true
+  # the sign-in agent this test's copy wrote points at a temporary folder
+  grep -qs "$WORK" "$HOME/Library/LaunchAgents/io.github.arielzaha.jervis.plist" && rm -f "$HOME/Library/LaunchAgents/io.github.arielzaha.jervis.plist"
+  true
+}
 trap cleanup EXIT
 
 hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MOUNT" >/dev/null
@@ -39,6 +45,9 @@ if ! grep -q "listener is ready" "$LOG" 2>/dev/null; then
   echo "FAIL: the engine did not start"; cat "$WORK/window.out"; tail -40 "$LOG" 2>/dev/null || true; exit 1
 fi
 echo "engine started in $(( $(date +%s) - START ))s"
+AGENT="$HOME/Library/LaunchAgents/io.github.arielzaha.jervis.plist"
+grep -q -- "--hidden" "$AGENT" 2>/dev/null || { echo "FAIL: not set to start (hidden) at sign-in"; exit 1; }
+echo "starts at sign-in, hidden: $AGENT"
 pgrep -f "$ENGINE" >/dev/null || { echo "FAIL: engine process missing"; exit 1; }
 
 "$APP/Contents/MacOS/Jervis" --quit
@@ -59,4 +68,5 @@ if pgrep -f "$ENGINE" >/dev/null; then echo "FAIL: the engine kept running after
 echo "window ended by force: the engine stopped by itself within ${i}s"
 
 rm -rf "$WORK"
+rm -f "$AGENT"   # it points at this test's temporary copy
 echo "PASS"

@@ -37,6 +37,8 @@ function showWindow() {
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show();
+  // Started in the background (at sign-in, or by "Hey Jervis"), Jervis isn't the active app: take the front.
+  if (process.platform === 'darwin') app.focus({ steal: true });
   win.focus();
 }
 
@@ -61,6 +63,7 @@ function createWindow() {
     minHeight: 560,
     backgroundColor: '#05070d',
     title: 'Jervis',
+    show: !process.argv.includes('--hidden'),   // started at sign-in: no window flashing up
     icon: path.join(__dirname, 'assets', 'icon.png'),
     // On macOS the title bar melts into the app; the top bar of the page is the drag handle.
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 16 } } : {}),
@@ -84,9 +87,18 @@ function createWindow() {
     }
   });
 
+  // The engine goes back to sleep while the window is closed (hidden) and greets you when a wake phrase opens it.
+  const visibility = (visible) => () => { if (!win.isDestroyed()) win.webContents.send('window-visibility', visible); };
+  win.on('hide', visibility(false));
+  win.on('minimize', visibility(false));
+  win.on('show', visibility(true));
+  win.on('restore', visibility(true));
   win.on('enter-full-screen', () => win.webContents.send('fullscreen-state', true));
   win.on('leave-full-screen', () => win.webContents.send('fullscreen-state', false));
-  win.webContents.on('did-finish-load', () => win.webContents.send('backend-state', backendState));
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.send('backend-state', backendState);
+    win.webContents.send('window-visibility', win.isVisible());
+  });
 }
 
 // Full screen: on wake-up Jervis asks for it; the F key toggles it, Esc leaves it.
@@ -112,7 +124,7 @@ ipcMain.handle('app-info', () => ({
   platform: process.platform,
   dataDir: app.isPackaged ? app.getPath('userData') : __dirname,
   logFile: logFile(),
-  openAtLogin: app.getLoginItemSettings().openAtLogin,
+  openAtLogin: startsAtLogin(),
 }));
 ipcMain.handle('open-path', (_event, which) => {
   const dataDir = app.isPackaged ? app.getPath('userData') : __dirname;
@@ -120,10 +132,69 @@ ipcMain.handle('open-path', (_event, which) => {
   return shell.openPath(target);
 });
 ipcMain.handle('set-open-at-login', (_event, on) => {
-  if (!app.isPackaged) return false;   // registering the development copy as a login item would start it from the repo
-  app.setLoginItemSettings({ openAtLogin: Boolean(on), openAsHidden: true, args: ['--hidden'] });
-  return app.getLoginItemSettings().openAtLogin;
+  rememberStartChoice();
+  return setStartAtLogin(Boolean(on));
 });
+
+// ---------- Starting at sign-in: hidden, listening for "Hey Jervis" ----------
+// On by default for the installed app, so the wake phrase works right after signing in with nothing open. Windows
+// gets a normal login item with --hidden. macOS login items can't pass --hidden any more (the window would pop up at
+// every sign-in), so there it's a per-user LaunchAgent, which can; it's rewritten at every start in case the app moved.
+const LAUNCH_AGENT = path.join(app.getPath('home'), 'Library', 'LaunchAgents', 'io.github.arielzaha.jervis.plist');
+const START_CHOICE = path.join(app.getPath('userData'), 'start-at-login-chosen');
+
+function startsAtLogin() {
+  if (!app.isPackaged) return false;
+  if (process.platform === 'darwin') return fs.existsSync(LAUNCH_AGENT);
+  return app.getLoginItemSettings({ args: ['--hidden'], name: 'Jervis' }).openAtLogin;
+}
+
+function setStartAtLogin(on) {
+  if (!app.isPackaged) return false;   // registering the development copy would start it from the repo
+  try {
+    if (process.platform === 'darwin') {
+      if (on) {
+        const xml = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        fs.mkdirSync(path.dirname(LAUNCH_AGENT), { recursive: true });
+        fs.writeFileSync(LAUNCH_AGENT, `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>io.github.arielzaha.jervis</string>
+  <key>ProgramArguments</key><array><string>${xml(process.execPath)}</string><string>--hidden</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+</dict>
+</plist>
+`);
+      } else if (fs.existsSync(LAUNCH_AGENT)) {
+        fs.unlinkSync(LAUNCH_AGENT);
+      }
+      app.setLoginItemSettings({ openAtLogin: false });   // the older kind of login item, from earlier versions
+    } else {
+      app.setLoginItemSettings({ openAtLogin: on, args: ['--hidden'], name: 'Jervis' });   // (the uninstaller removes "Jervis")
+    }
+  } catch (error) {
+    log(`Could not change starting at sign-in: ${error}`);
+  }
+  return startsAtLogin();
+}
+
+function rememberStartChoice() {
+  try { fs.writeFileSync(START_CHOICE, new Date().toISOString()); } catch (_) { /* asked again next time */ }
+}
+
+function applyStartAtLogin() {
+  if (!app.isPackaged) return;
+  if (!fs.existsSync(START_CHOICE)) {        // first start: on, until the user turns it off in Settings
+    rememberStartChoice();
+    const on = setStartAtLogin(true);
+    log(`Starting at sign-in: ${on ? 'on' : 'could not be turned on'} (first start).`);
+  } else if (process.platform === 'darwin' && startsAtLogin()) {
+    setStartAtLogin(true);                   // refresh the app's location
+  }
+}
 ipcMain.on('restart-backend', () => backend && backend.restart());
 
 // ---------- Computer control: the overlay, the emergency shortcut, and getting the window out of the way ----------
@@ -248,12 +319,12 @@ function createTray() {
   const image = nativeImage.createFromPath(path.join(__dirname, 'assets', file));
   if (image.isEmpty()) return;
   tray = new Tray(image);
-  tray.setToolTip('Jervis');
+  tray.setToolTip('Jervis: say “Hey Jervis”');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show Jervis', click: showWindow },
     { label: 'Restart Jervis’s engine', click: () => backend && backend.restart() },
     { type: 'separator' },
-    { label: 'Quit Jervis', click: () => { quitting = true; app.quit(); } },
+    { label: 'Quit Jervis (stops listening for “Hey Jervis”)', click: () => { quitting = true; app.quit(); } },
   ]));
   tray.on('click', showWindow);
 }
@@ -277,7 +348,8 @@ app.whenReady().then(async () => {
   }
   createWindow();
   createTray();
-  if (process.argv.includes('--hidden')) win.hide();   // started at sign-in: listen quietly until "Hey Jervis"
+  applyStartAtLogin();
+  // (started with --hidden, at sign-in: the window stays hidden and Jervis listens quietly until "Hey Jervis")
 });
 
 app.on('activate', showWindow);   // macOS: clicking the Dock icon brings the window back

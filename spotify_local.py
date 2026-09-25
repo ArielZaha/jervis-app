@@ -103,6 +103,13 @@ def _mac_can_press_keys() -> bool:
     return screen_mac.MacScreen.trusted()
 
 
+def _mac_ask_for_accessibility() -> None:
+    """Ask macOS for the Accessibility permission: that's what puts Jervis in the Accessibility list at all (an app
+    that only checks is never listed). The first time macOS shows its own dialog; after that the settings page opens."""
+    import screen_mac
+    screen_mac.MacScreen().available()
+
+
 # ---------- Windows ----------
 def _win_spotify_exe() -> str:
     path = os.path.join(os.environ.get("APPDATA", ""), "Spotify", "Spotify.exe")
@@ -184,9 +191,11 @@ def play(query: str) -> str:
         raise SpotifyLocalError("Spotify isn't installed on this computer. Get it from spotify.com and sign in, "
                                 "then ask me again.")
     if IS_MAC and not _mac_can_press_keys():
+        _mac_ask_for_accessibility()
         _mac_open_search(query)
         raise SpotifyLocalError("I opened your search in Spotify: press play on it. To let me press play myself, "
-                                "turn on Jervis in System Settings, Privacy & Security, Accessibility.")
+                                "turn on Jervis in System Settings, Privacy & Security, Accessibility, then ask me "
+                                "again.")
     before = _mac_now()[1] if IS_MAC else _win_title()
     if not (_mac_bring_forward() if IS_MAC else _win_bring_forward()):
         raise SpotifyLocalError("I couldn't bring Spotify to the front, so I didn't type anything. Open Spotify and "
