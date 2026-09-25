@@ -54,4 +54,27 @@
     Quit
   ${Loop}
   Sleep 500   ; let Windows release the files of the processes that just ended
+  !ifndef BUILD_UNINSTALLER
+    !insertmacro _JERVIS_REPLACE_OLD_VERSION
+  !endif
+!macroend
+
+; Updating without running the old version's uninstaller. electron-builder would copy it to a temporary folder as
+; "old-uninstaller.exe" and run it; antivirus programs (Avast's CyberCapture, for one) block exactly that: an
+; unknown program started from a temp folder that deletes files. Here the new installer removes the old program
+; files itself (Jervis is already closed), and clears the old uninstall entry so the old uninstaller isn't run; the
+; install then writes a fresh entry. Settings, history and downloaded AI models live elsewhere and are kept.
+!macro _JERVIS_REPLACE_OLD_VERSION
+  ReadRegStr $R3 SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString
+  ${If} $R3 != ""
+    ${If} $INSTDIR != ""
+    ${AndIf} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+      DetailPrint `Removing the previous version of Jervis...`
+      RMDir /r "$INSTDIR\resources"
+      RMDir /r "$INSTDIR\locales"
+      Delete "$INSTDIR\*.*"
+    ${EndIf}
+    DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString
+    DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
+  ${EndIf}
 !macroend

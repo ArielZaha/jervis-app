@@ -83,8 +83,19 @@ Quit-Jervis 'fresh install'
 Start-Jervis 'before the update'
 $marker = Join-Path $dir 'resources\left-from-the-old-version.txt'
 Set-Content -Path $marker -Value 'old'
+# Antivirus programs block the old uninstaller that electron-builder copies to a temp folder ("old-uninstaller.exe"),
+# so the update must not run it. It would delete the whole folder; this probe survives only if it wasn't run.
+$probe = Join-Path $dir 'probe\not-removed-by-an-old-uninstaller.txt'
+New-Item -ItemType Directory -Force -Path (Split-Path $probe) | Out-Null
+Set-Content -Path $probe -Value 'probe'
 Install-Jervis 'installed over a running Jervis (update)'
 if (Test-Path $marker) { Fail 'the update did not replace the old files' }
+if (-not (Test-Path $probe)) { Fail 'the update ran the old uninstaller (antivirus programs block it)' }
+Remove-Item -Recurse -Force (Split-Path $probe)
+$entry = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+  Where-Object { $_.DisplayName -like 'Jervis*' } | Select-Object -First 1
+if (-not $entry -or -not $entry.UninstallString) { Fail 'the update left no uninstall entry' }
+Write-Host "update: the old uninstaller wasn't needed; uninstall entry: $($entry.UninstallString)"
 if (Jervis-Running) { Fail 'the old Jervis is still running after the update' }
 if (-not (Test-Path $exe.FullName)) { Fail 'Jervis.exe is missing after the update' }
 Write-Host 'update: the running Jervis was closed and his files replaced'
