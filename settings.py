@@ -38,7 +38,8 @@ SCHEMA = [
     {"key": "GROQ_API_KEY", "section": "AI", "label": "Groq API key (optional)", "type": "secret", "default": "",
      "help": "Only for the online AI: faster and smarter answers. Free at console.groq.com.", "restart": True},
     {"key": "OLLAMA_MODEL", "section": "AI", "label": "Local AI model", "type": "text", "default": "llama3.2",
-     "help": "On a slower computer, llama3.2:1b answers faster.", "restart": True, "advanced": True},
+     "help": "On a slower computer, llama3.2:1b answers faster. With 16 GB of memory, qwen2.5:7b is smarter, "
+             "especially at using the computer (a 4.7 GB download).", "restart": True, "advanced": True},
     {"key": "JERVIS_LOCAL_VISION", "section": "AI", "label": "Let the local AI see pictures and the screen",
      "type": "choice", "default": "auto",
      "choices": [["auto", "Automatic (computers with 16 GB of memory or more)"], ["on", "On"], ["off", "Off"]],

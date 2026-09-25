@@ -45,6 +45,8 @@ if Quartz is not None:
                  "alt": Quartz.kCGEventFlagMaskAlternate, "ctrl": Quartz.kCGEventFlagMaskControl,
                  "fn": Quartz.kCGEventFlagMaskSecondaryFn}
 MAX_VISITED = 3000
+TIME_BUDGET = 2.5         # seconds per read of a window: a busy app must not stall a step
+AX_TIMEOUT = 1.0          # seconds per accessibility request (macOS waits 6 by default, e.g. while a menu is open)
 MAX_ELEMENTS = 400
 
 
@@ -86,6 +88,8 @@ class MacScreen(computer_use.Environment):
 
     def __init__(self):
         self._warmed = set()   # apps whose web content accessibility was already switched on
+        if AX is not None:
+            AX.AXUIElementSetMessagingTimeout(AX.AXUIElementCreateSystemWide(), AX_TIMEOUT)
 
     def available(self):
         if AX is None:
@@ -153,9 +157,9 @@ class MacScreen(computer_use.Environment):
         return observation
 
     def _collect(self, root, start_id: int = 1, max_depth: int = 40) -> list:
-        elements, queue, visited = [], [(root, 0)], 0
+        elements, queue, visited, started = [], [(root, 0)], 0, time.time()
         screen = Quartz.CGDisplayBounds(Quartz.CGMainDisplayID())
-        while queue and visited < MAX_VISITED and len(elements) < MAX_ELEMENTS:
+        while queue and visited < MAX_VISITED and len(elements) < MAX_ELEMENTS and time.time() - started < TIME_BUDGET:
             node, depth = queue.pop(0)
             visited += 1
             role = _text(_attr(node, "AXRole"))

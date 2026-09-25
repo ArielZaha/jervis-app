@@ -43,7 +43,7 @@ ASSETS = {
 DOWNLOAD_URL = "https://github.com/ollama/ollama/releases/download/{version}/{name}"
 USER_OLLAMA_URL = "http://127.0.0.1:11434"
 MANAGED_PORT = 11435            # Jervis's own copy: never the port an Ollama the user runs is on
-APPROX_MODEL_BYTES = {"llama3.2": 2_019_393_189, "qwen2.5vl:3b": 3_200_000_000}
+APPROX_MODEL_BYTES = {"llama3.2": 2_019_393_189, "qwen2.5vl:3b": 3_200_000_000, "qwen2.5:7b": 4_683_087_332}
 # The vision model needs room next to the text model and everything else the user has open: on an 8 GB computer
 # it makes the whole machine swap (measured: a screenshot took over 5 minutes on an 8 GB M3). 16 GB is comfortable.
 MIN_RAM_FOR_VISION = 15 * 1024 ** 3   # "16 GB" machines report a little less

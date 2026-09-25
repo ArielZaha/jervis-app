@@ -51,6 +51,12 @@ for the screen to settle and checks what changed before the next step.
 
 On macOS, turn on Jervis in *System Settings > Privacy & Security > Accessibility*; macOS asks the first time.
 
+How far he gets depends on the AI. With `gpt-oss-20b` on Groq (a free key), multi-step tasks work well: "set the
+font size in TextEdit to 18" took one step. The default local `llama3.2` (3B) handles short, simple tasks but often
+misses when it's done or wanders, so with the local AI a task is capped at 12 steps, repeats that change nothing are
+refused, and he stops when he's stuck. A larger local model (Settings, AI, *Local AI model*, e.g. `qwen2.5:7b` on a
+16 GB computer) is a middle ground.
+
 ## What works where
 
 | Feature | macOS | Windows |

@@ -1829,8 +1829,20 @@ def computer_environment():
     return computer_use.Environment()   # available() explains it isn't supported here
 
 
+LOCAL_CONTROL_STEPS = 12
+
+
+def local_llm_only() -> bool:
+    """Whether answers come only from the small local model (no online AI to fall back on)."""
+    return LLM_BACKEND == "ollama" or (LLM_BACKEND == "auto" and time.time() < groq_down_until)
+
+
 def _ask_ai_for_control(messages, tools):
-    return groq_chat(model=GROQ_MODEL, messages=messages, tools=tools, tool_choice="required")
+    try:
+        return groq_chat(model=GROQ_MODEL, messages=messages, tools=tools, tool_choice="required")
+    except Exception as e:
+        log_ai_error(e)
+        raise computer_use.AIError(groq_error_reply(e)) from e
 
 
 def open_control_question(question: str) -> str:
@@ -1899,13 +1911,18 @@ def start_computer_task(goal: str) -> str:
             return
         import screen_vision
         vision = screen_vision.ScreenVision() if screen_vision.available() else None
+        # The small local model manages simple, short tasks; long ones need the online AI (see local_llm_only).
+        steps = LOCAL_CONTROL_STEPS if local_llm_only() else computer_use.MAX_STEPS
         task = computer_use.ComputerTask(goal, env, _ask_ai_for_control, report=_report_control,
-                                         confirm=ask_control_question, vision=vision)
+                                         confirm=ask_control_question, vision=vision, max_steps=steps)
         computer_task = task
         task._report("starting", "Getting out of your way…")   # the window steps aside (see main.js)
         if connected_clients:
             time.sleep(1.2)
         result = task.run()
+        if task.state == "error" and local_llm_only():
+            result += (" My local AI is small, so short, simple tasks work best. A free Groq key in Settings lets me "
+                       "do longer ones.")
         if task.state != "stopped":   # whoever stopped it has already been told
             announcements.put(result)
 

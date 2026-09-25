@@ -26,6 +26,8 @@ import time
 from dataclasses import dataclass, field
 
 MAX_STEPS = 25
+MAX_STALE = 8        # steps in a row that get nowhere (nothing changed, or the answer was unusable): stuck, stop
+MAX_REPEATS = 2      # the same action may change nothing this many times; after that it's refused
 MAX_INVALID = 4          # the AI's answer couldn't be used this many times in a row: give up and say so
 SETTLE_TIMEOUT = 2.5     # seconds to wait for the screen to settle after an action
 TAKEOVER_PIXELS = 40     # the pointer moved this far without Jervis moving it: the user took over
@@ -111,6 +113,7 @@ class Observation:
 
 
 SINGLE_LINE_ROLES = {"text field", "search field", "combo box"}
+TEXT_ROLES = SINGLE_LINE_ROLES | {"text area", "document", "cell", "spinner"}   # the elements that take typing
 
 
 class Environment:
@@ -298,6 +301,10 @@ def describe_change(before: Observation, after: Observation) -> str:
     return " ".join(notes)
 
 
+class AIError(Exception):
+    """The AI couldn't be asked what to do next. The message is for the user."""
+
+
 class ComputerTask:
     """One goal, carried out step by step on its own thread. Drive it with pause(), resume(), stop()."""
 
@@ -312,6 +319,7 @@ class ComputerTask:
         self.max_steps = max_steps
         self.log = log
         self.history = []               # [(action description, what happened)]
+        self._fruitless = {}            # action description -> how often it changed nothing
         self._stop = threading.Event()
         self._running = threading.Event()
         self._running.set()
@@ -362,11 +370,15 @@ class ComputerTask:
         before = None
         last_change = ""
         invalid = 0
+        stale = 0
         tools = BASE_TOOLS + (VISION_TOOLS if self.vision else [])
         try:
             for self.step in range(1, self.max_steps + 1):
                 if not self._checkpoint():
                     return self._finish("stopped", "Stopped. You have control again.")
+                if stale >= MAX_STALE:
+                    return self._finish("error", "I got stuck: nothing I tried got closer to that, so I stopped. "
+                                                 "You have control again.")
                 self._report("observing", "Looking at the screen…")
                 observation = self.env.observe()
                 if self._user_took_over(observation):
@@ -376,27 +388,42 @@ class ComputerTask:
                     observation = self.env.observe()
                     last_change = "The user used the computer while you were paused; look at the screen again."
                 self._report("thinking", "Deciding what to do next…")
-                action, raw = self._decide(observation, last_change, tools)
+                try:
+                    action, raw = self._decide(observation, last_change, tools)
+                except AIError as e:
+                    return self._finish("error", f"{e} So I stopped. You have control again.")
                 if not self._checkpoint():
                     return self._finish("stopped", "Stopped. You have control again.")
                 problem = self._validate(action, observation)
                 if problem:
                     invalid += 1
+                    stale += 1
                     self.history.append((f"(invalid action: {raw[:120]})", problem))
                     last_change = f"Your last answer couldn't be used: {problem}"
                     if invalid >= MAX_INVALID:
                         return self._finish("error", "I couldn't work out how to do that on this screen, so I "
                                                      "stopped. You have control again.")
                     continue
-                invalid = 0
                 kind = action["action"]
+                element = observation.element(action.get("element")) if action.get("element") is not None else None
+                signature = self._describe(action, element)
+                if self._fruitless.get(signature, 0) >= MAX_REPEATS:   # small models tend to loop
+                    invalid += 1
+                    stale += 1
+                    self.history.append((f"(refused repeat: {signature})", "it changed nothing twice already"))
+                    last_change = (f"You already tried “{signature}” {MAX_REPEATS} times and nothing changed. Choose a "
+                                   "different element or action, or call fail if the goal can't be reached.")
+                    if invalid >= MAX_INVALID:
+                        return self._finish("error", "I got stuck on this screen, so I stopped. You have control "
+                                                     "again.")
+                    continue
+                invalid = 0
                 if kind == "done":
                     return self._finish("completed", action.get("summary") or "Done.")
                 if kind == "fail":
                     return self._finish("error", action.get("reason") or "I couldn't do that.")
                 if kind == "ask_user":
                     return self._finish("completed", action.get("question") or "What should I do?")
-                element = observation.element(action.get("element")) if action.get("element") is not None else None
                 risk = risk_of(action, element, observation)
                 if risk:
                     self._report("waiting", f"Waiting for your OK to {risk}.")
@@ -418,6 +445,11 @@ class ComputerTask:
                 after = self._settle(observation)
                 last_change = f"{outcome} {describe_change(observation, after)}".strip()
                 self.history.append((description, last_change))
+                if kind != "wait" and last_change.endswith("Nothing on screen changed."):
+                    self._fruitless[description] = self._fruitless.get(description, 0) + 1
+                    stale += 1
+                else:
+                    stale = 0
                 self.log(f"Computer control step {self.step}: {description} -> {last_change[:160]}")
                 before = after
             return self._finish("error", f"I took {self.max_steps} steps without finishing, so I stopped. "
@@ -479,6 +511,8 @@ class ComputerTask:
                 lines.append(f"{i}. {did} → {happened[:200]}")
         if last_change:
             lines.append(f"Result of your last action: {last_change}")
+        if self.history:   # small models forget to stop: ask them outright
+            lines.append(f"Is the goal (“{self.goal}”) achieved now? If yes, call done.")
         lines.append(f"Step {self.step} of {self.max_steps}. Reply with one tool call.")
         return "\n".join(lines)
 
@@ -536,6 +570,9 @@ class ComputerTask:
                 return f"[{element_id}] is disabled."
             if kind == "type_text" and element.password:
                 return "that's a password field; Jervis never types passwords. Ask the user to type it."
+            if kind == "type_text" and element.role not in TEXT_ROLES:
+                return (f"[{element_id}] is a {element.role}, which doesn't take typing. Type into a text field, "
+                        "or click this instead.")
         if kind == "type_text":
             if not isinstance(action.get("text"), str) or not action["text"]:
                 return "type_text needs some text."

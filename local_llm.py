@@ -16,6 +16,7 @@ def set_url(url: str) -> None:
     """Where the local AI answers. local_ai.py sets this once it has found or started one."""
     global URL
     URL = url.rstrip("/")
+    _last_good["at"] = 0.0
 DEFAULT_MODEL = "llama3.2"
 # The best small models for a voice assistant, in the order Jervis prefers to pick from what is installed.
 PREFERRED = ["llama3.2", "llama3.1", "qwen2.5", "qwen3", "gemma3", "phi4-mini", "mistral", "llama3", "gemma2", "phi3"]
@@ -39,19 +40,31 @@ def _wrap(value):
     return value
 
 
+_last_good = {"model": None, "at": 0.0}   # the model that last answered, so every question isn't a status check
+MODEL_CACHE_SECONDS = 30
+
+
+def _tags():
+    """The installed models, or None if the local AI can't be reached (asked twice: Ollama has brief hiccups)."""
+    for attempt in (1, 2):
+        try:
+            response = requests.get(f"{URL}/api/tags", timeout=2)
+            response.raise_for_status()
+            return [m["name"] for m in response.json().get("models", []) if m.get("name")]
+        except (requests.RequestException, ValueError, KeyError):
+            if attempt == 1:
+                time.sleep(0.5)
+    return None
+
+
 def installed_models() -> list:
-    try:
-        response = requests.get(f"{URL}/api/tags", timeout=2)
-        response.raise_for_status()
-        return [m["name"] for m in response.json().get("models", []) if m.get("name")]
-    except (requests.RequestException, ValueError, KeyError):
-        return []
+    return _tags() or []
 
 
-def pick_model():
+def pick_model(models=None):
     """The model to use: OLLAMA_MODEL if set, else the best installed one, else None."""
     wanted = os.getenv("OLLAMA_MODEL")
-    models = installed_models()
+    models = installed_models() if models is None else models
     if wanted:
         return wanted if any(m == wanted or m.split(":")[0] == wanted.split(":")[0] for m in models) else None
     for base in PREFERRED:
@@ -63,14 +76,17 @@ def pick_model():
 
 def status() -> tuple:
     """(model or None, reason if unavailable)."""
-    try:
-        requests.get(f"{URL}/api/tags", timeout=2).raise_for_status()
-    except requests.RequestException:
+    if _last_good["model"] and time.time() - _last_good["at"] < MODEL_CACHE_SECONDS \
+            and _last_good["model"].split(":")[0] == (os.getenv("OLLAMA_MODEL") or _last_good["model"]).split(":")[0]:
+        return _last_good["model"], ""
+    models = _tags()
+    if models is None:
         return None, "my local AI isn't running yet (it's still being set up, or it stopped)"
-    model = pick_model()
+    model = pick_model(models)
     if not model:
         wanted = os.getenv("OLLAMA_MODEL") or DEFAULT_MODEL
         return None, f"my local AI's model ({wanted}) is still being downloaded"
+    _last_good.update(model=model, at=time.time())
     return model, ""
 
 

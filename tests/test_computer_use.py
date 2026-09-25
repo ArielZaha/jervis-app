@@ -233,8 +233,50 @@ def test_nothing_is_typed_when_the_cursor_cant_be_placed():
     assert "nothing was typed" in brain.prompts[1]
 
 
+def test_an_action_that_keeps_changing_nothing_is_refused_then_the_task_stops():
+    """Small local models loop ("click View" 20 times). Twice is allowed; after that it's refused, and then stopped."""
+    screen = FakeScreen()
+    brain = ai(*[("click", {"element": 1})] * 20)
+    task = ComputerTask("x", screen, brain)
+    assert "stuck" in task.run()
+    assert screen.actions.count(("press", "Search")) == 2
+    assert task.state == "error" and task.step < 10
+    assert "already tried" in brain.prompts[3]
+
+
+def test_many_steps_that_change_nothing_stop_the_task():
+    screen = FakeScreen()
+    moves = [("scroll", {"direction": d}) for d in ("up", "down")] + [("click", {"element": e}) for e in (1, 4)] \
+        + [("scroll", {"direction": "down", "element": e}) for e in (1, 2, 3, 4)]
+    task = ComputerTask("x", screen, ai(*moves, *moves))
+    assert "stuck" in task.run()
+    assert task.step == computer_use.MAX_STALE + 1   # stopped before the next step
+
+
+def test_typing_only_goes_into_things_that_take_text():
+    screen = FakeScreen()
+    brain = ai(("type_text", {"element": 2, "text": "18"}), ("done", {"summary": "ok"}))
+    ComputerTask("x", screen, brain).run()
+    assert not any(a[0] == "type" for a in screen.actions)
+    assert "doesn't take typing" in brain.prompts[1]
+
+
+def test_an_ai_that_cant_be_reached_ends_the_task_in_plain_words():
+    def down(messages, tools):
+        raise computer_use.AIError("My local AI isn't running yet.")
+    task = ComputerTask("x", FakeScreen(), down)
+    assert task.run() == "My local AI isn't running yet. So I stopped. You have control again."
+    assert task.state == "error"
+
+
 def test_stops_after_the_step_limit():
     screen = FakeScreen()
+    scroll = screen.scroll
+
+    def scroll_and_change(amount, point=None):   # a long page: every scroll shows something new
+        screen.query += "x"
+        return scroll(amount, point)
+    screen.scroll = scroll_and_change
     task = ComputerTask("x", screen, ai(*[("scroll", {"direction": "down"})] * 50), max_steps=5)
     assert "5 steps" in task.run()
     assert len([a for a in screen.actions if a[0] == "scroll"]) == 5
