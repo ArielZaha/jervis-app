@@ -91,7 +91,7 @@ jobs:
         if: runner.os == 'Windows'
         continue-on-error: true
         shell: pwsh
-        run: ./tests/installer/windows_stress.ps1 -Installer "release/Jervis Setup.exe" -Rounds 6
+        run: ./tests/installer/windows_stress.ps1 -Installer "release/Jervis Setup.exe" -Rounds 12
 
       - name: Fresh install test (Windows)
         if: runner.os == 'Windows'
