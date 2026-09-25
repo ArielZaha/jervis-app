@@ -194,11 +194,7 @@ def test_typos_in_commands_are_understood():
     assert app.fix_typos("I like my dog") == "I like my dog"
 
 
-@pytest.mark.parametrize("said", [
-    "take contorl over my computer and type in the search bar for Jane! in spotify.",
-    "take the contorl and search for the song Jane! in spotify.",
-    "search for Jane! on Spotify",
-])
+@pytest.mark.parametrize("said", ["search for Jane! on Spotify", "look up Jane! in spotify"])
 def test_spotify_search_goes_to_spotify_and_play_it_plays_it(said, monkeypatch):
     import time
     from types import SimpleNamespace
@@ -232,12 +228,40 @@ def test_ordinary_answers_are_not_mistaken_for_claims(reply):
     assert not app._CLAIMS_ACTION.search(reply)
 
 
-def test_take_control_on_my_computer_and_play_goes_to_spotify(monkeypatch):
+@pytest.mark.parametrize("said", [
+    "take contorl on my computer and play Jane! on spotify",
+    "take contorl over my computer and type in the search bar for Jane! in spotify.",
+    "take the contorl and search for the song Jane! in spotify.",
+])
+def test_take_control_and_spotify_is_done_visibly_step_by_step(said, monkeypatch):
+    """Asked to take control: Jervis shows the process (pointer, letter-by-letter typing, results, play)."""
+    import time
+    from types import SimpleNamespace
+    import spotify_local
+    monkeypatch.setattr(app, "sp", None)
+    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setattr(app, "computer_environment", lambda: SimpleNamespace(available=lambda: (True, "")))
+    monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
+    monkeypatch.setattr(app, "send_ui_update_once", lambda payload: None)
+    result, actions = route(said)
+    assert "I'm using the computer to play Jane! on Spotify" in result
+    for _ in range(200):
+        if app.computer_task is not None and app.computer_task.state in ("completed", "error", "stopped"):
+            break
+        time.sleep(0.02)
+    typed = [a for a in actions if a.startswith("spotify type ")]
+    assert "spotify front" in actions and "spotify keys cmd+k" in actions
+    assert "".join(a[len("spotify type "):] for a in typed) == "Jane!" and len(typed) == 5   # letter by letter
+    assert "spotify keys shift+enter" in actions and any(a.startswith("pointer to") for a in actions)
+    app.computer_task = None
+
+
+def test_without_take_control_spotify_is_played_quickly(monkeypatch):
     import time
     from types import SimpleNamespace
     import spotify_local
     monkeypatch.setattr(app, "sp", None)
     monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
-    result, actions = route("take contorl on my computer and play Jane! on spotify")
-    assert "spotify front" in actions
-    assert "permission to take control" not in str(result)
+    result, actions = route("play Jane! on spotify")
+    assert "spotify type Jane!" in actions            # typed at once, no pointer moves
+    assert not any(a.startswith("pointer to") for a in actions)

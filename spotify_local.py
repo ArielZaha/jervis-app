@@ -337,3 +337,144 @@ def clean_query(text: str) -> str:
     """"My Favorite Songs playlist" -> "My Favorite Songs" (Quick Search finds it by name)."""
     text = re.sub(r"\b(?:the\s+)?(?:playlist|album|song|track)\b", " ", text or "", flags=re.I)
     return " ".join(text.split()).strip(" \"'“”")
+
+
+# ---------- the visible way: when you asked Jervis to take control ----------
+# The same Quick Search as play(), done so you can follow it: the pointer moves to the search box and to the result,
+# the request is typed letter by letter, and the results appear before the top one is played. Spotify's Mac app
+# doesn't let other programs see its buttons, so Jervis points at the result and plays it with Spotify's own play
+# key (Shift+Enter) instead of clicking a place he can't see.
+TYPE_DELAY = 0.09   # seconds between letters
+
+
+def cursor():
+    if IS_MAC:
+        import Quartz
+        point = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+        return int(point.x), int(point.y)
+    if IS_WIN:
+        import winctl
+        return winctl.cursor_position()
+    return None
+
+
+def _window_bounds():
+    """(x, y, width, height) of Spotify's main window, or None."""
+    if IS_MAC:
+        import Quartz
+        windows = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+        best = None
+        for info in windows or []:
+            if info.get("kCGWindowOwnerName") == "Spotify" and info.get("kCGWindowLayer", 0) == 0:
+                b = info.get("kCGWindowBounds") or {}
+                box = (int(b.get("X", 0)), int(b.get("Y", 0)), int(b.get("Width", 0)), int(b.get("Height", 0)))
+                if not best or box[2] * box[3] > best[2] * best[3]:
+                    best = box
+        return best
+    if IS_WIN:
+        import ctypes
+        from ctypes import wintypes
+        windows = _win_windows()
+        if not windows:
+            return None
+        rect = wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(windows[0][0], ctypes.byref(rect))
+        return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+    return None
+
+
+def _glide(x: int, y: int, seconds: float = 0.6) -> None:
+    """Move the pointer there smoothly, so it can be followed."""
+    start = cursor() or (x, y)
+    steps = 24
+    for i in range(1, steps + 1):
+        t = i / steps
+        t = t * t * (3 - 2 * t)   # ease in and out
+        px, py = start[0] + (x - start[0]) * t, start[1] + (y - start[1]) * t
+        if IS_MAC:
+            import Quartz
+            event = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (px, py), Quartz.kCGMouseButtonLeft)
+            Quartz.CGEventSetFlags(event, 0)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+        elif IS_WIN:
+            import ctypes
+            ctypes.windll.user32.SetCursorPos(int(px), int(py))
+        time.sleep(seconds / steps)
+
+
+def _type_slowly(text: str) -> None:
+    for letter in text:
+        if IS_MAC:
+            _mac_type(letter)
+        else:
+            import winctl
+            winctl.type_text(letter, strict=True)
+        time.sleep(TYPE_DELAY)
+
+
+def _keys(*keys: str) -> None:
+    if IS_MAC:
+        _mac_keys(*("cmd" if k == "command" else k for k in keys))
+    else:
+        import winctl
+        winctl.press(*("ctrl" if k == "command" else ("esc" if k == "escape" else k) for k in keys), strict=True)
+
+
+def visible_steps(query: str) -> list:
+    """The steps of playing `query` so you can watch, as (what you see, function) for computer_use.ScriptedTask."""
+    query = " ".join((query or "").split())
+    state = {}
+
+    def open_spotify():
+        if not installed():
+            raise SpotifyLocalError("Spotify isn't installed on this computer.")
+        state["before"] = _mac_now()[1] if IS_MAC else _win_title()
+        if not (_mac_bring_forward() if IS_MAC else _win_bring_forward()):
+            raise SpotifyLocalError("I couldn't bring Spotify to the front, so I stopped before typing anything.")
+        time.sleep(0.4)
+
+    def open_search():
+        box = _window_bounds()
+        if box:
+            x, y, w, h = box
+            state["search"] = (x + w // 2, y + min(170, h // 4))   # where Quick Search's box opens
+            state["result"] = (x + w // 2, y + min(250, h // 3))   # its first result, just below
+            _glide(*state["search"])
+        _keys("escape")        # Cmd+K toggles Quick Search: start from closed
+        time.sleep(0.3)
+        _keys("command", "k")
+        time.sleep(0.7)
+        _keys("command", "a")
+
+    def type_it():
+        _type_slowly(query)
+
+    def wait_for_results():
+        time.sleep(1.8)        # results come from Spotify's servers
+
+    def point_at_result():
+        if state.get("result"):
+            _glide(*state["result"])
+        time.sleep(0.4)
+
+    def play_it():
+        _keys("shift", "enter")
+        for _ in range(24):
+            time.sleep(0.25)
+            playing, name = now_playing()
+            now = _mac_now()[1] if IS_MAC else _win_title()
+            if playing and now != state.get("before"):
+                _close_quick_search()
+                return f"Playing {name} on Spotify." if name else "Playing it on Spotify."
+        _close_quick_search()
+        playing, name = now_playing()
+        if playing and name:
+            return f"Playing {name} on Spotify."
+        raise SpotifyLocalError(f"I searched Spotify for {query} but it didn't start. The results are on the screen.")
+
+    return [("Opening Spotify", open_spotify),
+            ("Clicking into the search bar", open_search),
+            (f"Typing “{query}”", type_it),
+            ("Searching", wait_for_results),
+            ("Pointing at the top result", point_at_result),
+            ("Playing it", play_it)]

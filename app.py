@@ -1920,7 +1920,9 @@ def control_active() -> bool:
     return computer_task is not None and computer_task.state not in ("completed", "stopped", "error")
 
 
-def start_computer_task(goal: str) -> str:
+def start_computer_task(goal: str, scripted=None) -> str:
+    """Use the mouse and keyboard for `goal`: worked out step by step by the AI, or, with `scripted`, a list of
+    known steps (see computer_use.ScriptedTask). Either way: asked first (Settings), shown, and stoppable."""
     global computer_task
     mode = (os.getenv("JERVIS_COMPUTER_CONTROL") or "ask").strip().lower()
     if mode == "off":
@@ -1943,14 +1945,19 @@ def start_computer_task(goal: str) -> str:
         vision = screen_vision.ScreenVision() if screen_vision.available() else None
         # The small local model manages simple, short tasks; long ones need the online AI (see local_llm_only).
         steps = LOCAL_CONTROL_STEPS if local_llm_only() else computer_use.MAX_STEPS
-        task = computer_use.ComputerTask(goal, env, _ask_ai_for_control, report=_report_control,
-                                         confirm=ask_control_question, vision=vision, max_steps=steps)
+        if scripted:
+            task = computer_use.ScriptedTask(goal, scripted, report=_report_control, cursor=spotify_local.cursor)
+        else:
+            task = computer_use.ComputerTask(goal, env, _ask_ai_for_control, report=_report_control,
+                                             confirm=ask_control_question, vision=vision, max_steps=steps)
         computer_task = task
         task._report("starting", "Getting out of your way…")   # the window steps aside (see main.js)
         if connected_clients:
             time.sleep(1.2)
         result = task.run()
-        if task.state == "error" and local_llm_only():
+        if task.state == "completed" and scripted:
+            _mark_spotify_playing()
+        if task.state == "error" and local_llm_only() and not scripted:
             result += (" My local AI is small, so short, simple tasks work best. A free Groq key in Settings lets me "
                        "do longer ones.")
         if task.state != "stopped":   # whoever stopped it has already been told
@@ -2258,6 +2265,12 @@ def is_google_search_command(text: str) -> bool:
 def spotify_available() -> bool:
     """Spotify can be controlled: with the user's own Spotify keys (Settings), or through the Spotify app itself."""
     return bool(sp) or spotify_local.installed()
+
+
+def _mark_spotify_playing() -> None:
+    global youtube_active, netflix_active, stremio_active, spotify_active
+    youtube_active = netflix_active = stremio_active = False
+    spotify_active = True
 
 
 def play_song_locally(request: str, start_seconds=None) -> str:
@@ -2809,9 +2822,16 @@ def handle_spotify_search(text: str):
         return play_song(query)
     rest = _CONTROL_PREAMBLE.sub("", (text or "").strip(), count=1)
     if rest != (text or "").strip() and re.search(r"\bspotify\b", rest, re.I):
+        # "Take control … and play X on Spotify": you asked to see it done, so it's done visibly, step by step.
         play = parse_spotify_request(rest)
-        if play:
-            return play_song(play[0], start_seconds=play[1])
+        search = _SPOTIFY_SEARCH.match(rest)
+        wanted = play[0] if play else (search.group("query") if search else "")
+        wanted = spotify_local.clean_query(re.sub(r"\b(?:the )?(?:song|track|album|artist|playlist)\s+", "", wanted,
+                                                  flags=re.I))
+        if wanted:
+            if sp:   # with Spotify keys, Jervis plays through Spotify's online interface: nothing to watch
+                return play_song(wanted)
+            return start_computer_task(f"play {wanted} on Spotify", scripted=spotify_local.visible_steps(wanted))
     match = _SPOTIFY_SEARCH.match(rest)
     if not match:
         return None

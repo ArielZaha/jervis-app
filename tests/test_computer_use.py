@@ -365,3 +365,39 @@ def test_screenshots_are_only_looked_at_locally(monkeypatch):
     point = screen_vision.ScreenVision().locate(Image.new("RGB", (2880, 1800)), "the logo", (1440, 900))
     assert max(sent["size"]) == images.LOCAL_VISION_MAX_DIMENSION
     assert point == (int(10 * 1440 / sent["size"][0]), int(5 * 900 / sent["size"][1]))
+
+
+def test_scripted_steps_run_in_order_and_report_each_one():
+    done, states = [], []
+    task = computer_use.ScriptedTask("play it", [("Opening Spotify", lambda: done.append("open")),
+                                                 ("Playing it", lambda: "Playing Jane! on Spotify.")],
+                                     report=lambda s: states.append((s["state"], s["detail"])))
+    assert task.run() == "Playing Jane! on Spotify."
+    assert done == ["open"] and ("acting", "Opening Spotify") in states and states[-1][0] == "completed"
+
+
+def test_stop_ends_a_scripted_task_before_the_next_step():
+    done = []
+    task = None
+    task = computer_use.ScriptedTask("x", [("first", lambda: task.stop()), ("second", lambda: done.append("second"))])
+    assert "Stopped" in task.run()
+    assert done == [] and task.state == "stopped"
+
+
+def test_moving_the_mouse_pauses_a_scripted_task():
+    """Between two steps the pointer is somewhere else: the user took over, so Jervis pauses."""
+    positions = iter([(100, 100), (100, 100), (900, 700)])   # before step 1, after step 1, before step 2
+    states, done = [], []
+    task = computer_use.ScriptedTask("x", [("first", lambda: None), ("second", lambda: done.append("second"))],
+                                     report=lambda s: states.append(s["state"]),
+                                     cursor=lambda: next(positions, (900, 700)))
+    runner = threading.Thread(target=task.run)
+    runner.start()
+    for _ in range(300):
+        if "paused" in states:
+            break
+        threading.Event().wait(0.01)
+    assert "paused" in states and done == []
+    task.stop()
+    runner.join(5)
+    assert task.state == "stopped" and done == []

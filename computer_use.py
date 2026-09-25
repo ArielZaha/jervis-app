@@ -713,3 +713,37 @@ class ComputerTask:
                 raise InputBlocked() from e
             return f"That action failed ({type(e).__name__}: {str(e)[:120]})."
         return ""
+
+
+class ScriptedTask(ComputerTask):
+    """A task whose steps are known in advance (playing something in Spotify, say), shown and controlled exactly like
+    one the AI works out: the overlay shows each step, and Stop, Pause, the stop shortcut and moving the mouse work
+    the same. `steps` is a list of (what the user sees, function); a function's text result becomes the summary."""
+
+    def __init__(self, goal: str, steps: list, report=None, cursor=None, log=print):
+        super().__init__(goal, env=None, ask_ai=None, report=report, max_steps=len(steps), log=log)
+        self.steps = steps
+        self.cursor = cursor or (lambda: None)
+
+    def run(self) -> str:
+        summary = ""
+        try:
+            for self.step, (description, action) in enumerate(self.steps, 1):
+                if not self._checkpoint():
+                    return self._finish("stopped", "Stopped. You have control again.")
+                now = self.cursor()
+                if self._expected_cursor and now and ((now[0] - self._expected_cursor[0]) ** 2 +
+                                                      (now[1] - self._expected_cursor[1]) ** 2) ** 0.5 > TAKEOVER_PIXELS:
+                    self.pause("You moved the mouse, so I paused. Say “continue” when you want me to go on.")
+                    if not self._checkpoint():
+                        return self._finish("stopped", "Stopped. You have control again.")
+                self._report("acting", description)
+                self.log(f"Computer control step {self.step}: {description}")
+                outcome = action()
+                if isinstance(outcome, str) and outcome:
+                    summary = outcome
+                self._expected_cursor = self.cursor()
+            return self._finish("completed", summary or "Done.")
+        except Exception as e:   # a step that can't be done ends the task in plain words
+            self.log(f"Computer control step failed: {type(e).__name__}: {e}")
+            return self._finish("error", f"{e} You have control again.")
