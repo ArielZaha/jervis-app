@@ -220,14 +220,18 @@
   // way. The device data travels in the URL fragment (never sent to either server, see RFC 3986 — only
   // client-side JS ever reads it), one brief automatic round trip, guarded so it only ever happens once per
   // origin pair.
-  function syncToOtherOrigin(device) {
+  function syncToOtherOrigin(device, returnTo) {
     if (!device || !device.relayUrl) return;
     let otherOrigin;
     try { otherOrigin = new URL(device.relayUrl.replace(/^ws/, "http")).origin; } catch { return; }
     if (otherOrigin === location.origin) return;
     if (localStorage.getItem("jervis_synced_to") === otherOrigin) return;   // already done; don't loop
     const fragment = encodeURIComponent(JSON.stringify(device));
-    const returnUrl = location.origin + location.pathname;
+    // Normally "come back here" means this same page (the common case: a paired phone backfilling a sync that
+    // never ran). But reached via a relay link's own "open this once" hint (backTo, see setUpNotificationsViaRelay
+    // above), the place to come back to is that relay page, not this one — otherwise the round trip strands the
+    // user back on the local page instead of the Enable Notifications screen they were actually trying to reach.
+    const returnUrl = returnTo || (location.origin + location.pathname);
     location.href = `${otherOrigin}/?sync=1&return=${encodeURIComponent(returnUrl)}#${fragment}`;
   }
 
@@ -396,9 +400,11 @@
         // Paired locally already (this link wouldn't exist otherwise — see app.py's start_phone_session), but
         // this phone has never completed the one-time local<->relay sync (phone_client.html's syncToOtherOrigin)
         // — most likely because it's never actually opened the local address below. Opening it once, on the same
-        // Wi-Fi as the computer, runs that sync automatically and bounces right back here.
+        // Wi-Fi as the computer, runs that sync automatically and bounces right back here — backTo carries the
+        // exact URL to return to (this one), since the local page's own default return target is itself, not us.
+        const localLink = KNOWN_LOCAL_ADDRESS + "/?backTo=" + encodeURIComponent(location.href);
         $("relayNotifyHint").innerHTML = "This phone is paired, but hasn't finished one-time setup for this " +
-          "link yet. On the same Wi-Fi as your computer, open <a href=\"" + KNOWN_LOCAL_ADDRESS + "\" style=\"" +
+          "link yet. On the same Wi-Fi as your computer, open <a href=\"" + localLink + "\" style=\"" +
           "color:#8ab4ff\">" + KNOWN_LOCAL_ADDRESS + "</a> once — it'll bring you right back here, automatically.";
       } else {
         $("relayNotifyHint").textContent = "This phone hasn't been paired with Jervis yet, or your computer " +
@@ -646,7 +652,10 @@
       setStatus($("statusDot"), $("statusText"), false, "Connecting…");
       showPaired();
       connect();
-      syncToOtherOrigin(saved());   // backfills a phone paired before this existed, or after a dropped sync earlier
+      // backTo: came here from a relay notify-setup page's "open this once" link (see setUpNotificationsViaRelay)
+      // and should land back there, not on this local page, once the sync completes. Absent it, this is just the
+      // ordinary local visit backfilling a sync that never ran, and the default (this same page) is right.
+      syncToOtherOrigin(saved(), params.get("backTo"));
     } else if (urlCode) {
       showUnpaired();   // pairCard with Confirmed/Not Confirmed, ready to tap by the time connect() finishes
       connect();
