@@ -5,144 +5,260 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Jervis</title>
 <style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
+  :root {
+    color-scheme: dark;
+    --bg: #090a0f; --bg-elevated: #12131c; --surface: #1a1c28; --surface-2: #20222f;
+    --border: #262838; --text: #f0f1f6; --text-dim: #8d93a8; --text-faint: #5a5f74;
+    --accent: #5b7fff; --accent-active: #4a67d9; --accent-soft: #5b7fff26;
+    --danger: #ff6b6b; --danger-soft: #ff6b6b1f; --success: #3ddc84;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
   body {
-    margin: 0; min-height: 100vh; padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
-    background: #0b0d12; color: #e8eaf0; font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    display: flex; flex-direction: column; align-items: center;
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior-y: none;
+    display: flex; flex-direction: column; height: 100dvh;
   }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  .sub { color: #8b93a7; font-size: 14px; margin-bottom: 24px; }
+
+  /* ---------- centered-card screens: pairing, notification setup. flex:1 (not a fixed 100dvh) so the
+       notification banner above, when shown, pushes this down and shrinks it instead of overlapping it. ---------- */
+  .screen {
+    flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+  }
+  .screen .brand { text-align: center; margin-bottom: 28px; }
+  .screen .brand h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .screen .brand .tagline { color: var(--text-dim); font-size: 14px; }
   .card {
-    width: 100%; max-width: 420px; background: #151822; border: 1px solid #262b3a; border-radius: 16px;
-    padding: 20px; margin-bottom: 16px;
+    width: 100%; max-width: 420px; background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 20px; padding: 24px; box-shadow: 0 8px 32px #00000066;
   }
-  .status { display: flex; align-items: center; gap: 8px; font-size: 15px; margin-bottom: 4px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: #666; flex-shrink: 0; }
-  .dot.on { background: #35d07f; box-shadow: 0 0 8px #35d07f88; }
-  .dot.off { background: #e0555f; }
-  input {
-    width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid #2c3244; background: #0f121a;
-    color: #e8eaf0; font-size: 16px; margin-bottom: 10px;
+  .card .icon {
+    width: 48px; height: 48px; border-radius: 14px; background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center; font-size: 22px; margin-bottom: 16px;
   }
-  input:focus { outline: 2px solid #5b8cff; border-color: transparent; }
+  .card .icon.err { background: var(--danger-soft); color: var(--danger); }
+  .card h2 { font-size: 18px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .card p.hint { color: var(--text-dim); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
+  .card .actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+  .error { color: var(--danger); font-size: 13px; margin-top: 10px; min-height: 16px; }
+
+  /* ---------- shared control styles ---------- */
   button {
-    width: 100%; padding: 13px; border-radius: 10px; border: none; background: #4a63e8; color: white;
-    font-size: 16px; font-weight: 600; cursor: pointer;
+    border: none; border-radius: 13px; font-size: 16px; font-weight: 600; cursor: pointer;
+    font-family: inherit; padding: 14px; background: var(--accent); color: white; width: 100%;
+    transition: transform 0.08s ease, opacity 0.08s ease;
   }
-  button:active { background: #3c52c4; }
-  button:disabled { background: #2c3244; color: #6a7186; cursor: default; }
-  button.secondary, a.secondary { background: #1e2330; color: #c6cad6; }
-  button.secondary:active, a.secondary:active { background: #262c3d; }
-  a.secondary {
-    width: 100%; padding: 13px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer;
-    display: block; box-sizing: border-box; text-align: center; margin-bottom: 10px;
+  button:active { transform: scale(0.98); background: var(--accent-active); }
+  button:disabled { background: var(--surface-2); color: var(--text-faint); cursor: default; transform: none; }
+  button.secondary, a.btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+  button.secondary:active, a.btn-secondary:active { background: var(--surface-2); }
+  button.danger { background: var(--danger-soft); color: var(--danger); }
+  button.danger:active { background: #ff6b6b33; }
+  button.text-btn {
+    background: none; color: var(--accent); width: auto; padding: 8px 4px; font-size: 14px; font-weight: 600;
   }
-  button.danger { background: #3a1c22; color: #ff9aa2; }
-  button.danger:active { background: #4a232b; }
-  .row { display: flex; gap: 8px; }
-  .row input { flex: 1; margin-bottom: 0; }
-  .row button { width: auto; padding: 12px 18px; }
-  .actions { display: flex; flex-direction: column; gap: 10px; }
-  .log { width: 100%; max-width: 420px; font-size: 13px; color: #9aa1b4; }
-  .log .line { padding: 8px 0; border-bottom: 1px solid #1c2029; }
-  .log .line.err { color: #e0555f; }
-  .log .line.ok { color: #6fcf97; }
-  .log .line.jervis { color: #a9b6ff; }
-  .hint { font-size: 13px; color: #6a7186; margin-top: 8px; }
-  .error { color: #e0555f; font-size: 14px; margin-top: 8px; min-height: 18px; }
-  code { background: #0f121a; padding: 2px 6px; border-radius: 5px; }
-  .mic-btn {
-    width: 96px; height: 96px; border-radius: 50%; margin: 8px auto; background: #4a63e8;
-    display: flex; align-items: center; justify-content: center; font-size: 34px; user-select: none;
-    -webkit-user-select: none; touch-action: none;
+  button.text-btn:active { background: none; opacity: 0.6; transform: none; }
+  a.btn-secondary {
+    display: block; text-align: center; text-decoration: none; padding: 14px; border-radius: 13px;
+    font-size: 16px; font-weight: 600;
   }
-  .mic-btn.live { background: #d9483f; box-shadow: 0 0 0 10px #d9483f33; }
-  .mic-hint { text-align: center; font-size: 13px; color: #6a7186; margin-top: 2px; }
+  .hint-toggle { margin-top: 2px; }
+  .hint-detail {
+    font-size: 13px; color: var(--text-dim); line-height: 1.5; margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .hint-detail b { color: var(--text); }
+  .status-row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-dim); margin-bottom: 16px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); flex-shrink: 0; }
+  .dot.on { background: var(--success); box-shadow: 0 0 6px #3ddc8499; }
+  .dot.off { background: var(--danger); }
+
+  /* ---------- notification banner: a slim, dismissible strip, independent of whichever screen is active. Normal
+       flex flow (not an overlay) so it pushes the active screen down instead of floating over it and stealing
+       its clicks — see body's own flex-column layout. ---------- */
+  #notifyCard {
+    flex-shrink: 0; display: none;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    background: var(--bg-elevated); border-bottom: 1px solid var(--border);
+  }
+  #notifyCard .row { display: flex; align-items: center; gap: 10px; max-width: 460px; margin: 0 auto; }
+  #notifyCard p { margin: 0; font-size: 13px; color: var(--text-dim); flex: 1; line-height: 1.4; }
+  #notifyCard button { width: auto; padding: 9px 14px; font-size: 13px; flex-shrink: 0; }
+  #notifyCard .dismiss { background: none; color: var(--text-faint); font-size: 18px; padding: 4px 6px; width: auto; }
+  #notifyInfo { max-width: 460px; margin: 8px auto 0; font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+
+  /* ---------- the chat screen: a real messaging layout, filling whatever space is left under the banner ---------- */
+  .chat-screen {
+    display: none; flex-direction: column; flex: 1; min-height: 0; width: 100%;
+  }
+  .chat-header {
+    display: flex; align-items: center; gap: 10px; padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+    background: var(--bg-elevated); border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative;
+    z-index: 5;
+  }
+  .chat-header .title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+  .chat-header .status-pill {
+    display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); margin-top: 1px;
+  }
+  .chat-header .spacer { flex: 1; }
+  .menu-btn {
+    width: 36px; height: 36px; border-radius: 50%; background: var(--surface); color: var(--text-dim);
+    font-size: 18px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+    padding: 0; flex-shrink: 0;
+  }
+  .menu-btn:active { background: var(--surface-2); transform: none; }
+  .menu-sheet {
+    position: absolute; top: calc(100% + 6px); right: 12px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden; display: none; box-shadow: 0 8px 24px #000000aa; min-width: 190px;
+  }
+  .menu-sheet.open { display: block; }
+  .menu-sheet button {
+    width: 100%; text-align: left; background: none; border-radius: 0; font-size: 14px; font-weight: 500;
+    padding: 13px 16px; color: var(--text);
+  }
+  .menu-sheet button:active { background: var(--surface-2); transform: none; }
+  .menu-sheet button.danger { color: var(--danger); }
+  .menu-sheet .divider { height: 1px; background: var(--border); }
+
+  .messages {
+    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 14px;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .msg {
+    max-width: 80%; padding: 10px 14px; border-radius: 18px; font-size: 15.5px; line-height: 1.4;
+    margin: 3px 0; word-wrap: break-word; white-space: pre-wrap; animation: rise 0.18s ease;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .msg.you { align-self: flex-end; background: var(--accent); color: white; border-bottom-right-radius: 5px; }
+  .msg.jervis { align-self: flex-start; background: var(--surface); color: var(--text); border-bottom-left-radius: 5px; }
+  .msg.system {
+    align-self: center; background: none; color: var(--text-faint); font-size: 12.5px; text-align: center;
+    max-width: 90%; padding: 4px 10px; margin: 6px 0;
+  }
+  .msg.system.err { color: var(--danger); }
+  .msg.system.ok { color: var(--success); }
+  .empty-state {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--text-faint); text-align: center; padding: 20px; gap: 6px;
+  }
+  .empty-state .icon { font-size: 32px; margin-bottom: 6px; opacity: 0.6; }
+  .empty-state .title { color: var(--text-dim); font-size: 15px; font-weight: 600; }
+  .empty-state .sub { font-size: 13px; max-width: 260px; }
+
+  .composer {
+    display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    background: var(--bg-elevated); border-top: 1px solid var(--border); flex-shrink: 0;
+  }
+  .composer input {
+    flex: 1; border-radius: 22px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-size: 16px; font-family: inherit; padding: 12px 16px; min-width: 0;
+  }
+  .composer input:focus { outline: none; border-color: var(--accent); }
+  .composer input:disabled { color: var(--text-faint); }
+  .round-btn {
+    width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; padding: 0; display: flex;
+    align-items: center; justify-content: center; font-size: 19px;
+  }
+  #micBtn { background: var(--surface); color: var(--text); user-select: none; -webkit-user-select: none; touch-action: none; }
+  #micBtn.live { background: var(--danger); color: white; box-shadow: 0 0 0 8px var(--danger-soft); }
+  #micWrap:not(.show) { display: none; }
 </style>
 </head>
 <body>
-  <h1>Jervis</h1>
-  <div class="sub">Talk to your computer from your phone</div>
 
-  <div class="card" id="pairCard">
-    <p id="pairTitle" style="margin:0 0 4px;font-size:16px;font-weight:600">Jervis wants to pair with this phone.</p>
-    <p class="hint" id="pairSub" style="margin-top:0">Confirm only if you asked for this just now, on your computer.</p>
-    <div class="actions" id="pairActions">
-      <button id="pairConfirmBtn">Confirmed</button>
-      <button class="secondary" id="pairRejectBtn">Not Confirmed</button>
+  <!-- Independent of whichever screen below is active — see refreshNotifyCard. -->
+  <div id="notifyCard">
+    <div class="row">
+      <p id="notifyHint">Turn on notifications so Jervis can reach you here, even when this page isn't open.</p>
+      <button id="notifyBtn">Enable</button>
+      <button class="dismiss" id="notifyInfoBtn" type="button" aria-label="More info">?</button>
     </div>
-    <div class="error" id="pairError"></div>
+    <p id="notifyInfo" style="display:none">
+      Whenever you say "connect my phone" on your computer, Jervis sends this phone a notification with
+      <b>Confirmed</b> and <b>Not Confirmed</b> right on it — tap one, no need to open this page. Nothing connects
+      without you tapping Confirmed each time.
+    </p>
   </div>
 
-  <div class="card" id="notifyCard" style="display:none">
-    <p class="hint" style="margin-top:0">
-      Turn on notifications so Jervis can reach you here — including asking to connect — even when this page
-      isn't open.
-    </p>
-    <button class="secondary" id="notifyInfoBtn" type="button">What happens if I allow this?</button>
-    <p class="hint" id="notifyInfo" style="display:none">
-      Whenever you say “connect my phone” on your computer, Jervis sends this phone a notification with
-      <b>Confirmed</b> and <b>Not Confirmed</b> buttons right on it — tap one, no need to open this page again.
-      Not connecting anything yet, and it can't connect anything without you tapping Confirmed each time.
-    </p>
-    <button id="notifyBtn">Enable notifications</button>
-    <p class="hint" id="notifyHint"></p>
+  <div class="screen" id="pairCard">
+    <div class="brand"><h1>Jervis</h1><div class="tagline">Talk to your computer from your phone</div></div>
+    <div class="card">
+      <div class="icon" id="pairIcon">📱</div>
+      <h2 id="pairTitle">Jervis wants to pair with this phone.</h2>
+      <p class="hint" id="pairSub">Confirm only if you asked for this just now, on your computer.</p>
+      <div class="actions" id="pairActions">
+        <button id="pairConfirmBtn">Confirmed</button>
+        <button class="secondary" id="pairRejectBtn">Not Confirmed</button>
+      </div>
+      <div class="error" id="pairError"></div>
+    </div>
   </div>
 
   <!-- Reached via the relay's own stable link (relay/server.py), not this computer's local address — see
        notification_setup_url() in app.py. Only ever about turning notifications on for an already-paired phone;
        pairing a brand-new phone always stays local (see phone_control.py's module docstring on why). -->
-  <div class="card" id="relayNotifyCard" style="display:none">
-    <div class="status"><span class="dot" id="relayNotifyDot"></span><span id="relayNotifyStatusText">Connecting…</span></div>
-    <p class="hint" style="margin-top:0" id="relayNotifyHint">
-      Turn on notifications so Jervis can reach you here — including asking to connect — even when this page
-      isn't open, and even away from this computer's Wi-Fi.
-    </p>
-    <button class="secondary" id="relayNotifyInfoBtn" type="button">What happens if I allow this?</button>
-    <p class="hint" id="relayNotifyInfo" style="display:none">
-      Whenever you say “connect my phone” on your computer, Jervis sends this phone a notification with
-      <b>Confirmed</b> and <b>Not Confirmed</b> buttons right on it — tap one, no need to open this page again.
-      Not connecting anything yet, and it can't connect anything without you tapping Confirmed each time.
-    </p>
-    <!-- Only shown in setUpNotificationsViaRelay's "not recognized yet" state, a styled button rather than a
-         hyperlink buried in a paragraph — a link in running text reads as reference material, not as the one
-         thing on the page there is to tap. -->
-    <a class="secondary" id="relayNotifyLocalLink" href="#" style="display:none; text-decoration:none">
-      Open on this Wi-Fi to finish setup
-    </a>
-    <button id="relayNotifyBtn">Enable notifications</button>
-    <div class="error" id="relayNotifyError"></div>
-  </div>
-
-  <div class="card" id="sessionCard" style="display:none">
-    <div class="status"><span class="dot" id="sessDot"></span><span id="sessStatusText">Connecting…</span></div>
-    <div id="micWrap" style="display:none">
-      <div class="mic-btn" id="micBtn">🎙️</div>
-      <p class="mic-hint">Press and hold to talk to Jervis</p>
+  <div class="screen" id="relayNotifyCard" style="display:none">
+    <div class="brand"><h1>Jervis</h1><div class="tagline">Talk to your computer from your phone</div></div>
+    <div class="card">
+      <div class="status-row"><span class="dot" id="relayNotifyDot"></span><span id="relayNotifyStatusText">Connecting…</span></div>
+      <h2 id="relayNotifyTitle">Enable notifications</h2>
+      <p class="hint" style="margin-bottom:10px" id="relayNotifyHint">
+        Turn on notifications so Jervis can reach you here, even when this page isn't open, and even away from
+        this computer's Wi-Fi.
+      </p>
+      <!-- Only shown in setUpNotificationsViaRelay's "not recognized yet" state — a real button, not a hyperlink
+           buried in a paragraph: text in running copy reads as reference material, not as the one thing on the
+           page there is to tap. -->
+      <a class="btn-secondary" id="relayNotifyLocalLink" href="#" style="display:none; margin-bottom:10px">
+        Open on this Wi-Fi to finish setup
+      </a>
+      <div class="actions">
+        <button id="relayNotifyBtn">Enable notifications</button>
+      </div>
+      <button class="text-btn hint-toggle" id="relayNotifyInfoBtn" type="button">What happens if I allow this?</button>
+      <p class="hint-detail" id="relayNotifyInfo" style="display:none">
+        Whenever you say "connect my phone" on your computer, Jervis sends this phone a notification with
+        <b>Confirmed</b> and <b>Not Confirmed</b> right on it — tap one, no need to open this page again. Nothing
+        connects without you tapping Confirmed each time.
+      </p>
+      <div class="error" id="relayNotifyError"></div>
     </div>
-    <button class="danger" id="disconnectBtn" style="margin-top:14px">Disconnect</button>
   </div>
 
-  <div class="card" id="mainCard" style="display:none">
-    <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Connecting…</span></div>
-    <div class="actions" id="actions">
-      <div class="row"><input id="appInput" placeholder="Open an app (e.g. Chrome)"><button data-cmd="OPEN_APPLICATION" data-field="appInput" data-key="app_name">Open</button></div>
-      <div class="row"><input id="songInput" placeholder="Play a song"><button data-cmd="PLAY_SONG" data-field="songInput" data-key="song_name">Play</button></div>
-      <button class="secondary" data-cmd="PAUSE_MUSIC">Pause music</button>
-      <div class="row"><input id="ytInput" placeholder="Play on YouTube"><button data-cmd="PLAY_YOUTUBE_VIDEO" data-field="ytInput" data-key="query">Play</button></div>
-      <div class="row"><input id="searchInput" placeholder="Search Google"><button data-cmd="SEARCH_GOOGLE" data-field="searchInput" data-key="query">Search</button></div>
+  <div class="chat-screen" id="sessionCard">
+    <div class="chat-header">
+      <div>
+        <div class="title">Jervis</div>
+        <div class="status-pill"><span class="dot" id="sessDot"></span><span id="sessStatusText">Connecting…</span></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="menu-btn" id="menuBtn" type="button" aria-label="Menu">⋯</button>
+      <div class="menu-sheet" id="sessionMenu">
+        <button id="disconnectBtn">Disconnect</button>
+        <div class="divider"></div>
+        <button class="danger" id="forgetBtn">Forget this pairing</button>
+      </div>
     </div>
-    <button class="secondary" id="forgetBtn" style="margin-top:14px">Forget this pairing</button>
+    <div class="messages" id="log">
+      <div class="empty-state" id="emptyState">
+        <div class="icon">💬</div>
+        <div class="title">Say hello</div>
+        <div class="sub">Type anything, or press and hold the mic to talk — Jervis is listening on your computer.</div>
+      </div>
+    </div>
+    <div class="composer">
+      <input id="chatInput" placeholder="Message Jervis…" autocomplete="off" disabled>
+      <div id="micWrap"><button class="round-btn" id="micBtn" type="button" aria-label="Hold to talk">🎙️</button></div>
+      <button class="round-btn" id="chatSendBtn" type="button" aria-label="Send" disabled>➤</button>
+    </div>
   </div>
-
-  <div class="log" id="log"></div>
 
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
-  const pairCard = $("pairCard"), mainCard = $("mainCard"), sessionCard = $("sessionCard"), log = $("log");
+  const pairCard = $("pairCard"), sessionCard = $("sessionCard"), log = $("log"), emptyState = $("emptyState");
   const VAPID_PUBLIC_KEY = "__VAPID_PUBLIC_KEY__";
   const RELAY_COMPUTER_ID = "__COMPUTER_ID__";
   // A dedicated placeholder, not a comparison against __COMPUTER_ID__/__LOCAL_ADDRESS__ again: Python's str.replace
@@ -155,8 +271,14 @@
   // Empty string means "not known" — both servers already substitute "" for that case, see their own comments.
   const KNOWN_LOCAL_ADDRESS = LOCAL_ADDRESS;
   const params = new URLSearchParams(location.search);
-  const urlCode = params.get("code");   // scanned the pairing QR code — see app.py's start_phone_pairing
-  let ws = null, reconnectTimer = null, authed = false, pendingSubscription = null;
+  // ACTIVE_PAIR_CODE: the local server's own answer to "is a pairing open right now" (phone_control.py's
+  // current_pairing_code) — so a phone that opens this computer's bare address directly (bookmarked, typed, or
+  // just reopened, no ?code= at all) still gets the Confirmed/Not Confirmed tap, as long as "connect my phone"
+  // is genuinely in progress. Only ever set locally (relay/server.py always substitutes "" — pairing never goes
+  // through the relay), so it can't leak a code to anyone not already on this Wi-Fi.
+  const ACTIVE_PAIR_CODE = "__ACTIVE_PAIR_CODE__";
+  const urlCode = params.get("code") || (ACTIVE_PAIR_CODE || null);
+  let ws = null, reconnectTimer = null, pendingSubscription = null;
 
   function urlBase64ToUint8Array(base64) {
     const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -174,17 +296,16 @@
       return;
     }
     if (Notification.permission === "granted") {
-      $("notifyBtn").textContent = "Notifications on";
-      $("notifyBtn").disabled = true;
-      $("notifyHint").textContent = "";
-    } else if (Notification.permission === "denied") {
-      $("notifyBtn").textContent = "Notifications blocked";
-      $("notifyBtn").disabled = true;
-      $("notifyHint").textContent = "Turn them on again in your browser's site settings for this page.";
+      card.style.display = "none";   // nothing left to ask for — a banner here would just be noise
+      return;
+    }
+    if (Notification.permission === "denied") {
+      $("notifyHint").textContent = "Notifications are blocked for this page. Turn them on in your browser's site settings.";
+      $("notifyBtn").style.display = "none";
     } else {
-      $("notifyBtn").textContent = "Enable notifications";
+      $("notifyHint").textContent = "Turn on notifications so Jervis can reach you here, even when this page isn't open.";
+      $("notifyBtn").style.display = "block";
       $("notifyBtn").disabled = false;
-      $("notifyHint").textContent = "";
     }
     card.style.display = "block";
   }
@@ -245,12 +366,18 @@
     location.href = `${otherOrigin}/?sync=1&return=${encodeURIComponent(returnUrl)}#${fragment}`;
   }
 
+  // Chat transcript: appended in order (oldest first, like any real messaging app), auto-scrolled to the newest
+  // message. "you"/"jervis" render as bubbles; anything else (ok/err/unlabeled) is a small centered system note —
+  // connection events, errors, nothing a conversation partner actually said.
   function logLine(text, kind) {
+    if (emptyState && emptyState.parentNode) emptyState.remove();
     const el = document.createElement("div");
-    el.className = "line" + (kind ? " " + kind : "");
+    const bubbleKind = kind === "you" || kind === "jervis" ? kind : "system";
+    el.className = "msg " + bubbleKind + (bubbleKind === "system" && kind ? " " + kind : "");
     el.textContent = text;
-    log.prepend(el);
-    while (log.children.length > 20) log.removeChild(log.lastChild);
+    log.appendChild(el);
+    while (log.children.length > 200) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
   }
 
   function setStatus(dotEl, textEl, on, text) {
@@ -259,32 +386,25 @@
   }
 
   function showCard(which) {
-    for (const c of [pairCard, mainCard, sessionCard, $("relayNotifyCard")]) c.style.display = "none";
-    if (which) which.style.display = "block";
+    for (const c of [pairCard, sessionCard, $("relayNotifyCard")]) c.style.display = "none";
+    if (which) which.style.display = "flex";   // both .screen and .chat-screen are flex containers
   }
-  function showPaired() { showCard(mainCard); }
-  function showUnpaired() { showCard(pairCard); authed = false; }
+  function showUnpaired() { showCard(pairCard); }
 
-  // ---------- local (same Wi-Fi) LAN connection: unchanged from before, used when not in a relay session ----------
+  // ---------- local (same Wi-Fi) LAN connection: pairing, and the local notification-enable fallback. A paired
+  // phone's actual connection — chat, voice, everything else — is connectSession below, not this one; once
+  // pairing finishes this hands straight off to connectSession(null) and this connection goes back to idle. ----
   function connect() {
     clearTimeout(reconnectTimer);
     const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`;
     ws = new WebSocket(url);
     ws.onopen = () => {
-      const device = saved();
-      if (device) {
-        ws.send(JSON.stringify({ type: "auth", deviceId: device.id, token: device.token }));
-      }
       if (pendingSubscription) {
         ws.send(JSON.stringify({ type: "push_subscribe", subscription: pendingSubscription }));
         pendingSubscription = null;
       }
     };
-    ws.onclose = () => {
-      authed = false;
-      setStatus($("statusDot"), $("statusText"), false, "Disconnected — retrying…");
-      reconnectTimer = setTimeout(connect, 2000);
-    };
+    ws.onclose = () => { reconnectTimer = setTimeout(connect, 2000); };
     ws.onerror = () => ws.close();
     ws.onmessage = (event) => {
       let data;
@@ -294,27 +414,13 @@
                         relayUrl: data.relayUrl, name: data.deviceName };
         save(device);
         syncToOtherOrigin(device);   // so a later notification tap, or the relay's own link, already has this
-        authed = true;
-        showPaired();
-        setStatus($("statusDot"), $("statusText"), true, "Connected to Jervis");
-        logLine("Paired as " + (data.deviceName || "this phone"), "ok");
+        connectSession(null);   // straight into chat — no separate "now say something" step
       } else if (data.type === "pair_error") {
         showUnpaired();
         $("pairConfirmBtn").disabled = false;
         $("pairRejectBtn").disabled = false;
         $("pairError").textContent = data.message ||
           "That didn't work. Ask Jervis to “connect my phone” again for a fresh link.";
-      } else if (data.type === "authed") {
-        authed = true;
-        showPaired();
-        setStatus($("statusDot"), $("statusText"), true, "Connected to Jervis");
-      } else if (data.type === "auth_error") {
-        clear();
-        showUnpaired();
-        $("pairError").textContent = "This pairing is no longer valid. Pair again.";
-      } else if (data.type === "result") {
-        logLine((data.status === "SUCCEEDED" ? "✓ " : "✗ ") + (data.message || data.status),
-                data.status === "SUCCEEDED" ? "ok" : "err");
       }
     };
   }
@@ -326,6 +432,7 @@
     $("pairError").textContent = "";
     if (!approve) {
       $("pairActions").style.display = "none";
+      $("pairIcon").textContent = "✕";
       $("pairTitle").textContent = "Pairing cancelled.";
       $("pairSub").textContent = "You can close this page.";
       if (ws) ws.close();
@@ -343,28 +450,6 @@
   }
   $("pairConfirmBtn").onclick = () => doPair(true);
   $("pairRejectBtn").onclick = () => doPair(false);
-
-  $("forgetBtn").onclick = () => {
-    clear();
-    if (ws) ws.close();
-    showUnpaired();
-    logLine("Forgot this pairing.");
-  };
-
-  document.querySelectorAll("#actions [data-cmd]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (!authed || !ws || ws.readyState !== WebSocket.OPEN) return;
-      const payload = {};
-      if (btn.dataset.field) {
-        const value = $(btn.dataset.field).value.trim();
-        if (!value) return;
-        payload[btn.dataset.key] = value;
-      }
-      const commandId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
-      ws.send(JSON.stringify({ type: "command", commandId, commandType: btn.dataset.cmd, payload }));
-      logLine("Sent: " + btn.dataset.cmd + (payload[btn.dataset.key] ? " — " + payload[btn.dataset.key] : ""));
-    });
-  });
 
   $("notifyBtn").onclick = enableNotifications;
   $("notifyInfoBtn").onclick = () => {
@@ -413,14 +498,15 @@
         // — most likely because it's never actually opened the local address below. Tapping the button, on the
         // same Wi-Fi as the computer, runs that sync automatically and bounces right back here — backTo carries
         // the exact URL to return to (this one), since the local page's own default return target is itself, not
-        // us. A real button, not a link in the paragraph: text in running copy reads as reference material, not
-        // as the one thing on the page there is to tap (see the user report this was built to fix).
+        // us.
+        $("relayNotifyTitle").textContent = "Almost there";
         $("relayNotifyHint").textContent = "This phone is paired, but hasn't finished one-time setup for this " +
           "link yet. On the same Wi-Fi as your computer, tap below once — it'll bring you right back here, " +
           "automatically.";
         localLinkBtn.href = KNOWN_LOCAL_ADDRESS + "/?backTo=" + encodeURIComponent(location.href);
         localLinkBtn.style.display = "block";
       } else {
+        $("relayNotifyTitle").textContent = "Not paired yet";
         $("relayNotifyHint").textContent = "This phone hasn't been paired with Jervis yet, or your computer " +
           "isn't reachable right now. Pair it on the same Wi-Fi as your computer first (say “connect my phone”), " +
           "then come back to this link.";
@@ -432,6 +518,7 @@
     $("relayNotifyLocalLink").style.display = "none";
     if (!VAPID_PUBLIC_KEY || !("serviceWorker" in navigator) || !("PushManager" in window)) {
       setStatus(dot, statusText, false, "Not available right now");
+      $("relayNotifyTitle").textContent = "Not available right now";
       $("relayNotifyHint").textContent = "Jervis wasn't reachable when this page loaded, or notifications aren't " +
         "supported in this browser. Make sure Jervis is running on your computer, then reload this page.";
       btn.style.display = "none";
@@ -464,7 +551,8 @@
           btn.textContent = "Notifications on";
           btn.disabled = true;
           $("relayNotifyError").textContent = "";
-          $("relayNotifyHint").textContent = "You're all set — you can close this page.";
+          $("relayNotifyTitle").textContent = "You're all set";
+          $("relayNotifyHint").textContent = "You can close this page.";
         }
       }
     };
@@ -496,35 +584,56 @@
   }
 
   let sessionWs = null, sessionKey = null, mediaRecorder = null, mediaStream = null;
+  let sessionAutoReconnect = false, sessionReconnectTimer = null;
 
   function sessionStatus(on, text) { setStatus($("sessDot"), $("sessStatusText"), on, text); }
 
-
+  // sessionId: a real, already-approved "connect my phone" session (a notification tap decided by confirm.html —
+  // see handleSessionEvent below), or null for this phone reconnecting on its own, the normal way home: the
+  // saved bookmark, or right after pairing. With null, the device's own token is proof enough — no push, no tap
+  // — the computer sends auto_attach the deviceId/token directly (phone_session.py's _auto_attach) instead of a
+  // sessionId it was never given. Worth retrying if that connection drops, unlike a one-off approved session.
   async function connectSession(sessionId) {
     const device = saved();
     if (!device || !device.relayUrl || !device.computerId) {
-      logLine("This phone isn't fully paired yet — pair with Jervis on the same Wi-Fi first.", "err");
+      showUnpaired();
+      $("pairActions").style.display = "none";
+      $("pairIcon").textContent = "📱";
+      $("pairTitle").textContent = "This phone isn't paired yet.";
+      $("pairSub").textContent = "Ask Jervis to “connect my phone” on the same Wi-Fi, then scan the QR code or open the link it shows.";
       return;
     }
+    clearTimeout(sessionReconnectTimer);
+    sessionAutoReconnect = !sessionId;
     showCard(sessionCard);
     sessionStatus(false, "Connecting…");
-    sessionWs = new WebSocket(device.relayUrl);
+    closeMenu();
+    const url = sessionId ? device.relayUrl
+                          : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`;
+    sessionWs = new WebSocket(url);
     sessionWs.onopen = () => {
       sessionWs.send(JSON.stringify({ type: "hello", role: "phone", computerId: device.computerId }));
     };
     sessionWs.onclose = () => {
-      sessionStatus(false, "Disconnected");
+      sessionStatus(false, sessionAutoReconnect ? "Reconnecting…" : "Disconnected");
       stopRecording();
+      $("chatInput").disabled = true;
+      $("chatSendBtn").disabled = true;
+      if (sessionAutoReconnect) sessionReconnectTimer = setTimeout(() => connectSession(null), 2000);
     };
     sessionWs.onerror = () => sessionWs.close();
     sessionWs.onmessage = async (event) => {
       let data;
       try { data = JSON.parse(event.data); } catch { return; }
       if (data.type === "offline") {
-        sessionStatus(false, "Jervis isn't reachable right now.");
+        sessionStatus(false, "Jervis isn't reachable right now");
       } else if (data.type === "hello_ok") {
         sessionKey = await importKey(device.key);
-        sessionWs.send(JSON.stringify({ type: "session_attach", sessionId, deviceId: device.id, token: device.token }));
+        if (sessionId) {
+          sessionWs.send(JSON.stringify({ type: "session_attach", sessionId, deviceId: device.id, token: device.token }));
+        } else {
+          sessionWs.send(JSON.stringify({ type: "auto_attach", deviceId: device.id, token: device.token }));
+        }
       } else if (data.type === "session_error") {
         sessionStatus(false, data.message || "That connection request is no longer valid.");
       } else if (data.n && data.ct) {
@@ -536,14 +645,15 @@
 
   function handleSessionMessage(message) {
     if (message.type === "session_ready") {
-      sessionStatus(true, "Connected to Jervis");
-      $("micWrap").style.display = mediaDevicesAvailable() ? "block" : "none";
-      logLine("Your phone is connected.", "ok");
+      sessionStatus(true, "Connected");
+      $("micWrap").classList.toggle("show", mediaDevicesAvailable());
+      $("chatInput").disabled = false;
+      $("chatSendBtn").disabled = false;
     } else if (message.type === "result") {
       logLine((message.status === "SUCCEEDED" ? "✓ " : "✗ ") + (message.message || message.status),
               message.status === "SUCCEEDED" ? "ok" : "err");
     } else if (message.type === "reply") {
-      logLine("Jervis: " + message.text, "jervis");
+      logLine(message.text, "jervis");
       try {
         const utter = new SpeechSynthesisUtterance(message.text);
         speechSynthesis.speak(utter);
@@ -605,14 +715,48 @@
   ["mousedown", "touchstart"].forEach((evt) => micBtn.addEventListener(evt, (e) => { e.preventDefault(); beginTalking(); }));
   ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach((evt) => micBtn.addEventListener(evt, endTalking));
 
+  // Typed chat: the same session the mic streams voice over, just text straight through instead of recorded and
+  // transcribed — delivered to Jervis's own conversational engine exactly like typing on the computer does (see
+  // phone_session.py's "text" handling), with the reply coming back the same way voice replies already do.
+  async function sendChatText() {
+    const text = $("chatInput").value.trim();
+    if (!text || !sessionKey || !sessionWs || sessionWs.readyState !== WebSocket.OPEN) return;
+    $("chatInput").value = "";
+    logLine(text, "you");
+    sessionWs.send(JSON.stringify(await encryptEnvelope(sessionKey, { type: "text", text })));
+  }
+  $("chatSendBtn").onclick = sendChatText;
+  $("chatInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); sendChatText(); }
+  });
+
+  function closeMenu() { $("sessionMenu").classList.remove("open"); }
+  $("menuBtn").onclick = (e) => { e.stopPropagation(); $("sessionMenu").classList.toggle("open"); };
+  document.addEventListener("click", (e) => {
+    if (!$("sessionMenu").contains(e.target) && e.target !== $("menuBtn")) closeMenu();
+  });
+
   $("disconnectBtn").onclick = async () => {
+    closeMenu();
+    sessionAutoReconnect = false;   // asked for, not dropped — don't reconnect behind the user's back
+    clearTimeout(sessionReconnectTimer);
     if (sessionKey && sessionWs && sessionWs.readyState === WebSocket.OPEN) {
       sessionWs.send(JSON.stringify(await encryptEnvelope(sessionKey, { type: "disconnect" })));
     }
     if (sessionWs) sessionWs.close();
     stopRecording();
     history.replaceState(null, "", location.pathname);
-    showPaired();
+    sessionStatus(false, "Disconnected");
+  };
+
+  $("forgetBtn").onclick = () => {
+    closeMenu();
+    sessionAutoReconnect = false;
+    clearTimeout(sessionReconnectTimer);
+    clear();
+    if (ws) ws.close();
+    if (sessionWs) sessionWs.close();
+    showUnpaired();
   };
 
   // ---------- a "connect my phone" request, already decided by confirm.html before this page ever opened ----------
@@ -624,7 +768,7 @@
   function handleSessionEvent(sessionId, decision) {
     if (!sessionId) return;
     if (decision === "confirm") { connectSession(sessionId); return; }
-    if (decision === "reject") { logLine("Connection cancelled."); showPaired(); }
+    if (decision === "reject") { connectSession(null); }
   }
 
   const urlSession = params.get("session");
@@ -665,9 +809,7 @@
       showCard($("relayNotifyCard"));
       setUpNotificationsViaRelay();
     } else if (saved()) {
-      setStatus($("statusDot"), $("statusText"), false, "Connecting…");
-      showPaired();
-      connect();
+      connectSession(null);   // the saved bookmark, reconnecting straight into chat — see connectSession's comment
       // backTo: came here from a relay notify-setup page's "open this once" link (see setUpNotificationsViaRelay)
       // and should land back there, not on this local page, once the sync completes. Absent it, this is just the
       // ordinary local visit backfilling a sync that never ran, and the default (this same page) is right.
@@ -676,13 +818,17 @@
       showUnpaired();   // pairCard with Confirmed/Not Confirmed, ready to tap by the time connect() finishes
       connect();
     } else {
-      // No code in the link at all: nothing for pairCard to confirm (see doPair's comment on why pairing stays
-      // tap-only) — but still connect(), since the notifyCard below is independent of pairing and still useful
-      // here (e.g. this computer has no relay configured, so a from-scratch notification-setup visit lands here).
+      // No code in the link, no code baked in server-side either (no pairing open right now — see
+      // ACTIVE_PAIR_CODE above, which covers the common case: this exact bookmark, reloaded right after saying
+      // "connect my phone"), nothing saved, not relay-served: genuinely nothing to act on until one of those is
+      // true. Still connect(), since the notifyCard banner above is independent of pairing and still useful here
+      // (e.g. this computer has no relay configured, so a from-scratch notification-setup visit lands here too).
       showUnpaired();
       $("pairActions").style.display = "none";
-      $("pairTitle").textContent = "This link is missing something.";
-      $("pairSub").textContent = "Ask Jervis to “connect my phone” and use the QR code or link it shows you.";
+      $("pairIcon").textContent = "🔗";
+      $("pairTitle").textContent = "No pairing request right now.";
+      $("pairSub").textContent = "Say “connect my phone” on your computer, then reload this page — or scan the " +
+        "QR code it shows.";
       connect();
     }
   }

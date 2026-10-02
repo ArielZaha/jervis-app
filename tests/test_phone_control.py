@@ -122,6 +122,24 @@ def test_wrong_code_is_rejected_and_counted(tmp_path):
     assert s.pairing_open()   # one wrong guess doesn't close it
 
 
+def test_current_pairing_code_is_none_until_begun(tmp_path):
+    s = _Server(tmp_path).server
+    assert s.current_pairing_code() is None
+
+
+def test_current_pairing_code_matches_the_open_code(tmp_path):
+    s = _Server(tmp_path).server
+    code = s.begin_pairing()
+    assert s.current_pairing_code() == code
+
+
+def test_current_pairing_code_is_none_again_once_paired(tmp_path):
+    s = _Server(tmp_path).server
+    code = s.begin_pairing()
+    s.try_pair(code, "Phone")
+    assert s.current_pairing_code() is None
+
+
 def test_a_code_stops_working_after_too_many_wrong_guesses(tmp_path):
     s = _Server(tmp_path).server
     real_code = s.begin_pairing()

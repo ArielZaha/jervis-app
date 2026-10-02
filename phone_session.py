@@ -104,6 +104,8 @@ class PhoneSessionRouter:
         if state is None:
             if payload.get("type") == "session_attach":
                 await self._attach(conn_id, payload, schedule_send, schedule_end)
+            elif payload.get("type") == "auto_attach":
+                await self._auto_attach(conn_id, payload, schedule_send, schedule_end)
             elif DEVICE_MESSAGE_ENVELOPE <= payload.keys():
                 await self._handle_device_message(payload, schedule_send)
             # else: nothing else is meaningful before a session is attached
@@ -138,14 +140,33 @@ class PhoneSessionRouter:
                 self.on_push_unsubscribe(endpoint)
 
     async def _attach(self, conn_id, payload: dict, schedule_send, schedule_end) -> None:
-        key = self.phone_server.attach_session(str(payload.get("sessionId") or ""),
-                                                str(payload.get("deviceId") or ""), str(payload.get("token") or ""),
-                                                conn_id)
+        device_id = str(payload.get("deviceId") or "")
+        session_id = str(payload.get("sessionId") or "")
+        key = self.phone_server.attach_session(session_id, device_id, str(payload.get("token") or ""), conn_id)
         if key is None:
             schedule_send({"type": "session_error", "message": "That connection request is no longer valid."})
             return
-        self._conns[conn_id] = {"device_id": str(payload.get("deviceId") or ""), "key": key,
-                                "session_id": str(payload.get("sessionId") or ""), "voice": None,
+        self._finish_attach(conn_id, device_id, session_id, key, schedule_send, schedule_end)
+
+    async def _auto_attach(self, conn_id, payload: dict, schedule_send, schedule_end) -> None:
+        """An already-paired phone reconnecting on its own (phone_client.html's saved-bookmark path, or right
+        after pairing) — no "connect my phone" push/tap needed, since the device token itself already proves it
+        (see PhoneControlServer.begin_and_approve_session). Same result as _attach from here on, just starting
+        from a device's credentials instead of a session a push notification already got approved."""
+        device_id = str(payload.get("deviceId") or "")
+        token = str(payload.get("token") or "")
+        session = self.phone_server.begin_and_approve_session(device_id, token)
+        if session is None:
+            schedule_send({"type": "session_error", "message": "This phone isn't paired anymore. Pair again."})
+            return
+        key = self.phone_server.attach_session(session.id, device_id, token, conn_id)
+        if key is None:
+            schedule_send({"type": "session_error", "message": "That didn't work. Try again."})
+            return
+        self._finish_attach(conn_id, device_id, session.id, key, schedule_send, schedule_end)
+
+    def _finish_attach(self, conn_id, device_id: str, session_id: str, key, schedule_send, schedule_end) -> None:
+        self._conns[conn_id] = {"device_id": device_id, "key": key, "session_id": session_id, "voice": None,
                                 "schedule_send": schedule_send, "schedule_end": schedule_end}
         schedule_send(phone_crypto.encrypt(key, {"type": "session_ready"}))
 
@@ -181,6 +202,13 @@ class PhoneSessionRouter:
             if audio:
                 threading.Thread(target=self._transcribe_and_deliver, daemon=True, name="phone-voice",
                                  args=(audio, state["session_id"])).start()
+        elif kind == "text":
+            # A typed message — the phone's chat box, see phone_client.html's sendChatText. Same destination as a
+            # transcribed voice recording (deliver_voice_text), just skipping the audio round trip entirely: it's
+            # already text.
+            text = str(message.get("text") or "").strip()
+            if text:
+                self.deliver_voice_text(text, state["session_id"])
         elif kind == "disconnect":
             self.end_session(state["session_id"])
 

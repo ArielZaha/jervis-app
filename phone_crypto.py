@@ -42,12 +42,19 @@ def encrypt(key: bytes, obj) -> dict:
             "ct": base64.urlsafe_b64encode(ciphertext).decode("ascii")}
 
 
+def _b64url_decode(s: str) -> bytes:
+    """`base64.urlsafe_b64decode` demands exact `=` padding and raises on anything else — but the phone's own
+    encoder (phone_client.html's bytesToB64url) deliberately strips it, same as a JWT or any other url-safe base64
+    producer would. Restoring it here is the fix, not asking the browser to pad what it correctly left unpadded."""
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
 def decrypt(key: bytes, envelope: dict):
     """The original object, or None if `envelope` isn't genuinely this device's (wrong key, tampered, or not
     actually an envelope) — callers treat that exactly like any other malformed message."""
     try:
-        nonce = base64.urlsafe_b64decode(envelope["n"].encode("ascii"))
-        ciphertext = base64.urlsafe_b64decode(envelope["ct"].encode("ascii"))
+        nonce = _b64url_decode(envelope["n"])
+        ciphertext = _b64url_decode(envelope["ct"])
         plaintext = AESGCM(key).decrypt(nonce, ciphertext, None)
         return json.loads(plaintext.decode("utf-8"))
     except (InvalidTag, KeyError, ValueError, TypeError):

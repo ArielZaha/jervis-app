@@ -71,6 +71,32 @@ def test_attaching_an_approved_session_sends_an_encrypted_session_ready(server):
     assert phone_crypto.decrypt(key, envelope) == {"type": "session_ready"}
 
 
+def test_auto_attach_skips_the_approval_dance_for_an_already_paired_device(server):
+    """The saved-bookmark reconnect (phone_client.html's connectSession(null)): no "connect my phone" push, no
+    session_id handed to the phone beforehand — just the device's own credentials, which is already proof enough."""
+    router = _router(server)
+    sent, send = _recorder()
+    device_id, token, key = server.registry.add("Phone")
+
+    _run(router.on_frame("conn-1", {"type": "auto_attach", "deviceId": device_id, "token": token}, send))
+
+    assert "conn-1" in router._conns
+    assert router._conns["conn-1"]["key"] == key
+    [envelope] = sent
+    assert phone_crypto.decrypt(key, envelope) == {"type": "session_ready"}
+    assert server.current_session_id() is not None   # a real session now exists, same as a tapped notification
+
+
+def test_auto_attach_with_bad_credentials_sends_session_error(server):
+    router = _router(server)
+    sent, send = _recorder()
+
+    _run(router.on_frame("conn-1", {"type": "auto_attach", "deviceId": "nope", "token": "nope"}, send))
+
+    assert "conn-1" not in router._conns
+    assert sent == [{"type": "session_error", "message": "This phone isn't paired anymore. Pair again."}]
+
+
 def test_a_command_frame_is_decrypted_run_and_the_result_re_encrypted(server):
     router = _router(server)
     sent, send = _recorder()
@@ -277,6 +303,38 @@ def test_disconnect_message_ends_the_session(server):
     assert server.current_session_id() is None
     assert "conn-1" not in router._conns
     assert ended == [1]   # the phone-initiated case still ends the transport too, see PhoneSessionRouter.end_session
+
+
+def test_a_text_message_is_delivered_like_transcribed_voice_would_be(server):
+    """The phone's typed chat box (phone_client.html's sendChatText): same destination as a voice recording once
+    transcribed (deliver_voice_text), just without the audio round trip — it's already text."""
+    delivered = []
+    router = _router(server, deliver=lambda text, session_id: delivered.append((text, session_id)))
+    sent, send = _recorder()
+    device_id, token, key = server.registry.add("Phone")
+    session = server.begin_session()
+    server.decide_session(session.id, session.secret, True)
+    _run(router.on_frame("conn-1", {"type": "session_attach", "sessionId": session.id, "deviceId": device_id,
+                                    "token": token}, send))
+
+    _run(router.on_frame("conn-1", phone_crypto.encrypt(key, {"type": "text", "text": "what's the weather"}), send))
+
+    assert delivered == [("what's the weather", session.id)]
+
+
+def test_an_empty_or_whitespace_text_message_delivers_nothing(server):
+    delivered = []
+    router = _router(server, deliver=lambda text, session_id: delivered.append((text, session_id)))
+    sent, send = _recorder()
+    device_id, token, key = server.registry.add("Phone")
+    session = server.begin_session()
+    server.decide_session(session.id, session.secret, True)
+    _run(router.on_frame("conn-1", {"type": "session_attach", "sessionId": session.id, "deviceId": device_id,
+                                    "token": token}, send))
+
+    _run(router.on_frame("conn-1", phone_crypto.encrypt(key, {"type": "text", "text": "   "}), send))
+
+    assert delivered == []
 
 
 def test_deliver_reply_reaches_the_attached_connection(server):

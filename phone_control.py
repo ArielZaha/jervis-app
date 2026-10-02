@@ -230,6 +230,15 @@ class PhoneControlServer:
         with self._lock:
             return self._pairing is not None and not self._pairing.expired()
 
+    def current_pairing_code(self):
+        """The code for the pairing currently open, if any — lets the local page offer the Confirmed/Not Confirmed
+        tap to a phone that opened this computer's bare address directly (bookmarked, typed, or just reopened)
+        without the code actually in its URL, as long as a "connect my phone" request is genuinely in progress
+        right now. Same trust boundary as the QR link itself: same Wi-Fi only (server.py never calls this), and
+        still a real tap to confirm — this only saves re-finding the link, not the confirmation step."""
+        with self._lock:
+            return self._pairing.code if self._pairing is not None and not self._pairing.expired() else None
+
     def try_pair(self, code: str, device_name: str):
         """(device_id, token, key) on a correct, still-open code, else None."""
         with self._lock:
@@ -245,6 +254,20 @@ class PhoneControlServer:
         session = PhoneSession(session_id=secrets.token_urlsafe(12), secret=secrets.token_urlsafe(24))
         with self._lock:
             self._session = session
+        return session
+
+    def begin_and_approve_session(self, device_id: str, token: str):
+        """An already-paired phone reconnecting on its own — the saved bookmark, not a "connect my phone" push —
+        skips the approval dance entirely: the device token itself, proven once here, is already a stronger proof
+        than a push notification's tap ever was. Returns the pre-approved session, or None if the credentials
+        don't belong to a real paired device."""
+        if self.registry.authenticate(device_id, token) is None:
+            return None
+        session = self.begin_session()
+        with self._lock:
+            if self._session is session:   # not replaced by a different request while authenticate() ran
+                session.state = "approved"
+                session.decided_event.set()
         return session
 
     def decide_session(self, session_id: str, secret: str, approve: bool) -> bool:
@@ -364,14 +387,18 @@ def _response(content: bytes, content_type: str):
     return Response(200, "OK", headers, content)
 
 
-def serve_static(connection, request):
+def serve_static(connection, request, active_pair_code=None):
     """A plain HTTP response for a normal browser GET (the mobile page, its service worker, or the Confirmed/Not
     Confirmed page), or None to let the WebSocket handshake proceed as usual. Nothing else on this computer is
     ever reachable through this: there is no file browsing, only these three fixed files.
 
     request.path is the *raw* request-line path, query string and all (e.g. "/?code=091468") — never compared
     against directly below; everything here matches on urlsplit(request.path).path instead, which is what the
-    QR-code pairing link's /?code=... and the push notification's /confirm?... links both actually are."""
+    QR-code pairing link's /?code=... and the push notification's /confirm?... links both actually are.
+
+    active_pair_code: the caller's PhoneControlServer.current_pairing_code(), if a "connect my phone" pairing is
+    open right now — baked into the page so a phone that opened the bare address (a bookmark, typed from memory,
+    or just reopened) still gets the Confirmed/Not Confirmed tap, exactly as if the code were in its URL."""
     if request.headers.get("Upgrade"):   # a real WebSocket handshake: let it proceed as usual
         return None
     path = urlsplit(request.path).path
@@ -404,5 +431,5 @@ def serve_static(connection, request):
     # same address, so neither needs filling in. __SERVED_BY_RELAY__ says so explicitly (see phone_client.html's
     # own comment on why that can't just be inferred from __COMPUTER_ID__ being empty or not).
     html = (html.replace("__COMPUTER_ID__", "").replace("__LOCAL_ADDRESS__", "")
-                .replace("__SERVED_BY_RELAY__", "0"))
+                .replace("__SERVED_BY_RELAY__", "0").replace("__ACTIVE_PAIR_CODE__", active_pair_code or ""))
     return _response(html.encode("utf-8"), "text/html; charset=utf-8")

@@ -653,7 +653,13 @@ async def handle_phone_client(websocket) -> None:
             except (ValueError, TypeError):
                 continue
             kind = data.get("type")
-            if kind == "push_subscribe":
+            if kind == "hello":
+                # Same handshake relay/server.py answers for a relay-routed session (connectSession in
+                # phone_client.html always sends this first, whichever transport device.relayUrl points at —
+                # one protocol for both, see phone_session.py's module docstring) — there's no connId to hand
+                # back here, unlike the relay's, since this connection already *is* the one the phone attaches on.
+                await websocket.send(json.dumps({"type": "hello_ok"}))
+            elif kind == "push_subscribe":
                 subscription = data.get("subscription") or {}
                 if isinstance(subscription, dict) and subscription.get("endpoint"):
                     _on_push_subscribe(subscription)
@@ -702,7 +708,7 @@ async def handle_phone_client(websocket) -> None:
                         None, phone_server.run_command, device_id, command_id,
                         str(data.get("commandType")), data.get("payload") or {})
                     await websocket.send(json.dumps({"type": "result", "commandId": command_id, **result}))
-            elif kind == "session_attach" or ("n" in data and "ct" in data):
+            elif kind in ("session_attach", "auto_attach") or ("n" in data and "ct" in data):
                 await session_router.on_frame(conn_id, data, schedule_send, schedule_end)
     except websockets.exceptions.ConnectionClosed:
         pass
@@ -730,7 +736,7 @@ async def local_process_request(connection, request):
                 return connection.respond(400, "Bad request.")
             phone_server.decide_session(session_id, secret, decision == "confirm")
             return connection.respond(200, "OK")
-    return phone_control.serve_static(connection, request)
+    return phone_control.serve_static(connection, request, active_pair_code=phone_server.current_pairing_code())
 
 
 def run_phone_server() -> None:

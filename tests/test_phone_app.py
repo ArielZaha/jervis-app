@@ -380,6 +380,56 @@ def test_a_local_session_attaches_and_runs_a_command_without_a_relay(monkeypatch
     assert any("chrome" in a.lower() for a in sandbox.actions)
 
 
+def test_a_session_attaches_over_the_real_wire_after_a_hello_handshake():
+    """Regression: connectSession (phone_client.html) always sends "hello" first and waits for "hello_ok" before
+    ever sending session_attach — the same handshake relay/server.py answers for a relay-routed session, since
+    both transports are meant to speak one protocol (see phone_session.py's module docstring). The local server
+    had no handler for "hello" at all, so a "connect my phone" session with no relay configured hung forever
+    waiting for a reply that never came — this never showed up locally because every other local test attaches a
+    session by sending session_attach directly, skipping the handshake a real phone always does first."""
+    port = _free_port()
+    device_id, token, key = app.phone_server.registry.add("Test Phone")
+    session = app.phone_server.begin_session()
+    app.phone_server.decide_session(session.id, session.secret, True)
+
+    async def client():
+        async with websockets.connect(f"ws://127.0.0.1:{port}/") as ws:
+            await ws.send(json.dumps({"type": "hello", "role": "phone", "computerId": "whatever"}))
+            hello_reply = json.loads(await ws.recv())
+            assert hello_reply == {"type": "hello_ok"}
+
+            await ws.send(json.dumps({"type": "session_attach", "sessionId": session.id,
+                                      "deviceId": device_id, "token": token}))
+            envelope = json.loads(await ws.recv())
+            return phone_crypto.decrypt(key, envelope)
+
+    message = _drive(port, client())
+    assert message == {"type": "session_ready"}
+
+
+def test_auto_attach_over_the_real_wire_lands_the_phone_in_chat_with_no_approval():
+    """Regression: handle_phone_client's dispatch only forwarded "session_attach" (or an already-encrypted frame)
+    to session_router.on_frame — auto_attach (phone_client.html's connectSession(null), the saved-bookmark
+    reconnect that replaced mainCard) fell through that elif with no match at all, so the phone's chat screen hung
+    at "Connecting…" forever. Same class of gap as the "hello" handshake above, same reason it went unnoticed:
+    every other local test reaches session_router directly, never through this function's own kind dispatch."""
+    port = _free_port()
+    device_id, token, key = app.phone_server.registry.add("Test Phone")
+
+    async def client():
+        async with websockets.connect(f"ws://127.0.0.1:{port}/") as ws:
+            await ws.send(json.dumps({"type": "hello", "role": "phone", "computerId": "whatever"}))
+            await ws.recv()
+
+            await ws.send(json.dumps({"type": "auto_attach", "deviceId": device_id, "token": token}))
+            envelope = json.loads(await ws.recv())
+            return phone_crypto.decrypt(key, envelope)
+
+    message = _drive(port, client())
+    assert message == {"type": "session_ready"}
+    assert app.phone_server.current_session_id() is not None
+
+
 def test_the_local_decide_endpoint_approves_a_session_over_plain_http():
     port = _free_port()
     session = app.phone_server.begin_session()
@@ -554,6 +604,43 @@ def test_the_mobile_page_is_served_over_plain_http():
     # rather than inferred from __COMPUTER_ID__/__LOCAL_ADDRESS__ (str.replace() replaces every occurrence, which
     # used to make that inference silently wrong whenever a real id/address was substituted in).
     assert b'const SERVED_BY_RELAY = "0" === "1";' in response
+
+
+def test_the_bare_address_picks_up_an_open_pairing_code_with_no_query_string_at_all():
+    """The actual fix for "This link is missing something": a phone that opens this computer's bare address
+    directly — a bookmark, typed from memory, or just reopened — rather than a freshly scanned QR code still gets
+    the Confirmed/Not Confirmed tap, as long as a "connect my phone" pairing is genuinely open right now. Without
+    this, the only way in was the exact QR/link with ?code= in it, which a revisited bookmark never has."""
+    port = _free_port()
+    app.phone_server.begin_pairing()
+    code = app.phone_server._pairing.code
+
+    async def client():
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        writer.write(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        await writer.drain()
+        response = await reader.read()
+        writer.close()
+        return response
+
+    response = _drive(port, client())
+    assert b"200" in response.split(b"\r\n", 1)[0]
+    assert f'const ACTIVE_PAIR_CODE = "{code}";'.encode() in response
+
+
+def test_the_bare_address_has_no_active_code_when_no_pairing_is_open():
+    port = _free_port()
+
+    async def client():
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        writer.write(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        await writer.drain()
+        response = await reader.read()
+        writer.close()
+        return response
+
+    response = _drive(port, client())
+    assert b'const ACTIVE_PAIR_CODE = "";' in response
 
 
 def test_the_mobile_page_is_served_with_a_query_string_too():
