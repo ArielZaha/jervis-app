@@ -72,7 +72,7 @@ SCHEMA = [
              "locally (a code to type); after that, each “connect my phone” sends a notification to tap "
              "Confirmed/Not Confirmed on. Off by default.", "restart": True},
     {"key": "JERVIS_RELAY_URL", "section": "Computer control", "label": "Relay address", "type": "text",
-     "default": "wss://jervis-relay.fly.dev/", "advanced": True, "restart": True,
+     "default": "wss://jervis-relay.onrender.com/", "advanced": True, "restart": True,
      "help": "Lets an already-paired phone reach Jervis away from this Wi-Fi too. Points at a shared relay Jervis "
              "runs by default — it never sees anything meaningful (every message through it is end-to-end "
              "encrypted with a key only your phone and this computer have; see phone_crypto.py). Clear this field "
