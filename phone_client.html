@@ -63,11 +63,12 @@
   <div class="sub">Talk to your computer from your phone</div>
 
   <div class="card" id="pairCard">
-    <div class="status"><span class="dot off" id="pairDot"></span><span id="pairStatusText">Not connected</span></div>
-    <p class="hint">On your computer, say or type <b>“connect my phone”</b>, then enter the 6-digit code shown there.</p>
-    <input id="codeInput" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code">
-    <input id="nameInput" placeholder="This phone's name (optional)">
-    <button id="pairBtn">Pair with Jervis</button>
+    <p id="pairTitle" style="margin:0 0 4px;font-size:16px;font-weight:600">Jervis wants to pair with this phone.</p>
+    <p class="hint" id="pairSub" style="margin-top:0">Confirm only if you asked for this just now, on your computer.</p>
+    <div class="actions" id="pairActions">
+      <button id="pairConfirmBtn">Confirmed</button>
+      <button class="secondary" id="pairRejectBtn">Not Confirmed</button>
+    </div>
     <div class="error" id="pairError"></div>
   </div>
 
@@ -254,13 +255,6 @@
       const device = saved();
       if (device) {
         ws.send(JSON.stringify({ type: "auth", deviceId: device.id, token: device.token }));
-      } else if (urlCode) {
-        // Scanned the QR code on the computer: the code travels in the link, so no typing is needed here.
-        showCard(null);
-        setStatus($("pairDot"), $("pairStatusText"), true, "Pairing…");
-        ws.send(JSON.stringify({ type: "pair", code: urlCode, deviceName: "" }));
-      } else {
-        setStatus($("pairDot"), $("pairStatusText"), true, "Connected — enter your pairing code");
       }
       if (pendingSubscription) {
         ws.send(JSON.stringify({ type: "push_subscribe", subscription: pendingSubscription }));
@@ -270,7 +264,6 @@
     ws.onclose = () => {
       authed = false;
       setStatus($("statusDot"), $("statusText"), false, "Disconnected — retrying…");
-      setStatus($("pairDot"), $("pairStatusText"), false, "Not connected");
       reconnectTimer = setTimeout(connect, 2000);
     };
     ws.onerror = () => ws.close();
@@ -287,8 +280,11 @@
         setStatus($("statusDot"), $("statusText"), true, "Connected to Jervis");
         logLine("Paired as " + (data.deviceName || "this phone"), "ok");
       } else if (data.type === "pair_error") {
-        showUnpaired();   // in case this was the automatic pair-by-scanned-link attempt (its card starts hidden)
-        $("pairError").textContent = data.message || "Couldn't pair — check the code and try again.";
+        showUnpaired();
+        $("pairConfirmBtn").disabled = false;
+        $("pairRejectBtn").disabled = false;
+        $("pairError").textContent = data.message ||
+          "That didn't work. Ask Jervis to “connect my phone” again for a fresh link.";
       } else if (data.type === "authed") {
         authed = true;
         showPaired();
@@ -304,14 +300,30 @@
     };
   }
 
-  $("pairBtn").onclick = () => {
-    const code = $("codeInput").value.trim();
-    if (!/^\d{6}$/.test(code)) { $("pairError").textContent = "Enter the 6-digit code from your computer."; return; }
+  // Pairing a brand-new phone is now a single tap, matching "connect my phone" sessions (confirm.html): the
+  // code travels in the link itself (urlCode, from the QR code or link Jervis shows on the computer), so there's
+  // nothing to type — just confirm it's really you, or don't.
+  function doPair(approve) {
     $("pairError").textContent = "";
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "pair", code, deviceName: $("nameInput").value.trim() }));
+    if (!approve) {
+      $("pairActions").style.display = "none";
+      $("pairTitle").textContent = "Pairing cancelled.";
+      $("pairSub").textContent = "You can close this page.";
+      if (ws) ws.close();
+      return;
     }
-  };
+    $("pairConfirmBtn").disabled = true;
+    $("pairRejectBtn").disabled = true;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "pair", code: urlCode, deviceName: "" }));
+    } else {
+      $("pairError").textContent = "Not connected yet — wait a second and try again.";
+      $("pairConfirmBtn").disabled = false;
+      $("pairRejectBtn").disabled = false;
+    }
+  }
+  $("pairConfirmBtn").onclick = () => doPair(true);
+  $("pairRejectBtn").onclick = () => doPair(false);
 
   $("forgetBtn").onclick = () => {
     clear();
@@ -631,12 +643,14 @@
       connect();
       syncToOtherOrigin(saved());   // backfills a phone paired before this existed, or after a dropped sync earlier
     } else if (urlCode) {
-      showCard(null);   // pairing happens automatically the instant the connection opens; nothing to show first
-      setStatus($("pairDot"), $("pairStatusText"), true, "Pairing…");
+      showUnpaired();   // pairCard with Confirmed/Not Confirmed, ready to tap by the time connect() finishes
       connect();
     } else {
+      // No code in the link at all: nothing to confirm (see doPair's comment on why pairing stays tap-only).
       showUnpaired();
-      connect();
+      $("pairActions").style.display = "none";
+      $("pairTitle").textContent = "This link is missing something.";
+      $("pairSub").textContent = "Ask Jervis to “connect my phone” and use the QR code or link it shows you.";
     }
   }
   if (!SERVED_BY_RELAY && params.get("sync") !== "1") refreshNotifyCard();

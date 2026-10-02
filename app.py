@@ -780,9 +780,10 @@ def start_phone_pairing() -> str:
             return   # whoever answered (or the timeout) already has their own reply
         code = phone_server.begin_pairing()
         address = f"http://{phone_control.lan_address()}:{PHONE_WS_PORT}"
-        pair_url = f"{address}/?code={code}"   # the code travels in the link too, so scanning is the whole step —
-        # phone_client.html auto-submits it on load; typing the address and code by hand stays there as a fallback,
-        # shown on the panel itself (address + code, in full) rather than spoken, to keep this one line, said once.
+        pair_url = f"{address}/?code={code}"   # the code travels in the link, never typed: scanning the QR opens
+        # phone_client.html straight to a Confirmed/Not Confirmed tap (see its pairCard) — the address and code are
+        # still shown on the panel itself, in full, as a fallback for a phone that can't scan, not spoken, to keep
+        # this one line, said once.
         announcements.put("Scan the QR code on your screen with your phone to connect.")
         send_ui_update_once({"type": "phone_pairing", "address": address, "pairUrl": pair_url, "code": code,
                              "expiresAt": time.time() + phone_control.PAIR_CODE_TTL})
@@ -4342,4 +4343,4 @@ if __name__ == "__main__":
         main_loop()
     except KeyboardInterrupt:
         print("\nShutting down.")
-
+        
