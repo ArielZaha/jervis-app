@@ -33,8 +33,12 @@
   }
   button:active { background: #3c52c4; }
   button:disabled { background: #2c3244; color: #6a7186; cursor: default; }
-  button.secondary { background: #1e2330; color: #c6cad6; }
-  button.secondary:active { background: #262c3d; }
+  button.secondary, a.secondary { background: #1e2330; color: #c6cad6; }
+  button.secondary:active, a.secondary:active { background: #262c3d; }
+  a.secondary {
+    width: 100%; padding: 13px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer;
+    display: block; box-sizing: border-box; text-align: center; margin-bottom: 10px;
+  }
   button.danger { background: #3a1c22; color: #ff9aa2; }
   button.danger:active { background: #4a232b; }
   .row { display: flex; gap: 8px; }
@@ -102,6 +106,12 @@
       <b>Confirmed</b> and <b>Not Confirmed</b> buttons right on it — tap one, no need to open this page again.
       Not connecting anything yet, and it can't connect anything without you tapping Confirmed each time.
     </p>
+    <!-- Only shown in setUpNotificationsViaRelay's "not recognized yet" state, a styled button rather than a
+         hyperlink buried in a paragraph — a link in running text reads as reference material, not as the one
+         thing on the page there is to tap. -->
+    <a class="secondary" id="relayNotifyLocalLink" href="#" style="display:none; text-decoration:none">
+      Open on this Wi-Fi to finish setup
+    </a>
     <button id="relayNotifyBtn">Enable notifications</button>
     <div class="error" id="relayNotifyError"></div>
   </div>
@@ -396,24 +406,30 @@
     const dot = $("relayNotifyDot"), statusText = $("relayNotifyStatusText"), btn = $("relayNotifyBtn");
     if (!device) {
       setStatus(dot, statusText, false, "Not recognized here yet");
+      const localLinkBtn = $("relayNotifyLocalLink");
       if (KNOWN_LOCAL_ADDRESS) {
         // Paired locally already (this link wouldn't exist otherwise — see app.py's start_phone_session), but
         // this phone has never completed the one-time local<->relay sync (phone_client.html's syncToOtherOrigin)
-        // — most likely because it's never actually opened the local address below. Opening it once, on the same
-        // Wi-Fi as the computer, runs that sync automatically and bounces right back here — backTo carries the
-        // exact URL to return to (this one), since the local page's own default return target is itself, not us.
-        const localLink = KNOWN_LOCAL_ADDRESS + "/?backTo=" + encodeURIComponent(location.href);
-        $("relayNotifyHint").innerHTML = "This phone is paired, but hasn't finished one-time setup for this " +
-          "link yet. On the same Wi-Fi as your computer, open <a href=\"" + localLink + "\" style=\"" +
-          "color:#8ab4ff\">" + KNOWN_LOCAL_ADDRESS + "</a> once — it'll bring you right back here, automatically.";
+        // — most likely because it's never actually opened the local address below. Tapping the button, on the
+        // same Wi-Fi as the computer, runs that sync automatically and bounces right back here — backTo carries
+        // the exact URL to return to (this one), since the local page's own default return target is itself, not
+        // us. A real button, not a link in the paragraph: text in running copy reads as reference material, not
+        // as the one thing on the page there is to tap (see the user report this was built to fix).
+        $("relayNotifyHint").textContent = "This phone is paired, but hasn't finished one-time setup for this " +
+          "link yet. On the same Wi-Fi as your computer, tap below once — it'll bring you right back here, " +
+          "automatically.";
+        localLinkBtn.href = KNOWN_LOCAL_ADDRESS + "/?backTo=" + encodeURIComponent(location.href);
+        localLinkBtn.style.display = "block";
       } else {
         $("relayNotifyHint").textContent = "This phone hasn't been paired with Jervis yet, or your computer " +
           "isn't reachable right now. Pair it on the same Wi-Fi as your computer first (say “connect my phone”), " +
           "then come back to this link.";
+        localLinkBtn.style.display = "none";
       }
       btn.style.display = "none";
       return;
     }
+    $("relayNotifyLocalLink").style.display = "none";
     if (!VAPID_PUBLIC_KEY || !("serviceWorker" in navigator) || !("PushManager" in window)) {
       setStatus(dot, statusText, false, "Not available right now");
       $("relayNotifyHint").textContent = "Jervis wasn't reachable when this page loaded, or notifications aren't " +
