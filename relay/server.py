@@ -304,7 +304,8 @@ async def process_request(connection, request):
         context = await _fetch_page_context(computer_id) if computer_id else {"vapidKey": "", "localAddress": ""}
         html = (html.replace("__VAPID_PUBLIC_KEY__", context["vapidKey"])
                     .replace("__COMPUTER_ID__", computer_id)
-                    .replace("__LOCAL_ADDRESS__", context["localAddress"]))
+                    .replace("__LOCAL_ADDRESS__", context["localAddress"])
+                    .replace("__SERVED_BY_RELAY__", "1"))
         return _http_response(200, html.encode("utf-8"), "text/html; charset=utf-8")
 
     return connection.respond(404, "Not found.")

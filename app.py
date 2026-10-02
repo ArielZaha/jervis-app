@@ -376,6 +376,12 @@ def send_ui_update(data_type, data):
         )
 
 
+def clear_ui_update(data_type) -> None:
+    """Stops a send_ui_update payload from being replayed to a window that connects later — for state that's
+    done, not just stale, like a QR code once what it was for (pairing, notification setup) has succeeded."""
+    latest_ui_updates.pop(data_type, None)
+
+
 pending_alerts = []  # timer alerts that fired while no window was open; shown when it connects
 alerts_open = 0  # how many alert cards the window is showing
 
@@ -650,7 +656,7 @@ async def handle_phone_client(websocket) -> None:
             if kind == "push_subscribe":
                 subscription = data.get("subscription") or {}
                 if isinstance(subscription, dict) and subscription.get("endpoint"):
-                    push_store.add(subscription)
+                    _on_push_subscribe(subscription)
             elif kind == "push_unsubscribe":
                 endpoint = str(data.get("endpoint") or "")
                 if endpoint:
@@ -670,6 +676,7 @@ async def handle_phone_client(websocket) -> None:
                                                      "computerId": relay.computer_id,
                                                      "relayUrl": session_transport_url()}))
                     broadcast("ai", f"{name} is now paired and can talk to me on this network.")
+                    clear_ui_update("phone_pairing")
                     send_ui_update_once({"type": "phone_paired", "deviceName": name})   # closes the QR panel
             elif kind == "auth":
                 found = phone_server.registry.authenticate(str(data.get("deviceId", "")), str(data.get("token", "")))
@@ -785,8 +792,11 @@ def start_phone_pairing() -> str:
         # still shown on the panel itself, in full, as a fallback for a phone that can't scan, not spoken, to keep
         # this one line, said once.
         announcements.put("Scan the QR code on your screen with your phone to connect.")
-        send_ui_update_once({"type": "phone_pairing", "address": address, "pairUrl": pair_url, "code": code,
-                             "expiresAt": time.time() + phone_control.PAIR_CODE_TTL})
+        # send_ui_update, not the "once" version: this is meant to still be there if the window wasn't open the
+        # instant this fired, or gets reopened a minute later — see that function's own docstring on the
+        # difference. Cleared on phone_paired below, so a window opened after that doesn't see a stale QR.
+        send_ui_update("phone_pairing", {"address": address, "pairUrl": pair_url, "code": code,
+                                         "expiresAt": time.time() + phone_control.PAIR_CODE_TTL})
 
     threading.Thread(target=run, daemon=True, name="phone-pairing").start()
     return f"{question} Say yes or no."
@@ -813,8 +823,16 @@ def start_phone_session() -> str:
     sent = push.send_to_all(push_store, "Jervis", "Jervis wants to connect to this computer.",
                             tag="jervis-session", actions=actions, data=push_data)
     if not sent:
-        return (f"I couldn't reach a paired phone to ask — open {notification_setup_url()} on your phone once and "
-                "tap “Enable notifications”. One time only; after that this just works.")
+        url = notification_setup_url()
+        # Same QR panel as first-ever pairing (phonePairingLayer in index.html/panels.js) — no reason to make the
+        # user open or type a link by hand when a scan does it instead. send_ui_update (not "once") so it's still
+        # there if the window wasn't open the instant this fired, or gets reopened later — see that function's own
+        # docstring. Closes and clears itself on phone_notify_enabled, same pattern as pairing's own phone_paired;
+        # the timer here is just when the panel gives up waiting, not a real expiry on the link itself (it's a
+        # stable address — see notification_setup_url's docstring).
+        send_ui_update("phone_pairing", {"address": url, "pairUrl": url, "code": "", "expiresAt": time.time() + 600})
+        return ("I couldn't reach a paired phone to ask — I've put a QR code on your screen. Scan it with your "
+                "phone once and tap “Enable notifications”. One time only; after that this just works.")
 
     def run():
         if not session.decided_event.wait(phone_control.SESSION_TTL):
@@ -2828,6 +2846,15 @@ phone_server = phone_control.PhoneControlServer(execute=_dispatch_phone_command)
 push_store = push.SubscriptionStore()   # phones that asked to be notified — see push.py
 
 
+def _on_push_subscribe(subscription: dict) -> None:
+    """A phone just turned notifications on — local or relay, same callback either way. Saves it, and closes the
+    QR panel start_phone_session() puts up when it can't reach any phone yet (same signal pairing's own QR panel
+    closes on, see phone_paired above)."""
+    push_store.add(subscription)
+    clear_ui_update("phone_pairing")
+    send_ui_update_once({"type": "phone_notify_enabled"})
+
+
 def _transcribe_phone_audio(pcm16_bytes: bytes, sample_rate: int) -> str:
     """session_router's callback: the same multi-engine transcribe() the desktop microphone uses, just fed PCM
     that started life as a phone recording instead of sr.Microphone (see phone_session.decode_audio_to_pcm16)."""
@@ -2857,7 +2884,7 @@ def _local_address() -> str:
 # Shared between the local LAN phone server (handle_phone_client, right below) and relay_client.py: a "connect my
 # phone" session behaves identically either way — see phone_session.py for why that's one router, not two.
 session_router = phone_session.PhoneSessionRouter(phone_server, _transcribe_phone_audio, _deliver_phone_voice_text,
-                                                   on_push_subscribe=push_store.add,
+                                                   on_push_subscribe=_on_push_subscribe,
                                                    on_push_unsubscribe=push_store.remove)
 relay = relay_client.RelayClient(RELAY_URL, session_router,
                                  is_enabled=lambda: bool(RELAY_URL) and phone_control_mode() != "off",

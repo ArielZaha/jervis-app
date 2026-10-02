@@ -39,6 +39,8 @@ def clean(sandboxed, monkeypatch, tmp_path):
         app.announcements.get_nowait()
     sent = []
     monkeypatch.setattr(app, "send_ui_update_once", lambda payload: sent.append(payload))
+    monkeypatch.setattr(app, "send_ui_update",
+                        lambda data_type, data: sent.append({"type": data_type, "data": data}))
     monkeypatch.setenv("JERVIS_PHONE_CONTROL", "on")
     fresh_registry = phone_control.DeviceRegistry(path=str(tmp_path / "devices.json"))
     monkeypatch.setattr(app.phone_server, "registry", fresh_registry)
@@ -125,7 +127,7 @@ def test_confirming_opens_pairing_and_announces_the_code(clean):
     assert app.phone_server.pairing_open()
     announced = app.announcements.get(timeout=2)
     assert announced == "Scan the QR code on your screen with your phone to connect."   # short and clear, on purpose
-    pairing_update = next(p for p in sent if p.get("type") == "phone_pairing")
+    pairing_update = next(p for p in sent if p.get("type") == "phone_pairing")["data"]
     assert "http://" in pairing_update["address"] and str(app.PHONE_WS_PORT) in pairing_update["address"]
     # the code travels inside pairUrl too, so scanning the QR code alone is the whole step (see phone_client.html)
     assert pairing_update["pairUrl"] == pairing_update["address"] + "/?code=" + pairing_update["code"]
@@ -225,24 +227,29 @@ def test_starting_a_session_pushes_confirm_and_reject_actions(monkeypatch):
                           "secret": kw["data"]["secret"]}
 
 
-def test_starting_a_session_with_no_reachable_phone_says_so(monkeypatch):
+def test_starting_a_session_with_no_reachable_phone_shows_a_qr_code(clean, monkeypatch):
+    sent = clean
     monkeypatch.setattr(app, "RELAY_URL", "wss://relay.example/")
     monkeypatch.setattr(push, "send_to_all", lambda *a, **kw: 0)
     _pair_a_phone()
     reply = app.start_phone_session()
     assert "couldn't reach" in reply.lower()
-    # the whole fix: tell them the actual address to open, not just "open its Jervis page" with nothing to open —
+    assert "qr code" in reply.lower()   # no link to open by hand — see index.html/panels.js's phonePairingLayer
+    # the whole fix: a scannable link to the actual address, not just "open its Jervis page" with nothing to open —
     # and with a relay configured, that's the relay's own stable link (https, with this install's computerId),
     # not a local IP that can change or require the same Wi-Fi
-    assert f"https://relay.example/?computerId={app.relay.computer_id}" in reply
+    pairing_update = next(p for p in sent if p.get("type") == "phone_pairing")["data"]
+    assert pairing_update["pairUrl"] == f"https://relay.example/?computerId={app.relay.computer_id}"
 
 
-def test_starting_a_session_with_no_reachable_phone_uses_the_local_address_without_a_relay(monkeypatch):
+def test_starting_a_session_with_no_reachable_phone_uses_the_local_address_without_a_relay(clean, monkeypatch):
+    sent = clean
     monkeypatch.setattr(app, "RELAY_URL", "")
     monkeypatch.setattr(push, "send_to_all", lambda *a, **kw: 0)
     _pair_a_phone()
-    reply = app.start_phone_session()
-    assert "http://" in reply and str(app.PHONE_WS_PORT) in reply
+    app.start_phone_session()
+    pairing_update = next(p for p in sent if p.get("type") == "phone_pairing")["data"]
+    assert "http://" in pairing_update["pairUrl"] and str(app.PHONE_WS_PORT) in pairing_update["pairUrl"]
 
 
 def test_confirming_a_session_announces_connected(monkeypatch):
@@ -422,9 +429,26 @@ def test_pairing_over_the_wire_tells_the_window_to_close_the_qr_panel(clean):
     assert paired_update["deviceName"] == "Test Phone"
 
 
-def test_a_phone_can_subscribe_to_notifications_before_pairing():
+def test_clear_ui_update_removes_only_the_named_entry():
+    """The actual fix for "the QR only showed once": phone_pairing used to go through send_ui_update_once, which
+    is never replayed to a window that wasn't already open when it was sent — see that function's own docstring.
+    It's send_ui_update now (replayed via latest_ui_updates to any window that connects, however late, same
+    mechanism "weather"/"mic"/"timers" already rely on), and clear_ui_update (new) removes an entry once there's
+    nothing left to show, from the same two call sites phone_paired/phone_notify_enabled already close the panel
+    from — this test covers clear_ui_update itself; send_ui_update's one-line body is exercised elsewhere already."""
+    app.latest_ui_updates["phone_pairing"] = {"type": "phone_pairing", "data": {"pairUrl": "https://x"}}
+    app.latest_ui_updates["mic"] = {"type": "mic", "data": {"ok": True}}
+    app.clear_ui_update("phone_pairing")
+    assert "phone_pairing" not in app.latest_ui_updates
+    assert app.latest_ui_updates["mic"] == {"type": "mic", "data": {"ok": True}}   # unrelated entries untouched
+    app.clear_ui_update("phone_pairing")   # clearing an already-absent entry is a no-op, not an error
+    del app.latest_ui_updates["mic"]
+
+
+def test_a_phone_can_subscribe_to_notifications_before_pairing(clean):
     """Notifications are opt-in independently of pairing — the pairing confirmation itself needs to reach an
     unpaired phone, so push_subscribe must never require auth first."""
+    sent = clean
     port = _free_port()
 
     async def client():
@@ -436,6 +460,9 @@ def test_a_phone_can_subscribe_to_notifications_before_pairing():
 
     _drive(port, client())
     assert app.push_store.list() == [{"endpoint": "https://push.example/xyz", "keys": {"p256dh": "a", "auth": "b"}}]
+    # Closes the "scan to enable notifications" QR panel (see start_phone_session's fallback), the same way a
+    # successful pairing closes its own QR panel with phone_paired.
+    assert any(p.get("type") == "phone_notify_enabled" for p in sent)
 
 
 def test_a_phone_can_unsubscribe():
@@ -523,6 +550,10 @@ def test_the_mobile_page_is_served_over_plain_http():
     response = _drive(port, client())
     assert b"200" in response.split(b"\r\n", 1)[0]
     assert b"Jervis" in response
+    # Served locally, not by the relay — see phone_client.html's own comment on why this is its own placeholder
+    # rather than inferred from __COMPUTER_ID__/__LOCAL_ADDRESS__ (str.replace() replaces every occurrence, which
+    # used to make that inference silently wrong whenever a real id/address was substituted in).
+    assert b'const SERVED_BY_RELAY = "0" === "1";' in response
 
 
 def test_the_mobile_page_is_served_with_a_query_string_too():

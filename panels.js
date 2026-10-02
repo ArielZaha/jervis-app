@@ -400,22 +400,27 @@ document.addEventListener('DOMContentLoaded', () => {
   phonePairingLayer.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePhonePairing(); });
   window.addEventListener('jervis-message', (event) => {
     const data = event.detail || {};
-    if (data.type === 'phone_pairing') {
-      $('phonePairingAddress').textContent = data.address || '';
-      $('phonePairingCode').textContent = (data.code || '').split('').join(' ');
+    if (data.type === 'phone_pairing' && data.data) {
+      // sent via send_ui_update, not the "once" version, so this is still here (replayed on connect) if the
+      // window wasn't open the instant app.py sent it, or gets reopened later — see send_ui_update's own
+      // docstring. The code travels inside pairUrl itself (phone_client.html's pairing card no longer takes
+      // typed input — see its own comments) — so the one fallback for a phone that can't scan is the full link,
+      // not a separately-typed code.
+      const info = data.data;
+      $('phonePairingAddress').textContent = info.pairUrl || info.address || '';
       const qrEl = $('phonePairingQr');
       qrEl.innerHTML = '';
-      if (qrcode && data.pairUrl) {
+      if (qrcode && info.pairUrl) {
         try {
           const qr = qrcode(0, 'M');
-          qr.addData(data.pairUrl);
+          qr.addData(info.pairUrl);
           qr.make();
           qrEl.innerHTML = qr.createSvgTag(4, 4);
         } catch (error) { /* the address/code text below still works without a QR code */ }
       }
-      phonePairingExpiry = data.expiresAt || null;
+      phonePairingExpiry = info.expiresAt || null;
       openPanel(phonePairingLayer);
-    } else if (data.type === 'phone_paired') {
+    } else if (data.type === 'phone_paired' || data.type === 'phone_notify_enabled') {
       closePhonePairing();
     }
   });

@@ -134,11 +134,16 @@
   const $ = (id) => document.getElementById(id);
   const pairCard = $("pairCard"), mainCard = $("mainCard"), sessionCard = $("sessionCard"), log = $("log");
   const VAPID_PUBLIC_KEY = "__VAPID_PUBLIC_KEY__";
-  const RELAY_COMPUTER_ID = "__COMPUTER_ID__";   // non-empty only when the relay served this page, not this computer
-  const SERVED_BY_RELAY = !!RELAY_COMPUTER_ID && RELAY_COMPUTER_ID !== "__COMPUTER_ID__";
+  const RELAY_COMPUTER_ID = "__COMPUTER_ID__";
+  // A dedicated placeholder, not a comparison against __COMPUTER_ID__/__LOCAL_ADDRESS__ again: Python's str.replace
+  // replaces every occurrence, so once a real id/address is substituted in, a second "is this still the raw
+  // placeholder" check further down would see that same real value both times and always read as "no" — silently
+  // breaking relay detection (and the local-address fallback below) on exactly the success path that matters.
+  const SERVED_BY_RELAY = "__SERVED_BY_RELAY__" === "1";
   const LOCAL_ADDRESS = "__LOCAL_ADDRESS__";   // this computer's current address, fetched live by the relay — a
-  // way back for a phone the relay origin doesn't recognize yet (see setUpNotificationsViaRelay's !device case)
-  const KNOWN_LOCAL_ADDRESS = LOCAL_ADDRESS && LOCAL_ADDRESS !== "__LOCAL_ADDRESS__" ? LOCAL_ADDRESS : "";
+  // way back for a phone the relay origin doesn't recognize yet (see setUpNotificationsViaRelay's !device case).
+  // Empty string means "not known" — both servers already substitute "" for that case, see their own comments.
+  const KNOWN_LOCAL_ADDRESS = LOCAL_ADDRESS;
   const params = new URLSearchParams(location.search);
   const urlCode = params.get("code");   // scanned the pairing QR code — see app.py's start_phone_pairing
   let ws = null, reconnectTimer = null, authed = false, pendingSubscription = null;
@@ -646,11 +651,14 @@
       showUnpaired();   // pairCard with Confirmed/Not Confirmed, ready to tap by the time connect() finishes
       connect();
     } else {
-      // No code in the link at all: nothing to confirm (see doPair's comment on why pairing stays tap-only).
+      // No code in the link at all: nothing for pairCard to confirm (see doPair's comment on why pairing stays
+      // tap-only) — but still connect(), since the notifyCard below is independent of pairing and still useful
+      // here (e.g. this computer has no relay configured, so a from-scratch notification-setup visit lands here).
       showUnpaired();
       $("pairActions").style.display = "none";
       $("pairTitle").textContent = "This link is missing something.";
       $("pairSub").textContent = "Ask Jervis to “connect my phone” and use the QR code or link it shows you.";
+      connect();
     }
   }
   if (!SERVED_BY_RELAY && params.get("sync") !== "1") refreshNotifyCard();

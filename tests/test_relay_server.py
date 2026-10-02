@@ -305,6 +305,23 @@ def test_the_phone_page_fetches_live_context_from_an_online_computer():
     _drive(scenario())
 
 
+def test_the_phone_page_knows_it_was_served_by_the_relay_even_with_a_real_computerid():
+    """Regression: __SERVED_BY_RELAY__ is its own placeholder, not inferred by comparing the (now-substituted)
+    RELAY_COMPUTER_ID against its own raw placeholder text again — str.replace() replaces every occurrence, so
+    that comparison used to see the real id on both sides and silently read as "not served by the relay" on
+    exactly the success path (a real, known computerId) where it mattered most."""
+    port = _free_port()
+
+    async def scenario():
+        async with await _serve(port):
+            status, body = await _get(port, "/?computerId=abc123")
+            assert status == 200
+            assert b'const RELAY_COMPUTER_ID = "abc123";' in body
+            assert b'const SERVED_BY_RELAY = "1" === "1";' in body
+
+    _drive(scenario())
+
+
 def test_the_phone_page_still_loads_with_empty_context_when_the_computer_never_answers(monkeypatch):
     monkeypatch.setattr(relay_server, "PAGE_CONTEXT_TIMEOUT", 0.3)
     port = _free_port()

@@ -401,6 +401,8 @@ def serve_static(connection, request):
         html = html.replace("__VAPID_PUBLIC_KEY__", "")   # notifications just won't be offered; pairing still works
     # __COMPUTER_ID__ and __LOCAL_ADDRESS__ only mean anything when the relay serves this same page
     # (relay/server.py) — reached directly like this, there's exactly one computer to talk to, already at this
-    # same address, so neither needs filling in.
-    html = html.replace("__COMPUTER_ID__", "").replace("__LOCAL_ADDRESS__", "")
+    # same address, so neither needs filling in. __SERVED_BY_RELAY__ says so explicitly (see phone_client.html's
+    # own comment on why that can't just be inferred from __COMPUTER_ID__ being empty or not).
+    html = (html.replace("__COMPUTER_ID__", "").replace("__LOCAL_ADDRESS__", "")
+                .replace("__SERVED_BY_RELAY__", "0"))
     return _response(html.encode("utf-8"), "text/html; charset=utf-8")
