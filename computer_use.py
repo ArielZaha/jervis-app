@@ -29,7 +29,8 @@ MAX_STEPS = 25
 MAX_STALE = 8        # steps in a row that get nowhere (nothing changed, or the answer was unusable): stuck, stop
 MAX_REPEATS = 2      # the same action may change nothing this many times; after that it's refused
 MAX_INVALID = 4          # the AI's answer couldn't be used this many times in a row: give up and say so
-SETTLE_TIMEOUT = 2.5     # seconds to wait for the screen to settle after an action
+SETTLE_TIMEOUT = 4.5     # seconds to wait for the screen to settle after an action (a slower computer — Jervis's own
+                         # local AI is several GB and runs alongside everything else — just needs more of this)
 TAKEOVER_PIXELS = 40     # the pointer moved this far without Jervis moving it: the user took over
 MAX_ELEMENTS_SHOWN = 120
 # What the window registers as the emergency stop (never pressed by Jervis himself), as said aloud.

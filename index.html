@@ -248,6 +248,48 @@
     </div>
   </div>
 
+  <!-- First-ever phone pairing only (see start_phone_pairing in app.py); every "connect my phone" after that is a
+       notification to tap, no screen needed — see phone_control.py's module docstring. -->
+  <div class="sheet-layer" id="phonePairingLayer" hidden role="dialog" aria-modal="true" aria-labelledby="phonePairingTitle">
+    <div class="sheet-card">
+      <p class="graph-kicker">Connect your phone</p>
+      <h2 id="phonePairingTitle">Scan this with your phone's camera</h2>
+      <div class="phone-pairing-qr" id="phonePairingQr"></div>
+      <p class="sheet-sub">Or open <code id="phonePairingAddress"></code> and enter this code:
+        <b id="phonePairingCode"></b></p>
+      <p class="sheet-note">This is only needed once for this phone — expires in a few minutes.</p>
+      <div class="sheet-actions">
+        <button type="button" class="sheet-btn" id="phonePairingClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- First start, a genuinely new install (see settings.is_first_run()): a few quick, all-optional questions. -->
+  <div class="sheet-layer" id="welcomeLayer" hidden role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
+    <div class="sheet-card welcome-card">
+      <p class="graph-kicker">Welcome</p>
+      <h2 id="welcomeTitle">Let’s get Jervis set up for you</h2>
+      <p class="sheet-sub">A few quick things — everything here is optional, and can be changed anytime in Settings.</p>
+      <div class="set-row">
+        <div class="set-text"><label for="welcomeName">Your name</label><small>So Jervis can greet you by name instead of “Sir”.</small></div>
+        <input id="welcomeName" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Ariel" />
+      </div>
+      <div class="set-row toggle">
+        <div class="set-text"><label for="welcomeWake">Wait for “Hey Jervis”</label><small>Off: Jervis listens all the time while the microphone is on.</small></div>
+        <input id="welcomeWake" type="checkbox" class="switch" checked />
+      </div>
+      <div class="set-row">
+        <div class="set-text"><label for="welcomePhone">Your phone number</label><small>For text notifications, e.g. when Jervis wants to pair with your phone. Needs Twilio set up too — add that under “optional extras” below.</small></div>
+        <input id="welcomePhone" type="text" autocomplete="off" spellcheck="false" placeholder="+15551234567" />
+      </div>
+      <div class="sheet-actions">
+        <button type="button" class="sheet-btn primary" id="welcomeContinue">Continue</button>
+        <button type="button" class="sheet-btn" id="welcomeMore">Add optional extras (Spotify, faster AI…)</button>
+        <button type="button" class="sheet-btn" id="welcomeSkip">Skip for now</button>
+      </div>
+    </div>
+  </div>
+
   <div class="sheet-layer" id="settingsLayer" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="sheet-card settings-card">
       <header class="graph-head">

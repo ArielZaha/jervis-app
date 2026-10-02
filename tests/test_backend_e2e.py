@@ -82,7 +82,7 @@ def test_web_pages_are_refused_even_with_the_secret(backend):
 def test_typed_command_is_answered(backend):
     port, data = backend
     reply = run(_talk(port, TOKEN, [{"type": "text", "text": "set a timer for 3 minutes"}],
-                      lambda m: m.get("sender") == "ai"))
+                      lambda m: m.get("sender") == "ai" and "3 minutes" in m.get("text", "")))
     assert reply and "3 minutes" in reply["text"]
     assert os.path.exists(data / "timers.json")          # written to the data folder, not the app folder
     transcript = "".join(open(os.path.join(data, "transcripts", f)).read() for f in os.listdir(data / "transcripts"))
@@ -135,3 +135,32 @@ def test_the_engine_stops_when_its_window_is_gone(tmp_path):
         for process in (engine, window):
             if process.poll() is None:
                 process.kill()
+
+
+def test_a_genuinely_new_install_is_offered_the_welcome_screen(tmp_path):
+    """A fresh data folder (no settings.json, no .env): the window should be told to offer the welcome screen the
+    moment it connects, without having to ask for it."""
+    port = _free_port()
+    env = {**os.environ, "JERVIS_SUPERVISED": "1", "JERVIS_WS_PORT": str(port), "JERVIS_WS_TOKEN": TOKEN,
+           "JERVIS_DATA_DIR": str(tmp_path), "JERVIS_AUDIO": "off", "JERVIS_NO_AI_SETUP": "1", "GROQ_API_KEY": "",
+           "PYTHONUNBUFFERED": "1"}
+    env.pop("JERVIS_ALLOW_ORIGINS", None)
+    process = subprocess.Popen([sys.executable, os.path.join(ROOT, "app.py")], cwd=ROOT, env=env,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            with socket.socket() as s:
+                if s.connect_ex(("127.0.0.1", port)) == 0:
+                    break
+            time.sleep(0.3)
+        else:
+            pytest.fail("backend did not start")
+        first_run = run(_talk(port, TOKEN, [], lambda m: m.get("type") == "first_run", timeout=15))
+        assert first_run == {"type": "first_run"}
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()

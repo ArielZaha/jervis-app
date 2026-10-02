@@ -58,7 +58,28 @@ SCHEMA = [
      "type": "choice", "default": "ask",
      "choices": [["ask", "Ask me before each task"], ["on", "Allowed (still asks before risky steps)"],
                  ["off", "Never"]]},
+    {"key": "JERVIS_SCREEN_VISION", "section": "Computer control", "label": "Look at the screen with",
+     "type": "choice", "default": "local",
+     "choices": [["local", "Local AI only (private; needs 16 GB of memory)"],
+                 ["online", "Online AI (Groq) too, if the local one isn't available"], ["off", "Never"]],
+     "help": "Used when Jervis can't find something on screen through accessibility alone (some apps, like "
+             "Spotify, don't expose their buttons at all). A screenshot of your whole screen, not just one app, "
+             "so “Online” means that leaves this computer.", "advanced": True},
+    {"key": "JERVIS_PHONE_CONTROL", "section": "Computer control", "label": "Let your phone control this computer",
+     "type": "toggle", "default": "off",
+     "help": "A paired phone can ask Jervis to open apps, play music, or search, and — with a relay address set "
+             "below — talk to Jervis by voice from anywhere, not just this Wi-Fi. The first phone ever pairs "
+             "locally (a code to type); after that, each “connect my phone” sends a notification to tap "
+             "Confirmed/Not Confirmed on. Off by default.", "restart": True},
+    {"key": "JERVIS_RELAY_URL", "section": "Computer control", "label": "Relay address", "type": "text",
+     "default": "wss://jervis-relay.fly.dev/", "advanced": True, "restart": True,
+     "help": "Lets an already-paired phone reach Jervis away from this Wi-Fi too. Points at a shared relay Jervis "
+             "runs by default — it never sees anything meaningful (every message through it is end-to-end "
+             "encrypted with a key only your phone and this computer have; see phone_crypto.py). Clear this field "
+             "to keep phone control same-Wi-Fi only, or point it at your own relay instead (see relay/README.md)."},
     # --- General ---
+    {"key": "JERVIS_USER_NAME", "section": "General", "label": "Your name", "type": "text", "default": "",
+     "help": "So Jervis can greet you by name instead of “Sir”."},
     {"key": "WEATHER_CITY", "section": "General", "label": "Weather city", "type": "text", "default": "",
      "help": "For the weather panel, e.g. Tel Aviv or London."},
     {"key": "JERVIS_KEEP_TRANSCRIPTS", "section": "Privacy", "label": "Keep conversation logs on this computer",
@@ -84,12 +105,29 @@ SCHEMA = [
      "help": "A free Desktop app OAuth client from console.cloud.google.com, with the Calendar API turned on."},
     {"key": "GOOGLE_CALENDAR_CLIENT_SECRET", "section": "Optional services", "label": "Google Calendar client secret",
      "type": "secret", "default": "", "restart": True, "advanced": True},
+    {"key": "TWILIO_ACCOUNT_SID", "section": "Optional services", "label": "Twilio account SID", "type": "secret",
+     "default": "", "advanced": True,
+     "help": "Lets Jervis text your phone (e.g. when it wants to pair) with no page or app needed. Free trial "
+             "account at twilio.com; all four Twilio fields are required together."},
+    {"key": "TWILIO_AUTH_TOKEN", "section": "Optional services", "label": "Twilio auth token", "type": "secret",
+     "default": "", "advanced": True},
+    {"key": "TWILIO_FROM_NUMBER", "section": "Optional services", "label": "Twilio phone number", "type": "text",
+     "default": "", "advanced": True, "help": "The number Twilio gave you, e.g. +15551234567."},
+    {"key": "TWILIO_TO_NUMBER", "section": "Optional services", "label": "Your phone number", "type": "text",
+     "default": "", "advanced": True, "help": "Where texts are sent, e.g. +15559876543."},
 ]
 BY_KEY = {item["key"]: item for item in SCHEMA}
 _lock = threading.Lock()
 _values = {}          # what settings.json holds (only keys the user or the .env import set)
 _from_env_file = {}   # what .env holds
 _process_env = set()  # keys that were already in the real environment at startup: they always win
+_first_run = False    # true only until the first save (the welcome screen, or Settings) — see is_first_run()
+
+
+def is_first_run() -> bool:
+    """Whether settings.json didn't exist when Jervis started (an old .env still counts as "not set up through
+    this yet") — the window uses this to offer the welcome screen once, the first time Jervis ever starts."""
+    return _first_run
 
 
 def path() -> str:
@@ -163,7 +201,7 @@ def _write_file(values: dict) -> None:
 
 def load() -> None:
     """Read everything and apply it to os.environ. Call once, before the rest of Jervis reads its configuration."""
-    global _values, _from_env_file, _process_env
+    global _values, _from_env_file, _process_env, _first_run
     with _lock:
         _process_env = {k for k in os.environ}
         env_files = [os.path.join(paths.RESOURCE_DIR, ".env"), os.path.join(paths.DATA_DIR, ".env")]
@@ -171,6 +209,7 @@ def load() -> None:
         for file_path in dict.fromkeys(env_files):   # the same folder when running from source
             _from_env_file.update(_parse_env_file(file_path))
         first_run = not os.path.exists(path())
+        _first_run = first_run   # no settings.json yet — whether or not there's an old .env to import from below
         _values = _read_file()
         if first_run and _from_env_file:
             # First start with this settings system: keep what the user already configured in .env.
@@ -234,6 +273,7 @@ def validate(key: str, value) -> str:
 def update(changes: dict) -> dict:
     """Validate and save several settings at once. Returns {"saved": [...], "restart": bool}; raises ValueError (and
     saves nothing) if any value is invalid."""
+    global _first_run
     changes = {key: value for key, value in (changes or {}).items()
                # public_view() shows a stored secret as "set"; sending that back means "unchanged", not the word "set"
                if not (BY_KEY.get(key, {}).get("type") == "secret" and value == "set")}
@@ -242,6 +282,7 @@ def update(changes: dict) -> dict:
         before = {key: _effective(key) for key in cleaned}
         _values.update(cleaned)
         _write_file(_values)
+        _first_run = False   # settings.json now exists (or is being written to) either way: no longer "new"
         _process_env.difference_update(cleaned)   # a value chosen in Settings now beats the startup environment
         _apply()
         changed = [key for key in cleaned if before[key] != cleaned[key]]

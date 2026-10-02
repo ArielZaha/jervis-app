@@ -70,21 +70,32 @@ def _mac_bring_forward() -> bool:
     import AppKit
     if not running():
         subprocess.run(["open", "-a", "Spotify"], check=False)
-        for _ in range(40):   # a cold start takes a few seconds
+        for _ in range(60):   # a cold start takes a few seconds, longer on a computer Jervis's own AI is loading down
             time.sleep(0.25)
             if running():
                 break
-        time.sleep(2.5)       # let its window and Quick Search get ready
+        time.sleep(4)         # let its window and Quick Search get ready
     app = next((a for a in AppKit.NSWorkspace.sharedWorkspace().runningApplications()
                 if a.localizedName() == "Spotify"), None)
     if app is None:
         return False
-    app.activateWithOptions_(AppKit.NSApplicationActivateIgnoringOtherApps)
-    for _ in range(20):
-        time.sleep(0.1)
-        front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
-        if front is not None and front.localizedName() == "Spotify":
+    for attempt in range(2):   # activateWithOptions_ alone doesn't always win focus from a background process
+        (app.activateWithOptions_(AppKit.NSApplicationActivateIgnoringOtherApps) if attempt == 0
+         else subprocess.run(["open", "-a", "Spotify"], check=False))
+        for _ in range(40):
+            time.sleep(0.15)
+            front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+            if front is not None and front.localizedName() == "Spotify":
+                break
+        else:
+            continue
+        if _window_bounds() is not None:   # frontmost doesn't mean it has a window: Spotify can run with none open
             return True
+        subprocess.run(["open", "-a", "Spotify"], check=False)   # this reopens its main window, not just the app
+        for _ in range(40):
+            time.sleep(0.15)
+            if _window_bounds() is not None:
+                return True
     return False
 
 
@@ -345,6 +356,11 @@ def clean_query(text: str) -> str:
 # doesn't let other programs see its buttons, so Jervis points at the result and plays it with Spotify's own play
 # key (Shift+Enter) instead of clicking a place he can't see.
 TYPE_DELAY = 0.09   # seconds between letters
+RESULTS_WAIT = 3.5   # seconds to let Spotify's search results load before looking for one
+# how long to wait for playback to actually start before giving up: generous, since Jervis's own local AI (several
+# GB, running alongside everything else) can make the whole computer slower to respond than usual.
+PLAYBACK_WAIT_STEPS = 48
+PLAYBACK_WAIT_INTERVAL = 0.3   # -> up to 14.4s
 
 
 def cursor():
@@ -355,31 +371,6 @@ def cursor():
     if IS_WIN:
         import winctl
         return winctl.cursor_position()
-    return None
-
-
-def _window_bounds():
-    """(x, y, width, height) of Spotify's main window, or None."""
-    if IS_MAC:
-        import Quartz
-        windows = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
-        best = None
-        for info in windows or []:
-            if info.get("kCGWindowOwnerName") == "Spotify" and info.get("kCGWindowLayer", 0) == 0:
-                b = info.get("kCGWindowBounds") or {}
-                box = (int(b.get("X", 0)), int(b.get("Y", 0)), int(b.get("Width", 0)), int(b.get("Height", 0)))
-                if not best or box[2] * box[3] > best[2] * best[3]:
-                    best = box
-        return best
-    if IS_WIN:
-        import ctypes
-        from ctypes import wintypes
-        windows = _win_windows()
-        if not windows:
-            return None
-        rect = wintypes.RECT()
-        ctypes.windll.user32.GetWindowRect(windows[0][0], ctypes.byref(rect))
-        return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
     return None
 
 
@@ -412,6 +403,34 @@ def _type_slowly(text: str) -> None:
         time.sleep(TYPE_DELAY)
 
 
+def _window_bounds():
+    """(x, y, width, height) of Spotify's main window, or None. This comes from the window server (what's on
+    screen), not accessibility — Spotify's window doesn't expose any content to accessibility at all (confirmed:
+    even with Jervis's accessibility permission on, its window has zero readable elements beyond its menu bar), so
+    there is no real button or field for Jervis to find and click the way he can in other apps."""
+    if IS_MAC:
+        import Quartz
+        windows = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+        best = None
+        for info in windows or []:
+            if info.get("kCGWindowOwnerName") == "Spotify" and info.get("kCGWindowLayer", 0) == 0:
+                b = info.get("kCGWindowBounds") or {}
+                box = (int(b.get("X", 0)), int(b.get("Y", 0)), int(b.get("Width", 0)), int(b.get("Height", 0)))
+                if not best or box[2] * box[3] > best[2] * best[3]:
+                    best = box
+        return best
+    if IS_WIN:
+        import ctypes
+        from ctypes import wintypes
+        windows = _win_windows()
+        if not windows:
+            return None
+        rect = wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(windows[0][0], ctypes.byref(rect))
+        return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+    return None
+
+
 def _keys(*keys: str) -> None:
     if IS_MAC:
         _mac_keys(*("cmd" if k == "command" else k for k in keys))
@@ -420,9 +439,145 @@ def _keys(*keys: str) -> None:
         winctl.press(*("ctrl" if k == "command" else ("esc" if k == "escape" else k) for k in keys), strict=True)
 
 
+def _looks_like_a_match(query: str, playing_name: str) -> bool:
+    """A rough sanity check on what Spotify actually started playing: does it share a real word with what was
+    asked for? Not strict (Spotify's own search can reasonably return a close alternative spelling), just a safety
+    net against reporting success for whatever happened to already be selected — which is how "play Jane" once
+    ended up reporting an unrelated song as playing."""
+    q_words = {w for w in re.findall(r"[\w']+", query.lower()) if len(w) > 2}
+    if not q_words:
+        return True
+    n_words = {w for w in re.findall(r"[\w']+", (playing_name or "").lower()) if len(w) > 2}
+    return bool(q_words & n_words)
+
+
+def _screen():
+    if IS_MAC:
+        import screen_mac
+        return screen_mac.MacScreen()
+    import screen_windows
+    return screen_windows.WindowsScreen()
+
+
 def visible_steps(query: str) -> list:
-    """The steps of playing `query` so you can watch, as (what you see, function) for computer_use.ScriptedTask."""
+    """The steps of playing `query` so you can watch, as (what you see, function) for computer_use.ScriptedTask.
+
+    Spotify's Mac app doesn't expose its window content to accessibility, so there is no search field or play
+    button Jervis can find and click by reading the window the way the general computer-control engine does in
+    other apps. When looking at a screenshot is available (Settings, Computer control), Jervis uses that instead —
+    a real vision model finds the real search bar and the real matching result, and both are clicked for real.
+    Otherwise, the only remaining real, visible way in is Spotify's own keyboard shortcuts (Cmd+K opens its Quick
+    Search, typing goes straight into it, Shift+Enter plays the selected result). Either way, nothing is ever
+    trusted blindly: every version checks that something actually started playing, *and* that it has a real word
+    in common with what was asked for, before ever calling it done."""
+    import screen_vision
     query = " ".join((query or "").split())
+    if screen_vision.available():
+        return _visible_steps_by_sight(query)
+    return _visible_steps_by_shortcut(query)
+
+
+def _visible_steps_by_sight(query: str) -> list:
+    import screen_vision
+    state = {}
+
+    def env():
+        if "env" not in state:
+            state["env"] = _screen()
+        return state["env"]
+
+    def vision():
+        if "vision" not in state:
+            state["vision"] = screen_vision.ScreenVision()
+        return state["vision"]
+
+    def spotify_view():
+        """A screenshot cropped to just Spotify's own window (its (x, y) offset, for mapping a point in the crop
+        back to real screen coordinates): with the rest of the screen out of the picture, Spotify's own UI is a
+        much larger fraction of what the vision model sees, and there's nothing else on screen to confuse it with."""
+        obs = env().observe()
+        if obs.screenshot is None:
+            raise SpotifyLocalError("I don't have permission to see the screen, so I can't find things in Spotify. "
+                                    "Grant Screen Recording to Jervis in System Settings, Privacy & Security.")
+        box = _window_bounds()
+        if box is None:
+            raise SpotifyLocalError("Spotify doesn't have a window open, so I stopped instead of guessing where "
+                                    "to click.")
+        x, y, w, h = box
+        cropped = obs.screenshot.crop((x, y, x + w, y + h))
+        return cropped, (x, y), (w, h)
+
+    def open_spotify():
+        if not installed():
+            raise SpotifyLocalError("Spotify isn't installed on this computer.")
+        state["before"] = _mac_now()[1] if IS_MAC else _win_title()
+        if not (_mac_bring_forward() if IS_MAC else _win_bring_forward()):
+            raise SpotifyLocalError("I couldn't bring Spotify to the front, so I stopped before touching anything.")
+        time.sleep(1.0)
+
+    def click_search_bar():
+        shot, (ox, oy), size = spotify_view()
+        # asking for the visible words landed reliably inside the field in testing; asking for "the search bar" or
+        # an icon both landed near the wrong (nearby) icon instead.
+        point = vision().locate(shot, 'the placeholder text "What do you want to play?"', size)
+        if point is None:
+            raise SpotifyLocalError("I couldn't find Spotify's search bar on screen, so I stopped instead of "
+                                    "clicking somewhere unsafe.")
+        point = (point[0] + ox, point[1] + oy)
+        state["search_point"] = point
+        _glide(*point)
+        env().click(point)
+        time.sleep(0.6)
+
+    def type_it():
+        _type_slowly(query)
+
+    def wait_for_results():
+        time.sleep(RESULTS_WAIT)
+
+    def point_at_result():
+        # Tested extensively against the real app: Shift+Enter ("play the selected result", the assumption the
+        # keyboard-shortcut fallback relies on) does nothing at all in the current Spotify — confirmed, not a
+        # guess. Finding one specific row precisely is hard for this vision model in a dense list, but it's the
+        # only mechanism that has ever actually clicked the right thing in testing, so it's what's used, backed by
+        # the match check in play_it() so a wrong guess is reported as a failure, never a false success.
+        shot, (ox, oy), size = spotify_view()
+        point = vision().locate(shot, f'the text "{query}" (the song title, in the results list)', size)
+        if point is None:
+            raise SpotifyLocalError(f"I searched Spotify for {query} but didn't see a matching result on screen, "
+                                    "so I stopped instead of playing something else.")
+        state["result_point"] = (point[0] + ox, point[1] + oy)
+        _glide(*state["result_point"])
+        time.sleep(0.6)
+
+    def play_it():
+        env().click(state["result_point"])
+        for _ in range(PLAYBACK_WAIT_STEPS):
+            time.sleep(PLAYBACK_WAIT_INTERVAL)
+            playing, name = now_playing()
+            now = _mac_now()[1] if IS_MAC else _win_title()
+            if playing and now != state.get("before"):
+                if not _looks_like_a_match(query, name):
+                    raise SpotifyLocalError(f"Spotify started playing {name}, but that doesn't look like a match "
+                                            f"for {query}, so I'm not calling it done — please check what's playing.")
+                return f"Playing {name} on Spotify." if name else "Playing it on Spotify."
+        playing, name = now_playing()
+        if playing and name:
+            if not _looks_like_a_match(query, name):
+                raise SpotifyLocalError(f"Spotify is playing {name}, but that doesn't look like a match for "
+                                        f"{query}, so I'm not calling it done — please check what's playing.")
+            return f"Playing {name} on Spotify."
+        raise SpotifyLocalError(f"I searched Spotify for {query} but it didn't start. The results are on the screen.")
+
+    return [("Opening Spotify", open_spotify),
+            ("Clicking the search bar", click_search_bar),
+            (f"Typing “{query}”", type_it),
+            ("Searching", wait_for_results),
+            ("Pointing at the results", point_at_result),
+            ("Playing it", play_it)]
+
+
+def _visible_steps_by_shortcut(query: str) -> list:
     state = {}
 
     def open_spotify():
@@ -430,8 +585,8 @@ def visible_steps(query: str) -> list:
             raise SpotifyLocalError("Spotify isn't installed on this computer.")
         state["before"] = _mac_now()[1] if IS_MAC else _win_title()
         if not (_mac_bring_forward() if IS_MAC else _win_bring_forward()):
-            raise SpotifyLocalError("I couldn't bring Spotify to the front, so I stopped before typing anything.")
-        time.sleep(0.4)
+            raise SpotifyLocalError("I couldn't bring Spotify to the front, so I stopped before touching anything.")
+        time.sleep(1.0)
 
     def open_search():
         box = _window_bounds()
@@ -441,34 +596,40 @@ def visible_steps(query: str) -> list:
             state["result"] = (x + w // 2, y + min(250, h // 3))   # its first result, just below
             _glide(*state["search"])
         _keys("escape")        # Cmd+K toggles Quick Search: start from closed
-        time.sleep(0.3)
+        time.sleep(0.5)
         _keys("command", "k")
-        time.sleep(0.7)
+        time.sleep(1.0)
         _keys("command", "a")
 
     def type_it():
         _type_slowly(query)
 
     def wait_for_results():
-        time.sleep(1.8)        # results come from Spotify's servers
+        time.sleep(RESULTS_WAIT)
 
     def point_at_result():
         if state.get("result"):
             _glide(*state["result"])
-        time.sleep(0.4)
+        time.sleep(0.6)
 
     def play_it():
         _keys("shift", "enter")
-        for _ in range(24):
-            time.sleep(0.25)
+        for _ in range(PLAYBACK_WAIT_STEPS):
+            time.sleep(PLAYBACK_WAIT_INTERVAL)
             playing, name = now_playing()
             now = _mac_now()[1] if IS_MAC else _win_title()
             if playing and now != state.get("before"):
                 _close_quick_search()
+                if not _looks_like_a_match(query, name):
+                    raise SpotifyLocalError(f"Spotify started playing {name}, but that doesn't look like a match "
+                                            f"for {query}, so I'm not calling it done — please check what's playing.")
                 return f"Playing {name} on Spotify." if name else "Playing it on Spotify."
         _close_quick_search()
         playing, name = now_playing()
         if playing and name:
+            if not _looks_like_a_match(query, name):
+                raise SpotifyLocalError(f"Spotify is playing {name}, but that doesn't look like a match for "
+                                        f"{query}, so I'm not calling it done — please check what's playing.")
             return f"Playing {name} on Spotify."
         raise SpotifyLocalError(f"I searched Spotify for {query} but it didn't start. The results are on the screen.")
 

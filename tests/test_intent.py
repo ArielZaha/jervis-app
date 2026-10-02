@@ -139,13 +139,47 @@ def test_spotify_without_keys_uses_the_spotify_app(monkeypatch):
     assert "not configured" not in str(result)
     assert "spotify front" in actions
     if sys.platform == "darwin":
-        assert "spotify type my favorite songs" in actions
+        assert "spotify type My Favorite Songs" in actions
         assert "spotify keys shift+enter" in actions
 
 
 @pytest.mark.parametrize("said", ["Wake up Jervis", "Hey Jervis", "Hello Jervis", "hello jarvis", "hey jarvis can you hear me"])
 def test_wake_phrases(said):
     assert app.is_wake_command(said)
+
+
+@pytest.mark.parametrize("said", ["take control on my computer and open Chrome", "take control over my computer and open Chrome",
+                                  "take control of my computer and open Chrome", "control my computer and open Chrome"])
+def test_take_control_recognizes_on_over_and_of(said):
+    """"Take control ON/OVER my computer" must be understood exactly like "take control OF my computer" — a request
+    phrased with a different preposition is still a real computer-control request, not a question to answer in chat."""
+    assert app.is_computer_request(said)
+    assert app.parse_computer_task(said) == "open Chrome"
+
+
+@pytest.mark.parametrize("hour,part", [(6, "morning"), (11, "morning"), (12, "noon"), (13, "afternoon"),
+                                       (17, "afternoon"), (18, "evening"), (23, "evening"), (2, "evening")])
+def test_time_greeting_matches_the_hour(monkeypatch, hour, part):
+    from datetime import datetime as real_datetime
+
+    class FixedDatetime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return real_datetime(2026, 1, 1, hour, 0)
+    monkeypatch.setattr(app, "datetime", FixedDatetime)
+    monkeypatch.delenv("JERVIS_USER_NAME", raising=False)
+    assert app.time_greeting() == f"Good {part}, Sir. How can I help you today?"
+
+
+def test_time_greeting_uses_the_users_name_once_set(monkeypatch):
+    monkeypatch.setenv("JERVIS_USER_NAME", "Ariel")
+    assert app.time_greeting().startswith("Good ") and ", Ariel." in app.time_greeting()
+
+
+@pytest.mark.parametrize("said", ["goodbye jervis", "bye jervis", "have a good day jervis", "goodbye", "bye",
+                                  "have a good day", "have a nice day"])
+def test_farewell_phrases_put_him_to_sleep(said):
+    assert app.is_shutdown_command(said)
 
 
 @pytest.mark.parametrize("said", ["hello", "hi there", "hey", "this is a hint", "I said hello to my brother"])
@@ -158,7 +192,7 @@ def test_closing_the_window_puts_him_to_sleep_and_the_wake_phrase_greets():
     app.set_window_visible(False)
     assert app.awake is False and app.window_visible is False
     app.set_window_visible(True)
-    assert app.AWAKE_GREETING == "I'm awake, how can I help you?"
+    assert app.time_greeting().startswith("Good ") and app.time_greeting().endswith("Sir. How can I help you today?")
 
 
 def test_with_the_window_closed_only_his_name_opens_it_and_he_greets(monkeypatch):
@@ -184,7 +218,7 @@ def test_with_the_window_closed_only_his_name_opens_it_and_he_greets(monkeypatch
     app.set_window_visible(False)   # the window was closed: he's asleep, listening for his name
     with pytest.raises(Done):
         app.main_loop()
-    assert spoken == ["I'm awake, how can I help you?"]
+    assert spoken == [app.time_greeting()]
     assert opened == [True]
 
 
@@ -214,9 +248,28 @@ def test_spotify_search_goes_to_spotify_and_play_it_plays_it(said, monkeypatch):
     "The search bar says \"Searching for Jane!\".",
     "I'm using the computer to search for the song \"Jane!\" in Spotify. The result is a list of tracks.",
     "The song \"Jane!\" by Janis Ian starts playing on Spotify.",
+    "I will now take control of your computer and play Jain's Song by Peter Gabriel.\n\nPlaying Jain's Song by Peter Gabriel.",
+    "Please type \"confirm\" to proceed with taking control of your computer.",
 ])
 def test_replies_claiming_actions_that_never_happened_are_caught(reply):
     assert app._CLAIMS_ACTION.search(reply)
+
+
+def test_action_request_answered_in_text_without_a_tool_call_is_never_shown(monkeypatch):
+    """If the model answers a plainly action-shaped request in free text instead of calling a tool — for whatever
+    reason — that text (however plausible-sounding, even a fake back-and-forth about "confirming") must never
+    reach the user: it's an untrustworthy hallucination by construction, not a real result."""
+    from types import SimpleNamespace
+
+    fake_message = SimpleNamespace(
+        content=("I'd like to clarify with you before I do anything... Please confirm that you'd like me to start "
+                 "controlling your computer."),
+        tool_calls=None)
+    fake_response = SimpleNamespace(choices=[SimpleNamespace(message=fake_message)])
+    monkeypatch.setattr(app, "groq_chat", lambda **kwargs: fake_response)
+    reply = app.ask_jervis([{"role": "system", "content": "x"}], "take control on my computer and play Jane on Spotify")
+    assert "didn't do anything on your computer" in reply
+    assert "clarify" not in reply and "confirm" not in reply
 
 
 @pytest.mark.parametrize("reply", [
@@ -255,6 +308,108 @@ def test_take_control_and_spotify_is_done_visibly_step_by_step(said, monkeypatch
     assert "".join(a[len("spotify type "):] for a in typed) == "Jane!" and len(typed) == 5   # letter by letter
     assert "spotify keys shift+enter" in actions and any(a.startswith("pointer to") for a in actions)
     app.computer_task = None
+
+
+def test_take_control_stays_visible_even_with_spotify_keys_configured(monkeypatch):
+    """With Spotify developer keys set up (Settings, Optional services), an ordinary "play X on Spotify" uses the
+    fast online API — but "take control ... and play X on Spotify" asked explicitly to watch it happen, so it must
+    still go through the mouse-and-keyboard flow, never silently answer through the API instead."""
+    import time
+    from types import SimpleNamespace
+    import spotify_local
+    fake_sp = SimpleNamespace(search=lambda **k: (_ for _ in ()).throw(AssertionError("the online API was called")))
+    monkeypatch.setattr(app, "sp", fake_sp)
+    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setattr(app, "computer_environment", lambda: SimpleNamespace(available=lambda: (True, "")))
+    monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
+    monkeypatch.setattr(app, "send_ui_update_once", lambda payload: None)
+    result, actions = route("take control on my computer and play Jane! on spotify")
+    assert "I'm using the computer to play Jane! on Spotify" in result
+    for _ in range(200):
+        if app.computer_task is not None and app.computer_task.state in ("completed", "error", "stopped"):
+            break
+        time.sleep(0.02)
+    actions = list(sandbox.actions)
+    assert "spotify front" in actions and "spotify keys cmd+k" in actions
+    app.computer_task = None
+
+
+@pytest.mark.parametrize("query,playing,should_match", [
+    ("Jane", "Boys Don't Cry by The Cure", False),          # the exact bug once reported: an unrelated song
+    ("Joy Of A Toy", "Joy Of A Toy by Soft Machine", True),
+    ("Bohemian Rhapsody", "Bohemian Rhapsody by Queen", True),
+])
+def test_spotify_wont_call_an_unrelated_song_a_success(query, playing, should_match):
+    import spotify_local
+    assert spotify_local._looks_like_a_match(query, playing) is should_match
+
+
+def test_visible_spotify_play_refuses_to_report_an_unrelated_song(monkeypatch):
+    """Shift+Enter can only play whatever Spotify already has selected — if that turns out not to match the
+    request (a stale selection, a slow search), Jervis must say so instead of announcing it as a success."""
+    import time
+    from types import SimpleNamespace
+    import spotify_local
+    monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
+    monkeypatch.setattr(spotify_local, "now_playing", lambda: (True, "Boys Don't Cry by The Cure"))
+    monkeypatch.setattr(spotify_local, "_mac_now", lambda: ("playing", "spotify:track:xyz", "Boys Don't Cry by The Cure"))
+    steps = spotify_local.visible_steps("Jane")
+    names = dict(steps)
+    for name, action in steps:
+        if name != "Playing it":
+            action()
+    with pytest.raises(spotify_local.SpotifyLocalError, match="doesn't look like a match"):
+        names["Playing it"]()
+    app.computer_task = None
+
+
+def test_visible_spotify_uses_sight_when_screen_vision_is_available(monkeypatch):
+    """With screen vision turned on (and available), Spotify's search bar and the matching result are found by
+    actually looking at a screenshot and clicked for real — not guessed at with Cmd+K / Shift+Enter."""
+    import time
+    from types import SimpleNamespace
+    import spotify_local
+    import screen_vision
+
+    class FakeShot:
+        def crop(self, box):
+            return self   # a fake "cropped" screenshot: FakeVision doesn't actually inspect the image content
+
+    class FakeObservation:
+        screenshot = FakeShot()   # anything not None: "a screenshot was taken"
+        screen_size = (1440, 900)
+
+    class FakeEnv:
+        def observe(self):
+            return FakeObservation()
+
+        def click(self, point, button="left", double=False):
+            clicked.append(point)
+            return ""
+
+    class FakeVision:
+        def locate(self, image, description, screen_size):
+            return (300, 200) if "What do you want to play" in description else (300, 400)
+
+    clicked = []
+    monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
+    monkeypatch.setattr(screen_vision, "available", lambda: True)
+    monkeypatch.setattr(screen_vision, "ScreenVision", FakeVision)
+    monkeypatch.setattr(spotify_local, "_screen", lambda: FakeEnv())
+    monkeypatch.setattr(spotify_local, "now_playing", lambda: (True, "Jane! by Someone"))
+    monkeypatch.setattr(spotify_local, "_mac_now", lambda: ("playing", "spotify:track:new", "Jane! by Someone"))
+    steps = spotify_local.visible_steps("Jane!")
+    names = [n for n, _ in steps]
+    assert names == ["Opening Spotify", "Clicking the search bar", "Typing “Jane!”", "Searching",
+                     "Pointing at the results", "Playing it"]
+    result = None
+    for name, action in steps:
+        result = action()
+    assert clicked == [(300, 200), (300, 400)]           # the search bar, then the matching result — real clicks
+    typed = [a for a in sandbox.actions if a.startswith("spotify type ")]
+    assert "".join(a[len("spotify type "):] for a in typed) == "Jane!"
+    assert "spotify keys cmd+k" not in sandbox.actions    # no shortcut guessing when sight is available
+    assert result == "Playing Jane! by Someone on Spotify."
 
 
 def test_without_take_control_spotify_is_played_quickly(monkeypatch):

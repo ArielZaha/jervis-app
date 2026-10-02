@@ -28,9 +28,8 @@ def format_time(seconds: int) -> str:
     return f"{minutes}:{secs:02d}"
 
 
-def parse_start_time(text: str):
-    """Return (seconds, text_without_the_time_phrase), or (None, text) when no position was spoken."""
-    n = " ".join(re.sub(r"[^a-z0-9': ]", " ", (text or "").lower()).split())
+def _find_time_phrase(n: str):
+    """n: lowercased, normalized text. Returns (seconds, start, end) of the spoken time phrase, or (None, None, None)."""
     for kind, pattern in _PATTERNS:
         m = pattern.search(n)
         if not m:
@@ -46,6 +45,24 @@ def parse_start_time(text: str):
                 seconds += 30
             elif m.lastindex and m.lastindex >= 2 and m.group(2):
                 seconds += _value(m.group(2))
-        before = _LEAD.sub("", n[:m.start()]).strip()
-        return seconds, " ".join((before + " " + n[m.end():]).split())
-    return None, n
+        lead = _LEAD.search(n[:m.start()])
+        return seconds, (lead.start() if lead else m.start()), m.end()
+    return None, None, None
+
+
+def parse_start_time(text: str):
+    """Return (seconds, text_without_the_time_phrase), or (None, text) when no position was spoken."""
+    n = " ".join(re.sub(r"[^a-z0-9': ]", " ", (text or "").lower()).split())
+    seconds, start, end = _find_time_phrase(n)
+    if seconds is None:
+        return None, n
+    return seconds, " ".join((n[:start] + " " + n[end:]).split())
+
+
+def strip_start_time(text: str):
+    """Like parse_start_time, but keeps the rest exactly as said (case and punctuation), for typing it back out."""
+    raw = " ".join((text or "").replace("’", "'").split())
+    seconds, start, end = _find_time_phrase(raw.lower())   # lower() doesn't shift positions, so they still line up
+    if seconds is None:
+        return None, raw
+    return seconds, " ".join((raw[:start] + " " + raw[end:]).split())

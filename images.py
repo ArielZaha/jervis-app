@@ -331,17 +331,12 @@ def save_copy(which: int = 1) -> str:
 
 
 # ---------- understanding: analysis, OCR, comparison (Groq vision) ----------
-def _vision_call(image_paths: list, prompt: str, max_tokens: int = 700) -> str:
-    if not image_paths:
-        raise ImageError("There's no image in our conversation yet. Attach or upload one first.")
-    image_paths = image_paths[-GROQ_MAX_IMAGES_PER_CALL:]
+def _groq_vision_call(image_paths: list, prompt: str, max_tokens: int = 700) -> str:
     content = [{"type": "text", "text": prompt}]
     for p in image_paths:
         if not os.path.exists(p):
             raise ImageError("That image is no longer available (it may have been cleared).")
         content.append({"type": "image_url", "image_url": {"url": _data_url_for_api(p)}})
-    if _use_local_vision():
-        return _local_vision_call(image_paths, prompt, max_tokens)
     client = _groq()
     try:
         response = client.chat.completions.create(
@@ -359,6 +354,15 @@ def _vision_call(image_paths: list, prompt: str, max_tokens: int = 700) -> str:
     if not text:
         raise ImageError("The AI didn't return anything for that image. Try again.")
     return text
+
+
+def _vision_call(image_paths: list, prompt: str, max_tokens: int = 700) -> str:
+    if not image_paths:
+        raise ImageError("There's no image in our conversation yet. Attach or upload one first.")
+    image_paths = image_paths[-GROQ_MAX_IMAGES_PER_CALL:]
+    if _use_local_vision():
+        return _local_vision_call(image_paths, prompt, max_tokens)
+    return _groq_vision_call(image_paths, prompt, max_tokens)
 
 
 def analyze(question: str = "") -> str:

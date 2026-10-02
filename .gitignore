@@ -10,6 +10,10 @@ documents/
 timers.json
 *_cache.json
 settings.json
+phone_devices.json
+vapid_key.pem
+push_subscriptions.json
+relay_identity.json
 
 # Environments, dependencies, build output
 venv/
@@ -28,6 +32,9 @@ release/
 
 # The website has its own repository (ArielZaha/jervis)
 website/
+
+# Downloaded ML models (large binaries, fetched at runtime)
+models/
 
 # Local tooling
 .DS_Store

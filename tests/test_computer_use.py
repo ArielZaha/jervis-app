@@ -350,8 +350,9 @@ def test_unavailable_platform_explains_itself():
     assert ComputerTask("x", NoScreen(), ai()).run() == "Jervis needs permission to use this Mac."
 
 
-def test_screenshots_are_only_looked_at_locally(monkeypatch):
-    """Even with an online AI key, a screenshot goes to the local vision model, at the size it answers about."""
+def test_screenshots_go_local_when_the_local_model_is_available(monkeypatch):
+    """When the local vision model is there, a screenshot goes to it, at the size it answers about — never online,
+    even with an online AI key, unless the local model is unavailable AND online was explicitly turned on."""
     import images
     import screen_vision
     from PIL import Image
@@ -361,10 +362,43 @@ def test_screenshots_are_only_looked_at_locally(monkeypatch):
         sent["size"] = Image.open(paths[0]).size
         return '{"bbox_2d": [0, 0, 20, 10]}'
     monkeypatch.setattr(images, "_local_vision_call", local)
-    monkeypatch.setattr(images, "_vision_call", lambda *a, **k: pytest.fail("a screenshot went to the online AI"))
+    monkeypatch.setattr(images, "_groq_vision_call", lambda *a, **k: pytest.fail("a screenshot went to the online AI"))
+    monkeypatch.setattr(screen_vision, "_local_available", lambda: True)
     point = screen_vision.ScreenVision().locate(Image.new("RGB", (2880, 1800)), "the logo", (1440, 900))
     assert max(sent["size"]) == images.LOCAL_VISION_MAX_DIMENSION
     assert point == (int(10 * 1440 / sent["size"][0]), int(5 * 900 / sent["size"][1]))
+
+
+def test_screenshots_never_go_online_by_default(monkeypatch):
+    """No local vision model, and online screen vision not turned on (the default): looking at the screen fails
+    outright rather than silently sending a screenshot of the whole screen to an online service."""
+    import images
+    import screen_vision
+    from PIL import Image
+    monkeypatch.setattr(screen_vision, "_local_available", lambda: False)
+    monkeypatch.setattr(images, "_groq_vision_call", lambda *a, **k: pytest.fail("a screenshot went to the online AI"))
+    monkeypatch.delenv("JERVIS_SCREEN_VISION", raising=False)   # default: "local"
+    with pytest.raises(images.ImageError):
+        screen_vision.ScreenVision().locate(Image.new("RGB", (100, 100)), "the logo", (100, 100))
+
+
+def test_screenshots_go_online_when_explicitly_turned_on(monkeypatch):
+    """No local vision model, but the user explicitly set Settings, Computer control, "Look at the screen with" to
+    online: a screenshot may go to Groq for this feature only."""
+    import images
+    import screen_vision
+    from PIL import Image
+    sent = {}
+
+    def online(paths, prompt, max_tokens):
+        sent["called"] = True
+        return '{"bbox_2d": [0, 0, 20, 10]}'
+    monkeypatch.setattr(screen_vision, "_local_available", lambda: False)
+    monkeypatch.setattr(images, "_groq_vision_call", online)
+    monkeypatch.setenv("JERVIS_SCREEN_VISION", "online")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    point = screen_vision.ScreenVision().locate(Image.new("RGB", (100, 100)), "the logo", (100, 100))
+    assert sent.get("called") and point is not None
 
 
 def test_scripted_steps_run_in_order_and_report_each_one():

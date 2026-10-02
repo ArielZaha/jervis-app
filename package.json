@@ -5,7 +5,7 @@
   "description": "Jervis, a voice assistant that runs on your own computer",
   "author": "Ariel and Shalev",
   "homepage": "https://arielzaha.github.io/jervis/",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "main": "main.js",
   "scripts": {

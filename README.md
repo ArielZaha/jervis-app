@@ -9,9 +9,9 @@ Runs on **Windows 10/11** and **macOS** (Apple silicon). Made by Ariel & Shalev.
 Download the installer from <https://arielzaha.github.io/jervis/> (or the
 [latest release](https://github.com/ArielZaha/jervis-app/releases/latest)):
 
-- **Windows:** run `Jervis Setup.exe`. If SmartScreen says "Windows protected your PC", click *More info*, then
-  *Run anyway* (the installer isn't signed with a paid certificate yet). No administrator rights needed; Jervis is
-  added to the Start menu and the desktop.
+- **Windows:** run `Jervis Setup.exe`. If SmartScreen still says "Windows protected your PC" (a signed installer can
+  take a little reputation-building time with Microsoft after each new release), click *More info*, then
+  *Run anyway*. No administrator rights needed; Jervis is added to the Start menu and the desktop.
 - **macOS:** open the `.dmg`, drag Jervis to Applications, open it. The first time, macOS says it can't check it for
   malware: open *System Settings > Privacy & Security* and click *Open Anyway*.
 
@@ -55,8 +55,11 @@ for the screen to settle and checks what changed before the next step.
 - **Asks first:** by default before each task (Settings, Computer control: ask / allowed / off), and always before
   a risky step: sending, posting, buying, deleting, installing, signing out, or pressing Enter in a chat or mail app.
 - **Never:** types into password fields, presses the emergency shortcut, or runs more than 25 steps per task.
-- **Privacy:** screenshots are only looked at by the local vision model and never leave the computer. With a Groq key,
-  the list of buttons and fields in the window goes to Groq along with the request.
+- **Privacy:** screenshots are only ever looked at by the local vision model, never sent anywhere, unless you turn on
+  *Settings, Computer control, "Look at the screen with" > Online* yourself (some apps, like Spotify, don't expose
+  anything to accessibility at all, so this is the only way Jervis can find things in them without a local vision
+  model). With a Groq key, the list of buttons and fields in the window (not a picture of the screen) goes to Groq
+  along with the request either way.
 
 On macOS, turn on Jervis in *System Settings > Privacy & Security > Accessibility*; macOS asks the first time.
 
@@ -65,6 +68,52 @@ font size in TextEdit to 18" took one step. The default local `llama3.2` (3B) ha
 misses when it's done or wanders, so with the local AI a task is capped at 12 steps, repeats that change nothing are
 refused, and he stops when he's stuck. A larger local model (Settings, AI, *Local AI model*, e.g. `qwen2.5:7b` on a
 16 GB computer) is a middle ground.
+
+## Phone control
+
+Turned off by default (Settings, Computer control, *"Let your phone control this computer"*).
+
+**Pairing a phone, the first time:** say **"connect my phone"** — Jervis asks, out loud and in the window, *"Want to
+connect your phone, so you can talk to me and control this computer from it?"*, and only on "yes" does a QR code show
+up on screen ("Scan the QR code on your screen with your phone to connect."). Scan it with your phone's camera (same
+Wi-Fi as the computer) and it pairs on its own — no typing. Can't scan it? The address and code are shown as text
+too. This is a one-time step per phone, always over your own Wi-Fi — it's also when your phone gets its own
+encryption key (see "Away from Wi-Fi" below).
+
+**Connecting an already-paired phone:** say "connect my phone" again and Jervis instead sends a push notification —
+*"Jervis wants to connect to this computer"* — with **Confirmed** / **Not Confirmed** buttons right on it. Tap
+Confirmed and Jervis says "Your phone is connected"; the phone's page opens to a screen with a press-and-hold mic
+button. Hold it, talk, let go — Jervis answers exactly as he would if you'd spoken to him directly, and the reply
+shows up on the phone too (read aloud there, using your phone's own voice). The quick-action buttons (open an app,
+play a song, pause music, play on YouTube, search Google) still work as before. Say "disconnect my phone", or tap
+**Disconnect** on the phone, to end it — it otherwise stays connected until one of you does.
+
+Say "what phones are paired" or "forget my paired phones" to check or undo pairing.
+
+**Notifications:** tap "Enable notifications" on the phone page (works even before pairing) and Jervis reaches your
+phone with a real system notification — including every "connect my phone" request — even if the page isn't open.
+This uses your phone browser's own push service (the same one every other site's notifications use already), not
+any server of Jervis's own. **On iPhone, Safari only delivers these to a page added to the Home Screen** (Share,
+*Add to Home Screen*) — a plain Safari tab can't receive push notifications at all; that's an Apple platform rule,
+not something Jervis can work around.
+
+If you say "connect my phone" and Jervis can't reach any paired phone (notifications never got turned on), he
+tells you exactly where to go — with a relay configured, that's the relay's own stable link (works from anywhere,
+never changes with your computer's local IP); without one, your computer's local address. Either way it's a
+one-time step: open it, tap "Enable notifications," done.
+
+Prefer a real text message instead, with no page visit ever needed? Fill in the four Twilio fields (Settings,
+Optional services) — a free account at twilio.com. Jervis then texts you the "connect my phone" question directly
+(for the *first-ever* pairing only; the notification-and-tap flow needs push notifications, since a text can't
+carry tappable buttons).
+
+**Away from Wi-Fi:** works out of the box — Jervis ships pointed at a shared relay by default (Settings, Computer
+control, advanced, "Relay address"), so an already-paired phone can connect from anywhere, not just this Wi-Fi, with
+nothing to set up. The notification-and-tap flow above works exactly the same way whether your phone is next to the
+computer or on cellular data across town. Clear that field to keep phone control same-Wi-Fi only, or point it at
+your own relay instead (see `relay/README.md`). Either way, everything beyond the first pairing is end-to-end
+encrypted with a key only your phone and this computer ever have — a relay only ever moves opaque, encrypted bytes
+between them, never anything it can read (see `phone_crypto.py` if you want the details).
 
 ## What works where
 

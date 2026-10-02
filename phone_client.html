@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Jervis</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+    background: #0b0d12; color: #e8eaf0; font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #8b93a7; font-size: 14px; margin-bottom: 24px; }
+  .card {
+    width: 100%; max-width: 420px; background: #151822; border: 1px solid #262b3a; border-radius: 16px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 15px; margin-bottom: 4px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #666; flex-shrink: 0; }
+  .dot.on { background: #35d07f; box-shadow: 0 0 8px #35d07f88; }
+  .dot.off { background: #e0555f; }
+  input {
+    width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid #2c3244; background: #0f121a;
+    color: #e8eaf0; font-size: 16px; margin-bottom: 10px;
+  }
+  input:focus { outline: 2px solid #5b8cff; border-color: transparent; }
+  button {
+    width: 100%; padding: 13px; border-radius: 10px; border: none; background: #4a63e8; color: white;
+    font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+  button:active { background: #3c52c4; }
+  button:disabled { background: #2c3244; color: #6a7186; cursor: default; }
+  button.secondary { background: #1e2330; color: #c6cad6; }
+  button.secondary:active { background: #262c3d; }
+  button.danger { background: #3a1c22; color: #ff9aa2; }
+  button.danger:active { background: #4a232b; }
+  .row { display: flex; gap: 8px; }
+  .row input { flex: 1; margin-bottom: 0; }
+  .row button { width: auto; padding: 12px 18px; }
+  .actions { display: flex; flex-direction: column; gap: 10px; }
+  .log { width: 100%; max-width: 420px; font-size: 13px; color: #9aa1b4; }
+  .log .line { padding: 8px 0; border-bottom: 1px solid #1c2029; }
+  .log .line.err { color: #e0555f; }
+  .log .line.ok { color: #6fcf97; }
+  .log .line.jervis { color: #a9b6ff; }
+  .hint { font-size: 13px; color: #6a7186; margin-top: 8px; }
+  .error { color: #e0555f; font-size: 14px; margin-top: 8px; min-height: 18px; }
+  code { background: #0f121a; padding: 2px 6px; border-radius: 5px; }
+  .mic-btn {
+    width: 96px; height: 96px; border-radius: 50%; margin: 8px auto; background: #4a63e8;
+    display: flex; align-items: center; justify-content: center; font-size: 34px; user-select: none;
+    -webkit-user-select: none; touch-action: none;
+  }
+  .mic-btn.live { background: #d9483f; box-shadow: 0 0 0 10px #d9483f33; }
+  .mic-hint { text-align: center; font-size: 13px; color: #6a7186; margin-top: 2px; }
+</style>
+</head>
+<body>
+  <h1>Jervis</h1>
+  <div class="sub">Talk to your computer from your phone</div>
+
+  <div class="card" id="pairCard">
+    <div class="status"><span class="dot off" id="pairDot"></span><span id="pairStatusText">Not connected</span></div>
+    <p class="hint">On your computer, say or type <b>“connect my phone”</b>, then enter the 6-digit code shown there.</p>
+    <input id="codeInput" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code">
+    <input id="nameInput" placeholder="This phone's name (optional)">
+    <button id="pairBtn">Pair with Jervis</button>
+    <div class="error" id="pairError"></div>
+  </div>
+
+  <div class="card" id="notifyCard" style="display:none">
+    <p class="hint" style="margin-top:0">
+      Turn on notifications so Jervis can reach you here — including asking to connect — even when this page
+      isn't open.
+    </p>
+    <button class="secondary" id="notifyInfoBtn" type="button">What happens if I allow this?</button>
+    <p class="hint" id="notifyInfo" style="display:none">
+      Whenever you say “connect my phone” on your computer, Jervis sends this phone a notification with
+      <b>Confirmed</b> and <b>Not Confirmed</b> buttons right on it — tap one, no need to open this page again.
+      Not connecting anything yet, and it can't connect anything without you tapping Confirmed each time.
+    </p>
+    <button id="notifyBtn">Enable notifications</button>
+    <p class="hint" id="notifyHint"></p>
+  </div>
+
+  <!-- Reached via the relay's own stable link (relay/server.py), not this computer's local address — see
+       notification_setup_url() in app.py. Only ever about turning notifications on for an already-paired phone;
+       pairing a brand-new phone always stays local (see phone_control.py's module docstring on why). -->
+  <div class="card" id="relayNotifyCard" style="display:none">
+    <div class="status"><span class="dot" id="relayNotifyDot"></span><span id="relayNotifyStatusText">Connecting…</span></div>
+    <p class="hint" style="margin-top:0" id="relayNotifyHint">
+      Turn on notifications so Jervis can reach you here — including asking to connect — even when this page
+      isn't open, and even away from this computer's Wi-Fi.
+    </p>
+    <button class="secondary" id="relayNotifyInfoBtn" type="button">What happens if I allow this?</button>
+    <p class="hint" id="relayNotifyInfo" style="display:none">
+      Whenever you say “connect my phone” on your computer, Jervis sends this phone a notification with
+      <b>Confirmed</b> and <b>Not Confirmed</b> buttons right on it — tap one, no need to open this page again.
+      Not connecting anything yet, and it can't connect anything without you tapping Confirmed each time.
+    </p>
+    <button id="relayNotifyBtn">Enable notifications</button>
+    <div class="error" id="relayNotifyError"></div>
+  </div>
+
+  <div class="card" id="sessionCard" style="display:none">
+    <div class="status"><span class="dot" id="sessDot"></span><span id="sessStatusText">Connecting…</span></div>
+    <div id="micWrap" style="display:none">
+      <div class="mic-btn" id="micBtn">🎙️</div>
+      <p class="mic-hint">Press and hold to talk to Jervis</p>
+    </div>
+    <button class="danger" id="disconnectBtn" style="margin-top:14px">Disconnect</button>
+  </div>
+
+  <div class="card" id="mainCard" style="display:none">
+    <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Connecting…</span></div>
+    <div class="actions" id="actions">
+      <div class="row"><input id="appInput" placeholder="Open an app (e.g. Chrome)"><button data-cmd="OPEN_APPLICATION" data-field="appInput" data-key="app_name">Open</button></div>
+      <div class="row"><input id="songInput" placeholder="Play a song"><button data-cmd="PLAY_SONG" data-field="songInput" data-key="song_name">Play</button></div>
+      <button class="secondary" data-cmd="PAUSE_MUSIC">Pause music</button>
+      <div class="row"><input id="ytInput" placeholder="Play on YouTube"><button data-cmd="PLAY_YOUTUBE_VIDEO" data-field="ytInput" data-key="query">Play</button></div>
+      <div class="row"><input id="searchInput" placeholder="Search Google"><button data-cmd="SEARCH_GOOGLE" data-field="searchInput" data-key="query">Search</button></div>
+    </div>
+    <button class="secondary" id="forgetBtn" style="margin-top:14px">Forget this pairing</button>
+  </div>
+
+  <div class="log" id="log"></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const pairCard = $("pairCard"), mainCard = $("mainCard"), sessionCard = $("sessionCard"), log = $("log");
+  const VAPID_PUBLIC_KEY = "__VAPID_PUBLIC_KEY__";
+  const RELAY_COMPUTER_ID = "__COMPUTER_ID__";   // non-empty only when the relay served this page, not this computer
+  const SERVED_BY_RELAY = !!RELAY_COMPUTER_ID && RELAY_COMPUTER_ID !== "__COMPUTER_ID__";
+  const LOCAL_ADDRESS = "__LOCAL_ADDRESS__";   // this computer's current address, fetched live by the relay — a
+  // way back for a phone the relay origin doesn't recognize yet (see setUpNotificationsViaRelay's !device case)
+  const KNOWN_LOCAL_ADDRESS = LOCAL_ADDRESS && LOCAL_ADDRESS !== "__LOCAL_ADDRESS__" ? LOCAL_ADDRESS : "";
+  const params = new URLSearchParams(location.search);
+  const urlCode = params.get("code");   // scanned the pairing QR code — see app.py's start_phone_pairing
+  let ws = null, reconnectTimer = null, authed = false, pendingSubscription = null;
+
+  function urlBase64ToUint8Array(base64) {
+    const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+    const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
+    return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+  }
+  const b64urlToBytes = (s) => urlBase64ToUint8Array(s);
+  const bytesToB64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  function refreshNotifyCard() {
+    const card = $("notifyCard");
+    if (!VAPID_PUBLIC_KEY || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      card.style.display = "none";
+      return;
+    }
+    if (Notification.permission === "granted") {
+      $("notifyBtn").textContent = "Notifications on";
+      $("notifyBtn").disabled = true;
+      $("notifyHint").textContent = "";
+    } else if (Notification.permission === "denied") {
+      $("notifyBtn").textContent = "Notifications blocked";
+      $("notifyBtn").disabled = true;
+      $("notifyHint").textContent = "Turn them on again in your browser's site settings for this page.";
+    } else {
+      $("notifyBtn").textContent = "Enable notifications";
+      $("notifyBtn").disabled = false;
+      $("notifyHint").textContent = "";
+    }
+    card.style.display = "block";
+  }
+
+  async function enableNotifications() {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") { refreshNotifyCard(); return; }
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+      const info = subscription.toJSON();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "push_subscribe", subscription: info }));
+      } else {
+        pendingSubscription = info;   // sent as soon as the connection is (re)established
+      }
+    } catch (e) {
+      $("notifyHint").textContent = "Couldn't turn on notifications: " + (e && e.message ? e.message : e);
+    }
+    refreshNotifyCard();
+  }
+
+  const saved = () => {
+    try { return JSON.parse(localStorage.getItem("jervis_device") || "null"); } catch { return null; }
+  };
+  const save = (device) => localStorage.setItem("jervis_device", JSON.stringify(device));
+  const clear = () => localStorage.removeItem("jervis_device");
+
+  // ---------- keeping the pairing usable on both origins this page can be loaded from ----------
+  // Pairing always happens on this computer's own local address (phone_control.py); the relay serves this exact
+  // same page too, at its own stable address (relay/server.py), for the one-time notification setup and for
+  // opening a tapped "connect my phone" notification. Browser storage doesn't cross origins, so without this, a
+  // phone paired locally would look unpaired the moment it's reached via the relay instead — wrong screen, no
+  // visible Confirmed button, nothing usable.
+  //
+  // This is a real top-level visit to the other origin and back, not an iframe: Safari (and increasingly other
+  // browsers) blocks a cross-site *embedded* page from writing storage at all — that's the entire point of
+  // Intelligent Tracking Prevention — but doesn't restrict a real, user-navigated visit to another site the same
+  // way. The device data travels in the URL fragment (never sent to either server, see RFC 3986 — only
+  // client-side JS ever reads it), one brief automatic round trip, guarded so it only ever happens once per
+  // origin pair.
+  function syncToOtherOrigin(device) {
+    if (!device || !device.relayUrl) return;
+    let otherOrigin;
+    try { otherOrigin = new URL(device.relayUrl.replace(/^ws/, "http")).origin; } catch { return; }
+    if (otherOrigin === location.origin) return;
+    if (localStorage.getItem("jervis_synced_to") === otherOrigin) return;   // already done; don't loop
+    const fragment = encodeURIComponent(JSON.stringify(device));
+    const returnUrl = location.origin + location.pathname;
+    location.href = `${otherOrigin}/?sync=1&return=${encodeURIComponent(returnUrl)}#${fragment}`;
+  }
+
+  function logLine(text, kind) {
+    const el = document.createElement("div");
+    el.className = "line" + (kind ? " " + kind : "");
+    el.textContent = text;
+    log.prepend(el);
+    while (log.children.length > 20) log.removeChild(log.lastChild);
+  }
+
+  function setStatus(dotEl, textEl, on, text) {
+    dotEl.className = "dot " + (on ? "on" : "off");
+    textEl.textContent = text;
+  }
+
+  function showCard(which) {
+    for (const c of [pairCard, mainCard, sessionCard, $("relayNotifyCard")]) c.style.display = "none";
+    if (which) which.style.display = "block";
+  }
+  function showPaired() { showCard(mainCard); }
+  function showUnpaired() { showCard(pairCard); authed = false; }
+
+  // ---------- local (same Wi-Fi) LAN connection: unchanged from before, used when not in a relay session ----------
+  function connect() {
+    clearTimeout(reconnectTimer);
+    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`;
+    ws = new WebSocket(url);
+    ws.onopen = () => {
+      const device = saved();
+      if (device) {
+        ws.send(JSON.stringify({ type: "auth", deviceId: device.id, token: device.token }));
+      } else if (urlCode) {
+        // Scanned the QR code on the computer: the code travels in the link, so no typing is needed here.
+        showCard(null);
+        setStatus($("pairDot"), $("pairStatusText"), true, "Pairing…");
+        ws.send(JSON.stringify({ type: "pair", code: urlCode, deviceName: "" }));
+      } else {
+        setStatus($("pairDot"), $("pairStatusText"), true, "Connected — enter your pairing code");
+      }
+      if (pendingSubscription) {
+        ws.send(JSON.stringify({ type: "push_subscribe", subscription: pendingSubscription }));
+        pendingSubscription = null;
+      }
+    };
+    ws.onclose = () => {
+      authed = false;
+      setStatus($("statusDot"), $("statusText"), false, "Disconnected — retrying…");
+      setStatus($("pairDot"), $("pairStatusText"), false, "Not connected");
+      reconnectTimer = setTimeout(connect, 2000);
+    };
+    ws.onerror = () => ws.close();
+    ws.onmessage = (event) => {
+      let data;
+      try { data = JSON.parse(event.data); } catch { return; }
+      if (data.type === "paired") {
+        const device = { id: data.deviceId, token: data.token, key: data.key, computerId: data.computerId,
+                        relayUrl: data.relayUrl, name: data.deviceName };
+        save(device);
+        syncToOtherOrigin(device);   // so a later notification tap, or the relay's own link, already has this
+        authed = true;
+        showPaired();
+        setStatus($("statusDot"), $("statusText"), true, "Connected to Jervis");
+        logLine("Paired as " + (data.deviceName || "this phone"), "ok");
+      } else if (data.type === "pair_error") {
+        showUnpaired();   // in case this was the automatic pair-by-scanned-link attempt (its card starts hidden)
+        $("pairError").textContent = data.message || "Couldn't pair — check the code and try again.";
+      } else if (data.type === "authed") {
+        authed = true;
+        showPaired();
+        setStatus($("statusDot"), $("statusText"), true, "Connected to Jervis");
+      } else if (data.type === "auth_error") {
+        clear();
+        showUnpaired();
+        $("pairError").textContent = "This pairing is no longer valid. Pair again.";
+      } else if (data.type === "result") {
+        logLine((data.status === "SUCCEEDED" ? "✓ " : "✗ ") + (data.message || data.status),
+                data.status === "SUCCEEDED" ? "ok" : "err");
+      }
+    };
+  }
+
+  $("pairBtn").onclick = () => {
+    const code = $("codeInput").value.trim();
+    if (!/^\d{6}$/.test(code)) { $("pairError").textContent = "Enter the 6-digit code from your computer."; return; }
+    $("pairError").textContent = "";
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "pair", code, deviceName: $("nameInput").value.trim() }));
+    }
+  };
+
+  $("forgetBtn").onclick = () => {
+    clear();
+    if (ws) ws.close();
+    showUnpaired();
+    logLine("Forgot this pairing.");
+  };
+
+  document.querySelectorAll("#actions [data-cmd]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!authed || !ws || ws.readyState !== WebSocket.OPEN) return;
+      const payload = {};
+      if (btn.dataset.field) {
+        const value = $(btn.dataset.field).value.trim();
+        if (!value) return;
+        payload[btn.dataset.key] = value;
+      }
+      const commandId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
+      ws.send(JSON.stringify({ type: "command", commandId, commandType: btn.dataset.cmd, payload }));
+      logLine("Sent: " + btn.dataset.cmd + (payload[btn.dataset.key] ? " — " + payload[btn.dataset.key] : ""));
+    });
+  });
+
+  $("notifyBtn").onclick = enableNotifications;
+  $("notifyInfoBtn").onclick = () => {
+    const el = $("notifyInfo");
+    el.style.display = el.style.display === "none" ? "block" : "none";
+  };
+  $("relayNotifyInfoBtn").onclick = () => {
+    const el = $("relayNotifyInfo");
+    el.style.display = el.style.display === "none" ? "block" : "none";
+  };
+
+  // ---------- relay session: "connect my phone" after the first pairing, and away-from-Wi-Fi use ----------
+  // AES-256-GCM, matching phone_crypto.py exactly (nonce/ciphertext as base64url, JSON plaintext) — see that
+  // file's docstring for why this exists (the relay is a middlebox; TLS alone only protects each leg, not the
+  // payload from the relay process itself).
+  async function importKey(keyB64) {
+    return crypto.subtle.importKey("raw", b64urlToBytes(keyB64), "AES-GCM", false, ["encrypt", "decrypt"]);
+  }
+  async function encryptEnvelope(key, obj) {
+    const nonce = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(JSON.stringify(obj));
+    const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, plaintext);
+    return { n: bytesToB64url(nonce), ct: bytesToB64url(ct) };
+  }
+  async function decryptEnvelope(key, envelope) {
+    try {
+      const nonce = b64urlToBytes(envelope.n), ct = b64urlToBytes(envelope.ct);
+      const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: nonce }, key, ct);
+      return JSON.parse(new TextDecoder().decode(plaintext));
+    } catch { return null; }
+  }
+
+  // ---------- relay-hosted notification setup: reached via the relay's own stable link (relay/server.py), only
+  // ever for an already-paired phone turning notifications on (see phone_session.py's _handle_device_message).
+  // Its own short-lived connection, authenticated with this phone's device key alone — not a live attached
+  // session, no "connect my phone" approval needed, since a notification only ever informs, never grants access.
+  async function setUpNotificationsViaRelay() {
+    const device = saved();
+    const dot = $("relayNotifyDot"), statusText = $("relayNotifyStatusText"), btn = $("relayNotifyBtn");
+    if (!device) {
+      setStatus(dot, statusText, false, "Not recognized here yet");
+      if (KNOWN_LOCAL_ADDRESS) {
+        // Paired locally already (this link wouldn't exist otherwise — see app.py's start_phone_session), but
+        // this phone has never completed the one-time local<->relay sync (phone_client.html's syncToOtherOrigin)
+        // — most likely because it's never actually opened the local address below. Opening it once, on the same
+        // Wi-Fi as the computer, runs that sync automatically and bounces right back here.
+        $("relayNotifyHint").innerHTML = "This phone is paired, but hasn't finished one-time setup for this " +
+          "link yet. On the same Wi-Fi as your computer, open <a href=\"" + KNOWN_LOCAL_ADDRESS + "\" style=\"" +
+          "color:#8ab4ff\">" + KNOWN_LOCAL_ADDRESS + "</a> once — it'll bring you right back here, automatically.";
+      } else {
+        $("relayNotifyHint").textContent = "This phone hasn't been paired with Jervis yet, or your computer " +
+          "isn't reachable right now. Pair it on the same Wi-Fi as your computer first (say “connect my phone”), " +
+          "then come back to this link.";
+      }
+      btn.style.display = "none";
+      return;
+    }
+    if (!VAPID_PUBLIC_KEY || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setStatus(dot, statusText, false, "Not available right now");
+      $("relayNotifyHint").textContent = "Jervis wasn't reachable when this page loaded, or notifications aren't " +
+        "supported in this browser. Make sure Jervis is running on your computer, then reload this page.";
+      btn.style.display = "none";
+      return;
+    }
+    const deviceKey = await importKey(device.key);
+    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`;
+    const relayWs = new WebSocket(url);
+    let relayReady = false;
+
+    relayWs.onopen = () => {
+      relayWs.send(JSON.stringify({ type: "hello", role: "phone", computerId: RELAY_COMPUTER_ID }));
+    };
+    relayWs.onerror = () => relayWs.close();
+    relayWs.onclose = () => {
+      relayReady = false;
+      if (!btn.disabled) setStatus(dot, statusText, false, "Disconnected");
+    };
+    relayWs.onmessage = async (event) => {
+      let data;
+      try { data = JSON.parse(event.data); } catch { return; }
+      if (data.type === "hello_ok") {
+        relayReady = true;
+        setStatus(dot, statusText, true, "Connected to Jervis");
+      } else if (data.type === "offline") {
+        setStatus(dot, statusText, false, "Jervis isn't reachable right now");
+      } else if (data.n && data.ct) {
+        const message = await decryptEnvelope(deviceKey, data);
+        if (message && message.type === "subscribed") {
+          btn.textContent = "Notifications on";
+          btn.disabled = true;
+          $("relayNotifyError").textContent = "";
+          $("relayNotifyHint").textContent = "You're all set — you can close this page.";
+        }
+      }
+    };
+
+    btn.onclick = async () => {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+          $("relayNotifyError").textContent = "Notifications were blocked — turn them on in this browser's site settings.";
+          return;
+        }
+        const registration = await navigator.serviceWorker.register("/sw.js");
+        await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+        if (!relayReady || relayWs.readyState !== WebSocket.OPEN) {
+          $("relayNotifyError").textContent = "Lost the connection to Jervis — reload this page and try again.";
+          return;
+        }
+        const envelope = await encryptEnvelope(deviceKey, { type: "push_subscribe",
+                                                            subscription: subscription.toJSON() });
+        relayWs.send(JSON.stringify({ ...envelope, deviceId: device.id }));
+      } catch (e) {
+        $("relayNotifyError").textContent = "Couldn't turn on notifications: " + (e && e.message ? e.message : e);
+      }
+    };
+  }
+
+  let sessionWs = null, sessionKey = null, mediaRecorder = null, mediaStream = null;
+
+  function sessionStatus(on, text) { setStatus($("sessDot"), $("sessStatusText"), on, text); }
+
+
+  async function connectSession(sessionId) {
+    const device = saved();
+    if (!device || !device.relayUrl || !device.computerId) {
+      logLine("This phone isn't fully paired yet — pair with Jervis on the same Wi-Fi first.", "err");
+      return;
+    }
+    showCard(sessionCard);
+    sessionStatus(false, "Connecting…");
+    sessionWs = new WebSocket(device.relayUrl);
+    sessionWs.onopen = () => {
+      sessionWs.send(JSON.stringify({ type: "hello", role: "phone", computerId: device.computerId }));
+    };
+    sessionWs.onclose = () => {
+      sessionStatus(false, "Disconnected");
+      stopRecording();
+    };
+    sessionWs.onerror = () => sessionWs.close();
+    sessionWs.onmessage = async (event) => {
+      let data;
+      try { data = JSON.parse(event.data); } catch { return; }
+      if (data.type === "offline") {
+        sessionStatus(false, "Jervis isn't reachable right now.");
+      } else if (data.type === "hello_ok") {
+        sessionKey = await importKey(device.key);
+        sessionWs.send(JSON.stringify({ type: "session_attach", sessionId, deviceId: device.id, token: device.token }));
+      } else if (data.type === "session_error") {
+        sessionStatus(false, data.message || "That connection request is no longer valid.");
+      } else if (data.n && data.ct) {
+        const message = await decryptEnvelope(sessionKey, data);
+        if (message) handleSessionMessage(message);
+      }
+    };
+  }
+
+  function handleSessionMessage(message) {
+    if (message.type === "session_ready") {
+      sessionStatus(true, "Connected to Jervis");
+      $("micWrap").style.display = mediaDevicesAvailable() ? "block" : "none";
+      logLine("Your phone is connected.", "ok");
+    } else if (message.type === "result") {
+      logLine((message.status === "SUCCEEDED" ? "✓ " : "✗ ") + (message.message || message.status),
+              message.status === "SUCCEEDED" ? "ok" : "err");
+    } else if (message.type === "reply") {
+      logLine("Jervis: " + message.text, "jervis");
+      try {
+        const utter = new SpeechSynthesisUtterance(message.text);
+        speechSynthesis.speak(utter);
+      } catch { /* speech synthesis just isn't available here; the text is already shown */ }
+    }
+  }
+
+  function mediaDevicesAvailable() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  }
+
+  function pickMimeType() {
+    for (const type of ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus"]) {
+      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) return type;
+    }
+    return "";
+  }
+
+  async function beginTalking() {
+    if (!sessionKey || mediaRecorder) return;
+    $("micBtn").classList.add("live");
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      logLine("Couldn't use the microphone: " + (e && e.message ? e.message : e), "err");
+      $("micBtn").classList.remove("live");
+      return;
+    }
+    const mimeType = pickMimeType();
+    mediaRecorder = new MediaRecorder(mediaStream, mimeType ? { mimeType } : undefined);
+    mediaRecorder.ondataavailable = async (event) => {
+      if (!event.data || !event.data.size || !sessionWs || sessionWs.readyState !== WebSocket.OPEN) return;
+      const buf = await event.data.arrayBuffer();
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+      sessionWs.send(JSON.stringify(await encryptEnvelope(sessionKey, { type: "voice_chunk", data: b64 })));
+    };
+    if (sessionWs && sessionWs.readyState === WebSocket.OPEN) {
+      sessionWs.send(JSON.stringify(await encryptEnvelope(sessionKey, { type: "voice_start" })));
+    }
+    mediaRecorder.start(300);   // fire ondataavailable every ~300ms while held, so a long hold still streams
+  }
+
+  function stopRecording() {
+    if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
+    mediaStream = null;
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    mediaRecorder = null;
+  }
+
+  async function endTalking() {
+    $("micBtn").classList.remove("live");
+    stopRecording();
+    if (sessionKey && sessionWs && sessionWs.readyState === WebSocket.OPEN) {
+      sessionWs.send(JSON.stringify(await encryptEnvelope(sessionKey, { type: "voice_end" })));
+    }
+  }
+
+  const micBtn = $("micBtn");
+  ["mousedown", "touchstart"].forEach((evt) => micBtn.addEventListener(evt, (e) => { e.preventDefault(); beginTalking(); }));
+  ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach((evt) => micBtn.addEventListener(evt, endTalking));
+
+  $("disconnectBtn").onclick = async () => {
+    if (sessionKey && sessionWs && sessionWs.readyState === WebSocket.OPEN) {
+      sessionWs.send(JSON.stringify(await encryptEnvelope(sessionKey, { type: "disconnect" })));
+    }
+    if (sessionWs) sessionWs.close();
+    stopRecording();
+    history.replaceState(null, "", location.pathname);
+    showPaired();
+  };
+
+  // ---------- a "connect my phone" request, already decided by confirm.html before this page ever opened ----------
+  // confirm.html (a small, separate, self-contained page — see its own file) is the only place Confirmed/Not
+  // Confirmed is ever answered now: it needs nothing but the session id and secret already in its own link, so
+  // there's nothing to recover or look up here. This page only ever sees the *outcome*, via its "Open Jervis"
+  // link (?session=...&decision=confirm) — a plain reject never links here at all, since there's nothing further
+  // to do for it (confirm.html's own "Cancelled." screen is the whole story).
+  function handleSessionEvent(sessionId, decision) {
+    if (!sessionId) return;
+    if (decision === "confirm") { connectSession(sessionId); return; }
+    if (decision === "reject") { logLine("Connection cancelled."); showPaired(); }
+  }
+
+  const urlSession = params.get("session");
+
+  if (params.get("sync") === "1") {
+    // The other origin sent us here (syncToOtherOrigin) with the pairing in the URL fragment — a real top-level
+    // visit, which (unlike an iframe) Safari's tracking prevention doesn't block from writing storage. Save it,
+    // then bounce straight back; the user sees at most a brief flash, once, automatically.
+    if (location.hash.length > 1) {
+      try {
+        const device = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+        if (device && device.id && device.token && device.key) save(device);
+      } catch { /* a malformed fragment: nothing to save, still bounce back below */ }
+    }
+    const returnTo = params.get("return");
+    if (returnTo) {
+      try {
+        const url = new URL(returnTo);
+        url.searchParams.set("synced", "1");
+        location.replace(url.toString());
+      } catch { /* an unusable return URL: just stop here, nothing more this load can do */ }
+    }
+  } else {
+    if (params.get("synced") === "1" && saved() && saved().relayUrl) {
+      // The round trip just completed (we're back from the other origin) — remember it so syncToOtherOrigin
+      // never repeats it, and drop ?synced=1 from the address bar so it doesn't linger or get rebookmarked.
+      try {
+        localStorage.setItem("jervis_synced_to", new URL(saved().relayUrl.replace(/^ws/, "http")).origin);
+      } catch { /* non-fatal; worst case syncToOtherOrigin tries again next time this origin needs it */ }
+      history.replaceState(null, "", location.pathname + (urlSession ? `?session=${urlSession}` : ""));
+    }
+
+    if (urlSession && saved()) {
+      handleSessionEvent(urlSession, params.get("decision"));
+    } else if (SERVED_BY_RELAY) {
+      // Reached via the relay's own link (notification_setup_url() in app.py), not a "connect my phone" tap —
+      // the one-time notification setup for an already-paired phone, nothing else this page normally does.
+      showCard($("relayNotifyCard"));
+      setUpNotificationsViaRelay();
+    } else if (saved()) {
+      setStatus($("statusDot"), $("statusText"), false, "Connecting…");
+      showPaired();
+      connect();
+      syncToOtherOrigin(saved());   // backfills a phone paired before this existed, or after a dropped sync earlier
+    } else if (urlCode) {
+      showCard(null);   // pairing happens automatically the instant the connection opens; nothing to show first
+      setStatus($("pairDot"), $("pairStatusText"), true, "Pairing…");
+      connect();
+    } else {
+      showUnpaired();
+      connect();
+    }
+  }
+  if (!SERVED_BY_RELAY && params.get("sync") !== "1") refreshNotifyCard();
+})();
+</script>
+</body>
+</html>

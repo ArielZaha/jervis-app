@@ -92,6 +92,36 @@ document.addEventListener('DOMContentLoaded', () => {
   setupChip.addEventListener('click', () => { setupDismissed = false; if (setup) openPanel(setupLayer); });
 
   // =====================================================================================================
+  // Welcome: a genuinely new install offers a few quick, all-optional questions once (settings.is_first_run()).
+  // =====================================================================================================
+  const welcomeLayer = $('welcomeLayer');
+  let welcomeDone = false;   // this session already continued or skipped it: don't reopen on a reconnect
+
+  function welcomeValues() {
+    const values = { JERVIS_WAKE_WORD: $('welcomeWake').checked ? 'on' : 'off' };
+    const name = $('welcomeName').value.trim();
+    if (name) values.JERVIS_USER_NAME = name;
+    const phone = $('welcomePhone').value.trim();
+    if (phone) values.TWILIO_TO_NUMBER = phone;
+    return values;
+  }
+  function closeWelcome(values) {
+    welcomeDone = true;
+    closePanel(welcomeLayer);
+    window.jervisSend({ type: 'set_settings', values: values || {} });
+  }
+  $('welcomeContinue').addEventListener('click', () => closeWelcome(welcomeValues()));
+  $('welcomeSkip').addEventListener('click', () => closeWelcome({}));
+  $('welcomeMore').addEventListener('click', () => {
+    const values = welcomeValues();
+    welcomeDone = true;
+    closePanel(welcomeLayer);
+    window.jervisSend({ type: 'set_settings', values });
+    $('settingsAdvanced').checked = true;
+    openSettings();
+  });
+
+  // =====================================================================================================
   // Settings (built from the backend's schema, so a new setting needs no change here)
   // =====================================================================================================
   const settingsLayer = $('settingsLayer');
@@ -286,7 +316,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // =====================================================================================================
   window.addEventListener('jervis-message', (event) => {
     const data = event.detail || {};
-    if (data.type === 'setup' && data.data) renderSetup(data.data);
+    if (data.type === 'first_run') {
+      if (!welcomeDone) openPanel(welcomeLayer);
+    }
+    else if (data.type === 'setup' && data.data) renderSetup(data.data);
     else if (data.type === 'settings') renderSettings(data);
     else if (data.type === 'settings_devices' && loaded) {
       // Fresher microphone and voice lists: rebuild just those two lists, keeping what's selected.
@@ -354,6 +387,41 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.id === controlAskId) { controlAskId = null; closePanel(controlLayer); }
     }
   });
+  // =====================================================================================================
+  // Phone pairing: the QR code + fallback address/code, first-ever phone only (see start_phone_pairing in
+  // app.py) — every "connect my phone" after that is a notification to tap, no window needed.
+  // =====================================================================================================
+  const phonePairingLayer = $('phonePairingLayer');
+  let qrcode = null;
+  try { qrcode = require('./vendor/qrcode-generator/qrcode.js'); } catch (error) { /* address/code text still works */ }
+  let phonePairingExpiry = null;
+  function closePhonePairing() { closePanel(phonePairingLayer); phonePairingExpiry = null; }
+  $('phonePairingClose').addEventListener('click', closePhonePairing);
+  phonePairingLayer.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePhonePairing(); });
+  window.addEventListener('jervis-message', (event) => {
+    const data = event.detail || {};
+    if (data.type === 'phone_pairing') {
+      $('phonePairingAddress').textContent = data.address || '';
+      $('phonePairingCode').textContent = (data.code || '').split('').join(' ');
+      const qrEl = $('phonePairingQr');
+      qrEl.innerHTML = '';
+      if (qrcode && data.pairUrl) {
+        try {
+          const qr = qrcode(0, 'M');
+          qr.addData(data.pairUrl);
+          qr.make();
+          qrEl.innerHTML = qr.createSvgTag(4, 4);
+        } catch (error) { /* the address/code text below still works without a QR code */ }
+      }
+      phonePairingExpiry = data.expiresAt || null;
+      openPanel(phonePairingLayer);
+    } else if (data.type === 'phone_paired') {
+      closePhonePairing();
+    }
+  });
+  setInterval(() => {
+    if (phonePairingExpiry && Date.now() / 1000 > phonePairingExpiry) closePhonePairing();
+  }, 1000);
 
   window.addEventListener('jervis-connected', () => {
     if (engineState !== 'failed') { engineState = 'running'; refreshBanner(); }

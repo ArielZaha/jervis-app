@@ -110,6 +110,51 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder ${{ matrix.platform }} --publish never
 
+      - name: SignPath availability check (Windows)
+        # Free code signing for open-source projects, which is what stops SmartScreen from calling the
+        # installer unrecognized: https://signpath.io/product/open-source . Apply at
+        # https://signpath.org/apply.html, create a project (slug "jervis") with a "test-signing" and a
+        # "release-signing" policy once approved, then add the SIGNPATH_API_TOKEN and SIGNPATH_ORG_ID repo
+        # secrets. Until those secrets exist, the installer is built and tested unsigned, same as today.
+        if: runner.os == 'Windows'
+        id: signpath_check
+        shell: bash
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: |
+          if [ -z "$SIGNPATH_API_TOKEN" ]; then
+            echo "No SignPath credentials: installer stays unsigned."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload the unsigned installer for signing
+        if: steps.signpath_check.outputs.configured == 'true'
+        id: upload_unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: jervis-installer-unsigned
+          path: release/Jervis Setup.exe
+          retention-days: 1
+
+      - name: Submit to SignPath and wait for the signed installer
+        if: steps.signpath_check.outputs.configured == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '${{ secrets.SIGNPATH_ORG_ID }}'
+          project-slug: 'jervis'
+          signing-policy-slug: ${{ startsWith(github.ref, 'refs/tags/v') && 'release-signing' || 'test-signing' }}
+          github-artifact-id: '${{ steps.upload_unsigned.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: 'release-signed'
+
+      - name: Replace the installer with the signed one
+        if: steps.signpath_check.outputs.configured == 'true'
+        shell: bash
+        run: mv "release-signed/Jervis Setup.exe" "release/Jervis Setup.exe"
+
       - name: Installer reliability (Windows, diagnostic)
         if: runner.os == 'Windows'
         continue-on-error: true

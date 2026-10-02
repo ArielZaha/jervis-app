@@ -19,6 +19,7 @@ logbook.install()   # before anything prints, so startup problems end up in logs
 settings.load()     # before any module reads its configuration from the environment
 import platform
 import re
+import secrets
 import shutil
 import subprocess
 import threading
@@ -68,9 +69,16 @@ import graphs
 import images
 import planets
 import whatsapp
+import phone_control
+import phone_crypto
+import phone_session
+import relay_client
+import push
+import sms
 import queue
 from timers import TimerManager, format_duration, parse_timer_command
 from speech_fixes import fix_names
+import timeparse
 from timeparse import format_time, parse_start_time
 
 APP_DIR = paths.RESOURCE_DIR  # Jervis's own files; everything he writes goes to paths.DATA_DIR instead
@@ -94,6 +102,12 @@ SUPERVISED = os.getenv("JERVIS_SUPERVISED") == "1"
 WS_HOST = "127.0.0.1"
 WS_PORT = int(os.getenv("JERVIS_WS_PORT") or 8765)
 WS_TOKEN = os.getenv("JERVIS_WS_TOKEN") or ""
+# A phone, once paired: a separate server, LAN-bound on purpose (see phone_control.py for why this is never the
+# same channel the Electron window uses). JERVIS_RELAY_URL (Settings, Computer control, advanced) defaults to a
+# shared relay Jervis ships with, so a paired phone can reach Jervis away from this Wi-Fi with nothing to set up —
+# clear it to go back to same-Wi-Fi only, or point it at a different relay (relay/README.md). See relay_client.py.
+PHONE_WS_PORT = int(os.getenv("JERVIS_PHONE_PORT") or 8766)
+RELAY_URL = (os.getenv("JERVIS_RELAY_URL") or "").strip()
 RESTART_EXIT_CODE = 75
 PORT_BUSY_EXIT_CODE = 76
 AUDIO_OFF = os.getenv("JERVIS_AUDIO", "on").strip().lower() == "off"   # tests: typed input only, replies printed
@@ -159,7 +173,24 @@ mic_muted = threading.Event()
 # listening with the window closed. Speech recognition often writes "Jarvis", so both spellings count.
 WAKE_PHRASES = [f"{greeting} {name}" for name in ("jervis", "jarvis")
                 for greeting in ("wake up", "hey", "hello", "hi", "ok", "okay")]
-AWAKE_GREETING = "I'm awake, how can I help you?"
+
+
+def time_greeting() -> str:
+    """"Good morning/noon/afternoon/evening {name}" for the hour right now (this computer's own clock). Uses
+    "Sir" until the user's name is set (Settings, General, or the welcome screen on first start)."""
+    hour = datetime.now().hour
+    if 5 <= hour < 12:
+        part = "morning"
+    elif hour == 12:
+        part = "noon"
+    elif 13 <= hour < 18:
+        part = "afternoon"
+    else:
+        part = "evening"
+    who = (os.getenv("JERVIS_USER_NAME") or "").strip() or "Sir"
+    return f"Good {part}, {who}. How can I help you today?"
+
+
 window_visible = True   # the window tells us when it's closed (hidden) or shown again
 awake = False
 ui_launched = False
@@ -284,6 +315,17 @@ class ImageCaption(str):
     handle_client), so the main loop must not broadcast it again as a second, plain bubble."""
 
 
+class PhoneVoiceInput(str):
+    """Text transcribed from a phone's push-to-talk recording (see relay_client.py): behaves exactly like any
+    other command text to the main loop, but carries the phone session it came from, so the reply can be sent back
+    to that phone (relay_client.deliver_reply) in addition to being spoken here as usual."""
+
+    def __new__(cls, text: str, session_id: str):
+        obj = str.__new__(cls, text)
+        obj.session_id = session_id
+        return obj
+
+
 PRIVATE_PLACEHOLDER = "[private WhatsApp messages: shown and read aloud only]"
 
 
@@ -396,7 +438,8 @@ def settings_payload() -> dict:
     threading.Thread(target=refresh_devices, daemon=True).start()   # a microphone may have been plugged in since
     return {"type": "settings", **settings.public_view(), "microphones": _devices["microphones"] or [],
             "voices": _devices["voices"] or [], "devicesLoading": _devices["microphones"] is None,
-            "platform": osal.SYSTEM, "dataDir": paths.DATA_DIR, "logFile": logbook.log_path(), "backend": LLM_BACKEND}
+            "platform": osal.SYSTEM, "dataDir": paths.DATA_DIR, "logFile": logbook.log_path(), "backend": LLM_BACKEND,
+            "firstRun": settings.is_first_run()}
 
 
 def request_restart(reason: str) -> None:
@@ -426,6 +469,8 @@ async def handle_client(websocket):
     connected_clients.add(websocket)
     print(f"Window connected ({len(connected_clients)} open).", flush=True)
     try:
+        if settings.is_first_run():   # a genuinely new install: offer the welcome screen once, right away
+            await websocket.send(json.dumps({"type": "first_run"}))
         for payload in list(latest_ui_updates.values()) + pending_alerts:
             await websocket.send(json.dumps(payload))
         alerts_open += len(pending_alerts)
@@ -542,6 +587,267 @@ def run_ws_server():
                   "  then start Jervis again.\n", flush=True)
             os._exit(1)
         raise
+
+
+# ---------- a phone on the same Wi-Fi (see phone_control.py) ----------
+# PHONE_COMMANDS/_dispatch_phone_command/phone_server are defined further down, right before TOOL_FUNCTIONS —
+# they reference tool functions (play_song, google_search, ...) that aren't defined yet at this point in the file.
+
+
+def phone_control_mode() -> str:
+    return (os.getenv("JERVIS_PHONE_CONTROL") or "off").strip().lower()
+
+
+def session_transport_url() -> str:
+    """Where a phone should open its session connection: the configured relay if there is one (works from
+    anywhere), else this computer's own address on the local network (works only on this Wi-Fi, but that's still
+    the whole "connect my phone" experience without deploying a relay — see phone_session.py)."""
+    return RELAY_URL or f"ws://{phone_control.lan_address()}:{PHONE_WS_PORT}"
+
+
+def notification_setup_url() -> str:
+    """The link for the one-time "enable notifications on this phone" step. With a relay configured, this is the
+    relay's own stable address (it serves the same page — see relay/server.py — and fetches this computer's
+    notification key live, so the link works even off this Wi-Fi and never changes with this computer's local IP).
+    Without one, it falls back to the local address, same as session_transport_url()."""
+    if RELAY_URL:
+        return re.sub(r"^ws", "http", RELAY_URL).rstrip("/") + f"/?computerId={relay.computer_id}"
+    return f"http://{phone_control.lan_address()}:{PHONE_WS_PORT}"
+
+
+phone_server_loop = None   # set by run_phone_server(); lets session_router reach a local phone from another thread
+
+
+async def handle_phone_client(websocket) -> None:
+    """One phone's connection: unauthenticated until it pairs (with an open, correct code) or authenticates (with
+    a token from an earlier pairing), after which it can run one of PHONE_COMMANDS directly (kind == "command",
+    unencrypted — always same-Wi-Fi, always was) or attach a "connect my phone" session (kind == "session_attach",
+    then encrypted envelopes) exactly like a relay-routed phone would — see phone_session.py, which owns that
+    protocol for both transports."""
+    remote = getattr(websocket, "remote_address", None)
+    if not phone_control.is_private_address(remote[0] if remote else ""):
+        await websocket.close(1008, "not allowed")
+        return
+    loop = asyncio.get_event_loop()
+    device_id = None
+    conn_id = f"local:{secrets.token_hex(8)}"
+
+    def schedule_send(obj) -> None:
+        if phone_server_loop is not None:
+            asyncio.run_coroutine_threadsafe(websocket.send(json.dumps(obj)), phone_server_loop)
+
+    def schedule_end() -> None:
+        if phone_server_loop is not None:
+            asyncio.run_coroutine_threadsafe(websocket.close(), phone_server_loop)
+
+    try:
+        async for message in websocket:
+            try:
+                data = json.loads(message)
+            except (ValueError, TypeError):
+                continue
+            kind = data.get("type")
+            if kind == "push_subscribe":
+                subscription = data.get("subscription") or {}
+                if isinstance(subscription, dict) and subscription.get("endpoint"):
+                    push_store.add(subscription)
+            elif kind == "push_unsubscribe":
+                endpoint = str(data.get("endpoint") or "")
+                if endpoint:
+                    push_store.remove(endpoint)
+            elif kind == "pair":
+                if not phone_server.pairing_open():
+                    await websocket.send(json.dumps({"type": "pair_error",
+                        "message": "No pairing is open right now. Ask Jervis to connect your phone again."}))
+                elif (paired := phone_server.try_pair(str(data.get("code", "")), str(data.get("deviceName", "")))) is None:
+                    await websocket.send(json.dumps({"type": "pair_error",
+                        "message": "That code is wrong or has expired."}))
+                else:
+                    device_id, token, key = paired
+                    name = phone_server.registry.authenticate(device_id, token)["name"]
+                    await websocket.send(json.dumps({"type": "paired", "deviceId": device_id, "token": token,
+                                                     "key": phone_crypto.key_to_b64(key), "deviceName": name,
+                                                     "computerId": relay.computer_id,
+                                                     "relayUrl": session_transport_url()}))
+                    broadcast("ai", f"{name} is now paired and can talk to me on this network.")
+                    send_ui_update_once({"type": "phone_paired", "deviceName": name})   # closes the QR panel
+            elif kind == "auth":
+                found = phone_server.registry.authenticate(str(data.get("deviceId", "")), str(data.get("token", "")))
+                if found is None:
+                    device_id = None
+                    await websocket.send(json.dumps({"type": "auth_error"}))
+                else:
+                    device_id = str(data.get("deviceId", ""))
+                    await websocket.send(json.dumps({"type": "authed", "deviceName": found["name"]}))
+            elif kind == "command":
+                command_id = str(data.get("commandId") or "")
+                if device_id is None:
+                    await websocket.send(json.dumps({"type": "result", "commandId": command_id,
+                                                     "status": "FAILED", "message": "Not paired."}))
+                elif phone_control_mode() == "off":
+                    await websocket.send(json.dumps({"type": "result", "commandId": command_id,
+                                                     "status": "FAILED", "message": "Phone control is turned off."}))
+                elif not command_id or str(data.get("commandType")) not in PHONE_COMMANDS:
+                    await websocket.send(json.dumps({"type": "result", "commandId": command_id,
+                                                     "status": "FAILED", "message": "Unknown command."}))
+                else:
+                    result = await loop.run_in_executor(
+                        None, phone_server.run_command, device_id, command_id,
+                        str(data.get("commandType")), data.get("payload") or {})
+                    await websocket.send(json.dumps({"type": "result", "commandId": command_id, **result}))
+            elif kind == "session_attach" or ("n" in data and "ct" in data):
+                await session_router.on_frame(conn_id, data, schedule_send, schedule_end)
+    except websockets.exceptions.ConnectionClosed:
+        pass
+    finally:
+        session_router.forget(conn_id)
+
+
+async def local_process_request(connection, request):
+    """Everything phone_control.serve_static already handles (the page, sw.js, letting a real WebSocket handshake
+    through), plus this local server's own /decide — the same endpoint relay/server.py exposes, reached instead of
+    the relay's when no relay is configured (session_transport_url() then points a phone straight at this
+    computer). GET with a query string, not POST with a body, for the same reason relay/server.py's docstring
+    gives: the `websockets` library this reuses can't read a request body at all."""
+    if not request.headers.get("Upgrade"):
+        path = urllib.parse.urlsplit(request.path)
+        if path.path == "/decide":
+            remote = getattr(connection, "remote_address", None)
+            if not phone_control.is_private_address(remote[0] if remote else ""):
+                return connection.respond(403, "Not allowed.")
+            query = urllib.parse.parse_qs(path.query)
+            session_id = (query.get("sessionId") or [""])[0]
+            secret = (query.get("secret") or [""])[0]
+            decision = (query.get("decision") or [""])[0]
+            if not (session_id and secret and decision in ("confirm", "reject")):
+                return connection.respond(400, "Bad request.")
+            phone_server.decide_session(session_id, secret, decision == "confirm")
+            return connection.respond(200, "OK")
+    return phone_control.serve_static(connection, request)
+
+
+def run_phone_server() -> None:
+    """LAN-bound (0.0.0.0, not just localhost) on its own port, with its own pairing/auth — see phone_control.py."""
+    global phone_server_loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    phone_server_loop = loop
+
+    async def main():
+        async with websockets.serve(handle_phone_client, "0.0.0.0", PHONE_WS_PORT,
+                                    process_request=local_process_request,
+                                    max_size=phone_session.VOICE_MAX_BYTES + 4096):
+            await asyncio.Future()
+
+    try:
+        loop.run_until_complete(main())
+    except OSError as e:
+        print(f"Could not start the phone-control server on port {PHONE_WS_PORT}: {e}", flush=True)
+
+
+_PHONE_PAIR_COMMAND = re.compile(
+    r"\b(?:connect|pair|link)(?:\s+\w+){0,3}\s+my\s+phone\b|\bconnect\s+(?:to|with)\s+my\s+phone\b|"
+    r"\blet\s+my\s+phone\s+control\s+(?:this|my)\s+computer\b|"
+    r"\bcontrol\s+(?:this|my)\s+computer\s+from\s+my\s+phone\b", re.I)
+
+
+def is_phone_pair_command(text: str) -> bool:
+    return bool(_PHONE_PAIR_COMMAND.search(text or ""))
+
+
+def start_phone_pairing() -> str:
+    """"Connect my phone": bootstraps trust with a brand-new phone (no phone has ever paired yet), the mandatory
+    confirmation then, only on "yes", a fresh pairing code and this computer's address on the local network, shown
+    and spoken. Mirrors start_computer_task's own ask-first-then-continue-in-the-background shape.
+
+    Once at least one phone has paired, "connect my phone" instead means start_phone_session() — a notification
+    to tap, not a code to type; see phone_control.py's module docstring for why these are two different things."""
+    if phone_control_mode() == "off":
+        return ("Phone control is turned off. Turn on “Let your phone control this computer” in Settings, "
+                "Computer control, then ask me again.")
+    if phone_server.registry.list():
+        return start_phone_session()
+    question = "Want to connect your phone, so you can talk to me and control this computer from it?"
+    ask_id = open_control_question(question, kind="phone")
+    threading.Thread(target=push.send_to_all, daemon=True, name="phone-pairing-push",
+                     args=(push_store, "Jervis", question)).start()
+    if sms.configured():
+        threading.Thread(target=sms.send, daemon=True, name="phone-pairing-sms",
+                         args=(f"Jervis: {question} Say yes or no on your computer.",)).start()
+
+    def run():
+        if not wait_control_answer(ask_id):
+            return   # whoever answered (or the timeout) already has their own reply
+        code = phone_server.begin_pairing()
+        address = f"http://{phone_control.lan_address()}:{PHONE_WS_PORT}"
+        pair_url = f"{address}/?code={code}"   # the code travels in the link too, so scanning is the whole step —
+        # phone_client.html auto-submits it on load; typing the address and code by hand stays there as a fallback,
+        # shown on the panel itself (address + code, in full) rather than spoken, to keep this one line, said once.
+        announcements.put("Scan the QR code on your screen with your phone to connect.")
+        send_ui_update_once({"type": "phone_pairing", "address": address, "pairUrl": pair_url, "code": code,
+                             "expiresAt": time.time() + phone_control.PAIR_CODE_TTL})
+
+    threading.Thread(target=run, daemon=True, name="phone-pairing").start()
+    return f"{question} Say yes or no."
+
+
+def start_phone_session() -> str:
+    """"Connect my phone", once at least one phone is already paired: every paired phone gets a push notification
+    with Confirmed/Not Confirmed buttons (see phone_sw.js), opening confirm.html — a small, self-contained page
+    that decides the session (phone_server.decide_session) using nothing but the session id and secret already in
+    its own link, whether or not this phone has ever synced anything with wherever that page happens to be served
+    from. From there, "Open Jervis" optionally goes on to attach a live session with the phone's own device
+    credentials (phone_server.attach_session) for voice/commands — that part does still need this phone's data to
+    already be on that same origin (see phone_client.html's syncToOtherOrigin), but confirming or rejecting the
+    request itself never does. Without a relay configured (Settings, "Relay address"), this still works for a
+    phone on this Wi-Fi right now — it attaches directly to the local phone server, the same one PHONE_COMMANDS
+    already uses, over local_process_request's /decide (see run_phone_server). A relay is only what extends this
+    to work from anywhere else. See phone_control.py's and phone_session.py's module docstrings."""
+    session = phone_server.begin_session()
+    # Everything confirm.html needs is here — no relayUrl: /decide is always relative to wherever that page itself
+    # was served from (locally or by the relay), so the decision never depends on the phone already knowing
+    # anything about this computer (see confirm.html and phone_sw.js).
+    push_data = {"computerId": relay.computer_id, "sessionId": session.id, "secret": session.secret}
+    actions = [{"action": "confirm", "title": "Confirmed"}, {"action": "reject", "title": "Not Confirmed"}]
+    sent = push.send_to_all(push_store, "Jervis", "Jervis wants to connect to this computer.",
+                            tag="jervis-session", actions=actions, data=push_data)
+    if not sent:
+        return (f"I couldn't reach a paired phone to ask — open {notification_setup_url()} on your phone once and "
+                "tap “Enable notifications”. One time only; after that this just works.")
+
+    def run():
+        if not session.decided_event.wait(phone_control.SESSION_TTL):
+            return   # nobody answered in time; a silent expiry, same as an unanswered pairing code
+        if session.state == "approved":
+            announcements.put("Your phone is connected.")
+        elif session.state == "rejected":
+            announcements.put("Connection cancelled.")
+
+    threading.Thread(target=run, daemon=True, name="phone-session").start()
+    return "I've sent a connection request to your phone."
+
+
+def disconnect_phone_session() -> str:
+    session_id = phone_server.current_session_id()
+    if not session_id:
+        return "No phone is connected right now."
+    session_router.end_session(session_id)
+    return "Disconnected."
+
+
+def list_paired_phones() -> str:
+    devices = phone_server.registry.list()
+    if not devices:
+        return "No phones are paired."
+    names = ", ".join(d["name"] for d in devices)
+    return f"{len(devices)} phone{'s' if len(devices) != 1 else ''} paired: {names}."
+
+
+def forget_paired_phones() -> str:
+    removed = phone_server.registry.revoke()
+    if not removed:
+        return "No phones were paired."
+    return f"Forgot {removed} paired phone{'s' if removed != 1 else ''}. They'll need to pair again to reconnect."
 
 
 # Background loops sending data to UI sidebars
@@ -1147,18 +1453,18 @@ def parse_volume_command(text: str):
 
 
 def parse_spotify_request(text: str):
-    """"Play on Spotify, Echoes by Pink Floyd, minute two" -> ("echoes pink floyd", 120)."""
-    seconds, n = parse_start_time(text)
-    if not re.search(r"\bspotify\b", n):
+    """"Play on Spotify, Echoes by Pink Floyd, minute two" -> ("Echoes Pink Floyd", 120), typed exactly as said."""
+    seconds, n = timeparse.strip_start_time(text)
+    if not re.search(r"\bspotify\b", n, re.I):
         return None
     m = re.match(
         r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
-        r"(?:play|put on|start|listen to)\s+(.+)$", n)
+        r"(?:play|put on|start|listen to)\s+(.+)$", n, re.I)
     if not m:
         return None
-    query = re.sub(r"\b(?:(?:on|in|with|using|from)\s+)?spotify\b", " ", m.group(1))
-    query = re.sub(r"\b(?:the\s+)?(?:song|track|music)\b", " ", query)
-    query = re.sub(r"\bby\b", " ", query)
+    query = re.sub(r"\b(?:(?:on|in|with|using|from)\s+)?spotify\b", " ", m.group(1), flags=re.I)
+    query = re.sub(r"\b(?:the\s+)?(?:song|track|music)\b", " ", query, flags=re.I)
+    query = re.sub(r"\bby\b", " ", query, flags=re.I)
     query = " ".join(query.split())
     return (query, seconds) if query else None
 
@@ -1800,7 +2106,7 @@ pending_control_question = None  # {"id", "at"}: the next "yes"/"no" said answer
 
 _CONTROL_EXPLICIT = re.compile(
     r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis)[, ]+)?(?:please |can you |could you |would you |go ahead and )*"
-    r"(?:use|control|take control of|take over) (?:my |the )?(?:computer|mouse|screen|pc|mac|laptop)"
+    r"(?:use|control|take control(?: (?:of|over|on))?|take over) (?:my |the )?(?:computer|mouse|screen|pc|mac|laptop)"
     r"(?:,? (?:and|to|then))? (?P<goal>.+)$", re.I)
 # One on-screen step said plainly ("click Save", "scroll down", "type hello into the search box"). Only phrasings
 # that can't be ordinary conversation: "tap water", "type 2 diabetes in children", "check the box office" don't match.
@@ -1818,7 +2124,8 @@ _CONTROL_STEP = re.compile(
 _COMPUTER_HINT = re.compile(
     r"\b(?:click|double[- ]click|right[- ]click|tap on|scroll|press (?:the|enter|tab|escape)|type (?:it|this|that|in|into)"
     r"|fill (?:in|out)|tick|untick|check ?box|drag|on (?:my|the) screen|use (?:my|the) (?:computer|mouse|keyboard|pc|mac)"
-    r"|control (?:my|the) (?:computer|mouse|pc|mac)|in (?:the )?settings|toggle|turn (?:on|off) (?:the )?[\w ]{1,30} (?:in|on))\b",
+    r"|(?:take )?control(?: (?:of|over|on))? (?:my|the) (?:computer|mouse|pc|mac)|in (?:the )?settings|toggle|"
+    r"turn (?:on|off) (?:the )?[\w ]{1,30} (?:in|on))\b",
     re.I)
 _CONTROL_STOP = re.compile(r"(?:stop|stop it|stop now|stop that|cancel|abort|enough|that's enough|take over|"
                            r"i'll take over|let me do it|stop using (?:my |the )?(?:computer|mouse))")
@@ -1875,12 +2182,13 @@ def _ask_ai_for_control(messages, tools):
         raise computer_use.AIError(groq_error_reply(e)) from e
 
 
-def open_control_question(question: str) -> str:
-    """Show a yes/no question in the window and listen for "yes"/"no". Returns its id for wait_control_answer."""
+def open_control_question(question: str, kind: str = "computer") -> str:
+    """Show a yes/no question in the window and listen for "yes"/"no". Returns its id for wait_control_answer.
+    `kind` ("computer" or "phone") only affects which immediate reply handle_control_voice gives on "yes"."""
     global pending_control_question
     ask_id = f"q{int(time.time() * 1000)}"
     _control_questions[ask_id] = (threading.Event(), {"answer": None})
-    pending_control_question = {"id": ask_id, "at": time.time()}
+    pending_control_question = {"id": ask_id, "at": time.time(), "kind": kind}
     send_ui_update_once({"type": "control_confirm", "id": ask_id, "question": question})
     return ask_id
 
@@ -1976,8 +2284,11 @@ def handle_control_voice(text: str):
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower().replace("\u2019", "'")).split())
     n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jervis|jarvis) ", "", n)   # "Hey Jervis, stop"
     if pending_control_question and time.time() - pending_control_question["at"] < 120:
+        kind = pending_control_question.get("kind", "computer")
         if _YES.fullmatch(n) and answer_control_question(pending_control_question["id"], True):
             pending_control_question = None
+            if kind == "phone":
+                return "Okay, pairing your phone now."
             return (f"Okay. Move the mouse, press {computer_use.STOP_SHORTCUT}, or say stop "
                     "whenever you want to take over.")
         if _NO.fullmatch(n) and answer_control_question(pending_control_question["id"], False):
@@ -2013,6 +2324,15 @@ def handle_direct_command(text: str):
     control = handle_control_voice(text)
     if control:
         return control
+    if is_phone_pair_command(text):
+        return start_phone_pairing()
+    if re.search(r"\bdisconnect\s+(?:the\s+|my\s+)?phone\b|\bend\s+(?:the\s+|my\s+)?phone\s+(?:session|connection)\b",
+                text, re.I):
+        return disconnect_phone_session()
+    if re.search(r"\b(?:what|which|show|list)\b.*\bphones?\b.*\bpaired\b|\bpaired\s+phones?\b", text, re.I):
+        return list_paired_phones()
+    if re.search(r"\bforget\s+(?:my\s+|all\s+)?(?:paired\s+)?phones?\b|\bunpair\s+(?:my\s+)?phones?\b", text, re.I):
+        return forget_paired_phones()
     text = fix_typos(text)
     spotify = handle_spotify_search(text)   # before splitting "take control and search … in Spotify" into parts
     if spotify:
@@ -2293,7 +2613,7 @@ def play_song_locally(request: str, start_seconds=None) -> str:
 
 def play_song(song_name: str, start_seconds=None, **kwargs) -> str:
     """Play a track on Spotify, optionally starting `start_seconds` into it."""
-    spoken_seconds, cleaned = parse_start_time(song_name)  # the model may leave "minute two" in the title
+    spoken_seconds, cleaned = timeparse.strip_start_time(song_name)  # the model may leave "minute two" in the title
     song_name = cleaned or song_name
     start_seconds = start_seconds or spoken_seconds
     if not sp:
@@ -2476,6 +2796,80 @@ def tool_edit_image(instruction: str = "") -> str:
     broadcast("ai", "", image=images.display_data_url(result["path"]), image_kind="edited")
     return (f"Successfully edited the image as requested ({instruction}). The result has already been shown to the "
             f"user in the conversation and saved to {result['path']}; the original image was left unchanged.")
+
+
+# ---------- a phone on the same Wi-Fi (see phone_control.py) ----------
+PHONE_COMMANDS = {   # commandType -> (the existing tool it reuses, the payload field it reads)
+    "OPEN_APPLICATION": (open_application, "app_name"),
+    "PLAY_SONG": (play_song, "song_name"),
+    "PAUSE_MUSIC": (pause_music, None),
+    "PLAY_YOUTUBE_VIDEO": (play_youtube_video, "query"),
+    "SEARCH_GOOGLE": (google_search, "query"),
+}
+
+
+def _dispatch_phone_command(command_type: str, payload: dict) -> str:
+    """Runs one allowed remote command through the same tool voice/chat would use. Only ever one of
+    PHONE_COMMANDS — handle_phone_client refuses anything else before this is even reached."""
+    entry = PHONE_COMMANDS.get(command_type)
+    if not entry:
+        raise ValueError(f"“{command_type}” isn't something a phone can ask Jervis to do.")
+    func, key = entry
+    if key is None:
+        return str(func())
+    value = str((payload or {}).get(key, "")).strip()
+    if not value:
+        raise ValueError(f"That needs {key.replace('_', ' ')}.")
+    return str(func(value))
+
+
+phone_server = phone_control.PhoneControlServer(execute=_dispatch_phone_command)
+push_store = push.SubscriptionStore()   # phones that asked to be notified — see push.py
+
+
+def _transcribe_phone_audio(pcm16_bytes: bytes, sample_rate: int) -> str:
+    """session_router's callback: the same multi-engine transcribe() the desktop microphone uses, just fed PCM
+    that started life as a phone recording instead of sr.Microphone (see phone_session.decode_audio_to_pcm16)."""
+    return transcribe(sr.AudioData(pcm16_bytes, sample_rate, 2))
+
+
+def _deliver_phone_voice_text(text: str, session_id: str) -> None:
+    """session_router's callback for a finished transcription: queued like any typed/spoken command (see
+    PhoneVoiceInput) so it goes through the exact same main-loop pipeline — must return immediately, not block
+    whichever asyncio loop is currently running the transport (relay_client.py, or handle_phone_client below)."""
+    typed_inputs.put(PhoneVoiceInput(text, session_id))
+
+
+def _vapid_key_b64() -> str:
+    """relay_client's answer to the relay's get_page_context — see relay/server.py's docstring on why the relay
+    asks for this live instead of any key being baked into it: every Jervis install generates its own (push.py)."""
+    return push.public_key_b64() if push.available() else ""
+
+
+def _local_address() -> str:
+    """relay_client's other answer to get_page_context: this computer's own current local address, shown by the
+    relay-hosted page to a phone it doesn't recognize yet (the one-time local<->relay sync never ran for it — see
+    phone_client.html's syncToOtherOrigin) so there's a real way forward instead of a dead end."""
+    return f"http://{phone_control.lan_address()}:{PHONE_WS_PORT}"
+
+
+# Shared between the local LAN phone server (handle_phone_client, right below) and relay_client.py: a "connect my
+# phone" session behaves identically either way — see phone_session.py for why that's one router, not two.
+session_router = phone_session.PhoneSessionRouter(phone_server, _transcribe_phone_audio, _deliver_phone_voice_text,
+                                                   on_push_subscribe=push_store.add,
+                                                   on_push_unsubscribe=push_store.remove)
+relay = relay_client.RelayClient(RELAY_URL, session_router,
+                                 is_enabled=lambda: bool(RELAY_URL) and phone_control_mode() != "off",
+                                 get_vapid_key=_vapid_key_b64, get_local_address=_local_address)
+
+
+def reply_to_phone_if_needed(typed, message: str) -> None:
+    """The three places in main_loop that finish a turn all call this right after broadcast("ai", message) — a
+    no-op unless `typed` is the PhoneVoiceInput that started this turn, in which case the phone that asked also
+    gets the answer, over whichever transport (LAN or relay) it's actually attached on — session_router already
+    knows which."""
+    if isinstance(typed, PhoneVoiceInput):
+        session_router.deliver_reply(typed.session_id, message)
 
 
 TOOL_FUNCTIONS = {
@@ -2832,8 +3226,8 @@ def handle_spotify_search(text: str):
         wanted = spotify_local.clean_query(re.sub(r"\b(?:the )?(?:song|track|album|artist|playlist)\s+", "", wanted,
                                                   flags=re.I))
         if wanted:
-            if sp:   # with Spotify keys, Jervis plays through Spotify's online interface: nothing to watch
-                return play_song(wanted)
+            # "Take control" was said explicitly: show it, even if Spotify keys are set up (those would otherwise
+            # play it invisibly through the online API) — the whole point of the words was to watch it happen.
             return start_computer_task(f"play {wanted} on Spotify", scripted=spotify_local.visible_steps(wanted))
     match = _SPOTIFY_SEARCH.match(rest)
     if not match:
@@ -3269,8 +3663,10 @@ def _failed_generation_text(error: Exception) -> str:
 ACTION_TOOLS = {"use_computer", "play_song", "pause_music", "open_application", "play_youtube_video"}
 _CLAIMS_ACTION = re.compile(
     r"\b(?:i'?m (?:now )?(?:using|controlling) (?:the|your) (?:computer|mouse)|i (?:have |'ve )?(?:opened|clicked|typed|"
-    r"searched|started|played|launched|pressed)\b|(?:starts|started|is now|now) playing|is playing now|"
-    r"the (?:search bar|screen|window) (?:says|shows)|the result is a list)", re.I)
+    r"searched|started|played|launched|pressed)\b|i(?:'ll| will) (?:now )?(?:take control (?:of|over|on)|open|click|"
+    r"type|search|play|launch|press)\b|(?:starts|started|is now|now) playing|is playing now|"
+    r"the (?:search bar|screen|window) (?:says|shows)|the result is a list|type (?:the word )?[\"“]confirm[\"”]|"
+    r"please confirm (?:that )?you(?:'d| would)? like)", re.I)
 
 
 def ask_jervis(messages, user_text=""):
@@ -3301,9 +3697,13 @@ def ask_jervis(messages, user_text=""):
 
     if not tool_calls:
         content = (msg.content or "").strip()
-        if content and _CLAIMS_ACTION.search(content):
-            # Nothing was done (no tool ran), but the reply says something was: never let that through.
-            print("The AI claimed an action it didn't take; replaced.", flush=True)
+        # This turn plainly asked for an action (by the same classifiers that gate the real tools), but no tool
+        # ran — whatever the model wrote instead (a claim, or a whole fake back-and-forth about "confirming") is
+        # never shown: a free-text answer to an action request is untrustworthy by construction here.
+        action_shaped = (is_computer_request(user_text) or is_music_command(user_text) or is_youtube_command(user_text)
+                         or is_app_command(user_text))
+        if content and (action_shaped or _CLAIMS_ACTION.search(content)):
+            print("The AI answered in text instead of acting on a request that needed a tool; replaced.", flush=True)
             return ("I didn't do anything on your computer for that. Say it as a command, like “play Jane on Spotify” "
                     "or “use my computer to open Downloads”.")
         return content if content else "I'm listening. How can I help?"
@@ -3747,8 +4147,6 @@ def main_loop():
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     chat_history = messages
     print("Jervis background listener is ready. Say 'Wake Up Jervis'.")
-    if os.environ.pop("JERVIS_WOKEN_BY_VOICE", "") == "1":   # opened by Jervis Wake (wake/): greet right away
-        greet_after_voice_launch()
 
     while True:
         while not announcements.empty():  # timers that finished: say so, awake or asleep
@@ -3779,8 +4177,9 @@ def main_loop():
                 if text and is_wake_command(text):
                     awake = True
                     show_fullscreen()
-                    broadcast("ai", AWAKE_GREETING)
-                    speak(AWAKE_GREETING)
+                    greeting = time_greeting()
+                    broadcast("ai", greeting)
+                    speak(greeting)
                 continue
 
             text = listen()
@@ -3794,7 +4193,7 @@ def main_loop():
             if is_explicit_wake(text):  # "Hey Jervis" while already awake: bring the window up, full screen
                 reopened = not window_visible
                 show_fullscreen()
-                here = AWAKE_GREETING if reopened else "I'm here."
+                here = time_greeting() if reopened else "I'm here."
                 broadcast("ai", here)
                 speak(here)
                 continue
@@ -3808,6 +4207,7 @@ def main_loop():
             direct_result = "Sorry, something went wrong with that command."
         if direct_result:
             broadcast("ai", direct_result)
+            reply_to_phone_if_needed(typed, str(direct_result))
             remember_turn(messages, text, str(direct_result), turn_started, private=isinstance(direct_result, PrivateReply))
             speak(spoken_version(direct_result))
             continue
@@ -3815,6 +4215,7 @@ def main_loop():
         if is_shutdown_command(text):
             goodbye = farewell_reply(text)
             broadcast("ai", goodbye)
+            reply_to_phone_if_needed(typed, goodbye)
             speak(goodbye)
             awake = False
             send_status("sleeping")
@@ -3834,6 +4235,7 @@ def main_loop():
             reply = "Sorry, something went wrong. Please try again."
         messages.append({"role": "assistant", "content": reply})
         broadcast("ai", reply)
+        reply_to_phone_if_needed(typed, reply)
         speak(spoken_version(reply))
 
 
@@ -3846,8 +4248,24 @@ def greet_after_voice_launch() -> None:
     while not connected_clients and time.time() < deadline:   # the window starts alongside the engine
         time.sleep(0.2)
     show_fullscreen()
-    broadcast("ai", AWAKE_GREETING)
-    speak(AWAKE_GREETING)
+    greeting = time_greeting()
+    broadcast("ai", greeting)
+    speak(greeting)
+
+
+def greet_on_startup() -> None:
+    """Opened normally (double-clicked, or the window started the backend): once the window is up, greet and start
+    awake, so you can talk right away instead of having to say a wake phrase first."""
+    global awake
+    deadline = time.time() + 25
+    while not connected_clients and time.time() < deadline:   # the window starts alongside the engine
+        time.sleep(0.2)
+    if not connected_clients:   # started headless (no window): stay asleep, the wake phrase still works
+        return
+    awake = True
+    greeting = time_greeting()
+    broadcast("ai", greeting)
+    speak(greeting)
 
 
 def set_window_visible(visible: bool) -> None:
@@ -3899,6 +4317,12 @@ if __name__ == "__main__":
     ws_thread.start()
     ws_loop_ready.wait()
 
+    if phone_control_mode() != "off":
+        threading.Thread(target=run_phone_server, daemon=True, name="phone-control").start()
+        if RELAY_URL:
+            threading.Thread(target=relay_client.run_relay_client, args=(relay,), daemon=True,
+                             name="phone-relay").start()
+
     threading.Thread(target=check_ai_connection, daemon=True).start()
     threading.Thread(target=refresh_devices, daemon=True).start()   # so Settings has them ready
     if LLM_BACKEND in ("ollama", "auto") and os.getenv("JERVIS_NO_AI_SETUP") != "1":   # (that switch: tests only)
@@ -3909,7 +4333,13 @@ if __name__ == "__main__":
     if os.getenv("JERVIS_SHOW_WINDOW") == "1":  # started with run.py: show the window right away, not only after "Hey Jervis"
         launch_ui()
 
+    if os.environ.pop("JERVIS_WOKEN_BY_VOICE", "") == "1":   # opened by Jervis Wake (wake/): greet right away
+        greet_after_voice_launch()
+    else:
+        greet_on_startup()   # opened normally: greet once the window connects, and start awake right away
+
     try:
         main_loop()
     except KeyboardInterrupt:
         print("\nShutting down.")
+

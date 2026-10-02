@@ -11,7 +11,7 @@ def fresh(tmp_path, monkeypatch):
     """A clean settings module on an empty data folder, with no Jervis variables in the environment."""
     for key in list(os.environ):
         if key.startswith(("JERVIS_", "GROQ_", "LLM_", "OLLAMA_", "WEATHER_", "SPOTIFY_", "OPENAI_", "GOOGLE_",
-                           "WHATSAPP_")):
+                           "WHATSAPP_", "TWILIO_")):
             monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("JERVIS_DATA_DIR", str(tmp_path))
     import paths
@@ -46,6 +46,37 @@ def test_damaged_file_is_set_aside_not_lost(fresh):
     assert settings.get("LLM_BACKEND") == "ollama"   # started from defaults
     kept = [p for p in os.listdir(data) if p.startswith("settings.json.damaged-")]
     assert kept and (data / kept[0]).read_text() == "{ this is not json"
+
+
+def test_a_genuinely_new_install_is_first_run(fresh):
+    settings, _ = fresh
+    settings.load()
+    assert settings.is_first_run() is True
+
+
+def test_saving_anything_ends_first_run(fresh):
+    settings, _ = fresh
+    settings.load()
+    settings.update({})   # the welcome screen's "Skip for now" sends exactly this
+    assert settings.is_first_run() is False
+
+
+def test_an_old_env_file_is_still_first_run_the_first_time_settings_json_is_made(fresh):
+    """An old .env is imported into settings.json (test_env_file_is_imported_once_and_keeps_online_ai already
+    checks that), but the welcome screen still hasn't been seen yet, so it's offered once regardless."""
+    settings, data = fresh
+    (data / ".env").write_text("GROQ_API_KEY=gsk_test_value_1234\n")
+    settings.load()
+    assert settings.is_first_run() is True
+
+
+def test_an_existing_settings_file_is_not_first_run(fresh):
+    settings, data = fresh
+    settings.load()
+    settings.update({"WEATHER_CITY": "Tel Aviv"})
+    importlib.reload(settings)   # a later launch: fresh process state, same settings.json on disk
+    settings.load()
+    assert settings.is_first_run() is False
 
 
 def test_old_flat_file_is_migrated(fresh):
