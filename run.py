@@ -105,19 +105,46 @@ def electron_installed() -> bool:
     return os.path.exists(ELECTRON_OK)
 
 
+def electron_cache_dirs() -> list:
+    """Every place a (possibly corrupt) downloaded electron-*.zip could be sitting. ELECTRON_CACHE below is meant
+    to redirect @electron/get to one plain-path folder, but isn't always honored — seen in the wild, verbose
+    @electron/get output literally says "Checking the cache (undefined)" and still reports a "Cache hit", meaning
+    it reused its own OS-default cache location regardless of the env var. That default follows the env-paths
+    package electron tooling uses everywhere: %LOCALAPPDATA%\\electron\\Cache on Windows, ~/Library/Caches/electron
+    on macOS, $XDG_CACHE_HOME/electron (or ~/.cache/electron) on Linux. Clearing every one of these, not just the
+    override, is what actually guarantees a fresh download."""
+    dirs = [os.path.join(ROOT, ".electron-cache")]
+    if IS_WIN:
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            dirs.append(os.path.join(local, "electron", "Cache"))
+    elif sys.platform == "darwin":
+        dirs.append(os.path.expanduser("~/Library/Caches/electron"))
+    else:
+        dirs.append(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "electron"))
+    return dirs
+
+
+def clear_electron_caches() -> None:
+    for d in electron_cache_dirs():
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def install_electron(npm: str) -> bool:
     """npm can report success while Electron's own program file failed to download. Check, and retry with details.
 
-    A failed download can leave a corrupt/partial zip in the cache folder below — electron's own installer then
-    finds that file already there on the *next* run.py too (not just this retry loop) and reuses it without
+    A failed download can leave a corrupt/partial zip in one of electron_cache_dirs() — electron's own installer
+    then finds that file already there on the *next* run.py too (not just this retry loop) and reuses it without
     re-downloading, failing the exact same silent way every time: "postinstall" completes with no download output
-    at all and no path.txt ever appears. Clearing that cache before every attempt here, including the first,
-    is what actually fixes it — removing node_modules/electron alone (the old retry) just deletes the *symptom*."""
+    at all and no path.txt ever appears. Clearing every one of those caches before every attempt here, including
+    the first, is what actually fixes it — removing node_modules/electron alone (the old retry) just deletes the
+    *symptom*, and clearing only the ELECTRON_CACHE override misses the OS-default location it silently falls
+    back to."""
     cache_dir = os.path.join(ROOT, ".electron-cache")
     base = {**os.environ, "PATH": os.path.dirname(npm) + os.pathsep + os.environ.get("PATH", ""),
-            "ELECTRON_CACHE": cache_dir}  # a cache folder with a plain path
+            "ELECTRON_CACHE": cache_dir}  # a cache folder with a plain path — honored some of the time, not always
     say("Installing the window (Electron), first run only. This downloads about 100 MB...")
-    shutil.rmtree(cache_dir, ignore_errors=True)
+    clear_electron_caches()
     run([npm, "install", "--no-audit", "--no-fund", "--foreground-scripts"], env=base)
     if electron_installed():
         return True
@@ -127,7 +154,7 @@ def install_electron(npm: str) -> bool:
     for label, env in attempts:
         say(f"The window didn't finish installing. Trying {label}...")
         shutil.rmtree(os.path.join(ROOT, "node_modules", "electron"), ignore_errors=True)
-        shutil.rmtree(cache_dir, ignore_errors=True)
+        clear_electron_caches()
         result = subprocess.run([npm, "install", "electron", "--no-audit", "--no-fund", "--foreground-scripts"],
                                 cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if electron_installed():
