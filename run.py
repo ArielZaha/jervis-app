@@ -106,10 +106,18 @@ def electron_installed() -> bool:
 
 
 def install_electron(npm: str) -> bool:
-    """npm can report success while Electron's own program file failed to download. Check, and retry with details."""
+    """npm can report success while Electron's own program file failed to download. Check, and retry with details.
+
+    A failed download can leave a corrupt/partial zip in the cache folder below — electron's own installer then
+    finds that file already there on the *next* run.py too (not just this retry loop) and reuses it without
+    re-downloading, failing the exact same silent way every time: "postinstall" completes with no download output
+    at all and no path.txt ever appears. Clearing that cache before every attempt here, including the first,
+    is what actually fixes it — removing node_modules/electron alone (the old retry) just deletes the *symptom*."""
+    cache_dir = os.path.join(ROOT, ".electron-cache")
     base = {**os.environ, "PATH": os.path.dirname(npm) + os.pathsep + os.environ.get("PATH", ""),
-            "ELECTRON_CACHE": os.path.join(ROOT, ".electron-cache")}  # a cache folder with a plain path
+            "ELECTRON_CACHE": cache_dir}  # a cache folder with a plain path
     say("Installing the window (Electron), first run only. This downloads about 100 MB...")
+    shutil.rmtree(cache_dir, ignore_errors=True)
     run([npm, "install", "--no-audit", "--no-fund", "--foreground-scripts"], env=base)
     if electron_installed():
         return True
@@ -119,6 +127,7 @@ def install_electron(npm: str) -> bool:
     for label, env in attempts:
         say(f"The window didn't finish installing. Trying {label}...")
         shutil.rmtree(os.path.join(ROOT, "node_modules", "electron"), ignore_errors=True)
+        shutil.rmtree(cache_dir, ignore_errors=True)
         result = subprocess.run([npm, "install", "electron", "--no-audit", "--no-fund", "--foreground-scripts"],
                                 cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if electron_installed():
