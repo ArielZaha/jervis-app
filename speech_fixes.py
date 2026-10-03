@@ -13,6 +13,7 @@ NAMES = {
                        "streamyou", "stremmio", "stremi", "streamyo", "stremeo", "streemeo"}),
     "netflix": (0.8, {"netflicks", "netflex", "nettlix", "netflis"}),
     "youtube": (0.85, {"utube", "youtub", "yootube"}),
+    "blender": (0.78, {"blingdon", "blendor", "blenda", "blendr", "blendah", "blenders", "blinder"}),
 }
 # "stream" is a real word, so it only becomes Stremio when followed by a typical mishearing of "-io".
 _STREAM_PAIR = re.compile(r"\bstream (?:here|hear|io|you|yo|me o|mio|e o|ear|ee o)\b")

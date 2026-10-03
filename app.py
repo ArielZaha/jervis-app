@@ -46,6 +46,7 @@ from spotipy.oauth2 import SpotifyOAuth
 from groq import Groq
 from dotenv import load_dotenv
 
+import app_launcher
 from app_launcher import _site_for, open_application, parse_open_request, resolve_app
 from youtube_browser import close_tabs, control_playback, open_in_site_tab, open_youtube, youtube_is_playing
 import netflix
@@ -56,6 +57,8 @@ import google_accounts
 import local_llm
 import local_ai
 import stt_local
+import blender_commands
+import blender_control
 import computer_use
 import spotify_local
 import osal
@@ -64,10 +67,12 @@ import calendar_time
 import classroom
 import earth
 import equations
+import forecast
 import functions
 import graphs
 import images
 import planets
+import web_search
 import whatsapp
 import phone_control
 import phone_crypto
@@ -523,17 +528,22 @@ async def handle_client(websocket):
                                            "me how.")
             elif data.get("type") == "setup_retry":
                 local_ai_manager.start_background()
+            elif data.get("type") == "weather_refresh":   # the weather window's refresh button, or a click on the card
+                refresh_weather_window(str(data.get("city") or "")[:80], refresh=data.get("refresh") is not False)
             elif data.get("type") == "window_visibility":
                 set_window_visible(data.get("visible") is not False)
             elif data.get("type") == "control_answer":
                 answer_control_question(str(data.get("id", "")), data.get("allow") is True)
-            elif data.get("type") == "control_command" and computer_task is not None:
+            elif data.get("type") == "control_command":
                 action = data.get("action")
                 if action == "stop":
-                    computer_task.stop()
-                elif action == "pause":
+                    if computer_task is not None:
+                        computer_task.stop()
+                    if session_active():
+                        end_control_session()
+                elif action == "pause" and control_active():   # pausing only means something mid-task
                     computer_task.pause()
-                elif action == "resume":
+                elif action == "resume" and computer_task is not None:
                     computer_task.resume()
             elif data.get("type") == "get_settings":
                 try:
@@ -892,12 +902,11 @@ def telemetry_loop():
         time.sleep(2)
 
 
-WEATHER_CODES = {
-    0: "Clear sky", 1: "Mostly clear", 2: "Partly cloudy", 3: "Overcast",
-    45: "Fog", 48: "Fog", 51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
-    61: "Light rain", 63: "Rain", 65: "Heavy rain", 71: "Light snow", 73: "Snow", 75: "Heavy snow",
-    80: "Rain showers", 81: "Rain showers", 82: "Heavy showers", 95: "Thunderstorm", 96: "Thunderstorm", 99: "Thunderstorm",
-}
+def weather_card(data: dict) -> dict:
+    """The small weather card in the window's left column, from a forecast.get() result."""
+    current = data["current"]
+    return {"city": data["place"]["name"].split(",")[0], "temp": current["temp"] if current["temp"] is not None else "--",
+            "condition": current["label"]}
 
 
 def weather_loop():
@@ -905,54 +914,94 @@ def weather_loop():
         delay = 600
         settings_changed.clear()
         try:
+            data = forecast.get(fallback_city=os.getenv("WEATHER_CITY", ""), radar=False)
+            send_ui_update("weather", weather_card(data))
+        except forecast.WeatherError as e:
             city = os.getenv("WEATHER_CITY", "").strip()
-            place = earth.geocode(city) if city else None
-            if not place:
-                send_ui_update("weather", {"city": "No city set" if not city else f"Can't find {city}",
-                                           "temp": "--", "condition": "Choose your city in Settings"})
-                settings_changed.wait(timeout=600 if not city else 120)
-                continue
-            url = ("https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
-                   "&current=temperature_2m,weather_code").format(lat=place["lat"], lon=place["lon"])
-            resp = requests.get(url, timeout=8).json()
-            current = resp.get("current") or {}
-            if "temperature_2m" in current:
-                send_ui_update(
-                    "weather",
-                    {
-                        "city": place["name"],
-                        "temp": round(current["temperature_2m"]),
-                        "condition": WEATHER_CODES.get(current.get("weather_code"), "Clear sky"),
-                    },
-                )
-            else:
-                delay = 30
+            send_ui_update("weather", {"city": f"Can't find {city}" if city else "No city set", "temp": "--",
+                                       "condition": "Choose your city in Settings" if "Settings" in str(e) else "Unavailable"})
+            delay = 120
         except Exception as e:
-            print(f"Weather fetch failed: {e}")
+            print(f"Weather fetch failed: {e!r}")
             delay = 30  # retry soon instead of waiting 10 minutes with no data
         settings_changed.wait(timeout=delay)   # a new city in Settings refreshes the panel right away
 
 
-def tool_get_weather() -> str:
-    """The get_weather tool: a one-shot lookup for a spoken/typed weather question (weather_loop above only ever
-    pushes to the on-screen panel, so a direct question like "what's the weather" had no answer before this)."""
-    city = os.getenv("WEATHER_CITY", "").strip()
-    if not city:
-        return "No weather city is set. Tell the user to set one in Settings, General, Weather city."
+# ---------- The weather window: "what's the weather?" opens it (see forecast.py for the data, weather/ for the window) ----------
+_WEATHER_ASK = re.compile(
+    r"\b(?:what'?s|what is|how'?s|how is|check|tell me|show me|show|open|give me|get me|bring up|display)\b.*\bweather\b"
+    r"|\bweather\b.*\b(?:like|today|tonight|tomorrow|now|outside|forecast|this week|right now)\b"
+    r"|^(?:the )?(?:weather|forecast|weather forecast|weather report)(?: please)?$"
+    r"|\b(?:what'?s|what is|show me|show|open|check|give me) (?:the |my )?(?:weather )?forecast\b"
+    r"|\bis it (?:raining|snowing|sunny|cloudy|cold|hot|windy)(?: outside| now| right now| today)?$"
+    r"|\b(?:temperature|forecast)\b.*\b(?:outside|today|now)\b"
+    r"|\bdo i need (?:an umbrella|a jacket|a coat)\b")
+_WEATHER_CLOSE = re.compile(r"^(?:(?:please|can you|could you) )*(?:close|hide|dismiss|exit) (?:the |my )?weather"
+                            r"(?: (?:window|panel|screen|app|forecast))?$")
+_WEATHER_TALK = re.compile(r"^(?:i|we|my|our|he|she|they|it was|the weather (?:was|has been))\b")
+
+
+def parse_weather_request(text: str):
+    """{"action": "show", "city": "" | "Paris"} / {"action": "close"} for a weather request, else None. Talking
+    about the weather ("I was talking about the weather yesterday") is not a request."""
+    n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower().replace("’", "'")).split())
+    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jervis|jarvis) ", "", n)
+    if _WEATHER_CLOSE.match(n):
+        return {"action": "close"}
+    if _WEATHER_TALK.match(n) or not _WEATHER_ASK.search(n):
+        return None
+    city = ""
+    m = re.search(r"\b(?:weather|forecast|temperature|raining|snowing|sunny|cloudy|cold|hot|windy)\b.*?\b(?:in|for|at) "
+                  r"(?P<c>[a-z' ]+?)(?: (?:today|tonight|tomorrow|now|right now|this week|please))*$", n)
+    if m and m.group("c") not in ("the moment", "general", "my area", "my city", "here", "outside"):
+        city = m.group("c").strip()
+    return {"action": "show", "city": city}
+
+
+def show_weather(city: str = "", refresh: bool = False, speak_reply: bool = True, open_window: bool = True) -> str:
+    """Open the weather window (straight away, as a skeleton), fetch, then fill it. Returns what to say.
+    open_window=False only updates a window that is already open (its own refresh button)."""
+    window = bool(ws_loop and connected_clients)
+    if window and open_window:
+        send_ui_update_once({"type": "weather_open", "city": city})
     try:
-        place = earth.geocode(city)
-        if not place:
-            return f"Could not find “{city}”. Tell the user to check the city spelling in Settings."
-        url = ("https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
-               "&current=temperature_2m,weather_code").format(lat=place["lat"], lon=place["lon"])
-        current = requests.get(url, timeout=8).json().get("current") or {}
-        if "temperature_2m" not in current:
-            return "The weather service didn't return current conditions. Tell the user to try again shortly."
-        condition = WEATHER_CODES.get(current.get("weather_code"), "clear sky")
-        return f"It's currently {round(current['temperature_2m'])}°C and {condition.lower()} in {place['name']}."
-    except Exception as e:
-        print(f"Weather tool fetch failed: {e}")
-        return "The weather service could not be reached right now. Tell the user to try again shortly."
+        data = forecast.get(city=city, fallback_city=os.getenv("WEATHER_CITY", ""), refresh=refresh)
+    except forecast.WeatherError as e:
+        send_ui_update_once({"type": "weather_panel", "error": str(e)})
+        return str(e)
+    except Exception as e:   # never leave the window spinning
+        traceback.print_exc()
+        send_ui_update_once({"type": "weather_panel", "error": "Weather data is temporarily unavailable."})
+        return f"The weather couldn't be loaded ({type(e).__name__})."
+    send_ui_update_once({"type": "weather_panel", "data": data})
+    if not city:
+        send_ui_update("weather", weather_card(data))   # keep the small card in step with what was just shown
+    text = forecast.summary(data)
+    if window and speak_reply:
+        text += " The full forecast is on your screen."
+    return text
+
+
+def handle_weather_command(text: str):
+    request = parse_weather_request(text)
+    if request is None:
+        return None
+    if request["action"] == "close":
+        send_ui_update_once({"type": "close_weather"})
+        return "Okay, I closed the weather." if ws_loop and connected_clients else "The weather window isn't open."
+    return show_weather(request["city"])
+
+
+def refresh_weather_window(city: str = "", refresh: bool = True) -> None:
+    """The window's own refresh button (or a click on the weather card): fetch again, without saying anything."""
+    threading.Thread(target=show_weather, kwargs={"city": city, "refresh": refresh, "speak_reply": False,
+                                                  "open_window": False},
+                     daemon=True, name="weather-refresh").start()
+
+
+def tool_get_weather(city: str = "", **_ignored) -> str:
+    """The get_weather tool (the AI's way in, for weather questions the direct command didn't catch)."""
+    return show_weather(str(city or "").strip())
 
 
 def get_device_id():
@@ -1508,8 +1557,10 @@ def parse_track_skip(text: str):
     if (re.search(r"\b(episode|season|netflix|stremio|show|tab|window|volume)\b", n)
             or parse_start_time(n)[0] is not None or is_restart_command(n)):
         return None
-    if re.search(r"\b(previous|prior|last|back)\b.{0,20}\b(song|track|one|music)\b|\bgo back\b|\bsong before\b|"
-                 r"\bplay (?:the )?(?:previous|last) (?:song|track|one)\b|\bprevious\b", n):
+    if re.search(r"\bsee you\b|\bin the next\b|\bthe next (?:one|video) (?:is|will|we)\b", n):
+        return None   # a video's own outro picked up by the microphone, not a request
+    if re.search(r"\b(previous|prior|last|back)\b.{0,20}\b(song|track|one|music)\b|\bgo back\b(?!\s+to\b)|"
+                 r"\bsong before\b|\bplay (?:the )?(?:previous|last) (?:song|track|one)\b|\bprevious\b", n):
         return "previous"
     if re.search(r"\bskip\b(?! to\b)|\bnext\b.{0,12}\b(song|track|one|music|video)\b|\b(?:play )?(?:the )?next (?:song|track|one)\b|"
                  r"^next$|\banother (?:song|track)\b|\bdifferent (?:song|track)\b", n):
@@ -2030,6 +2081,8 @@ def handle_graph_command(text: str):
 
 
 _SERVICE_WORDS = {"netflix": "netflix", "stremio": "stremio", "youtube": "youtube", "spotify": "spotify"}
+_BROWSERS = {"chrome", "google chrome", "browser", "the browser", "my browser", "edge", "microsoft edge", "firefox",
+             "brave", "the internet", "internet"}
 _COMPOUND = re.compile(
     r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
     r"(?:open|launch|start)\s+(?:up\s+)?(?:the\s+)?(.+?)(?:\s+(?:app|application))?\s+(?:and\s+then|and|then)\s+"
@@ -2048,10 +2101,15 @@ def split_open_and_do(text: str):
 
 
 def handle_compound_command(text: str):
+    if documents.detect_request(text) or documents.is_transfer_request(text):
+        return None   # "open Notepad and write a story": the document handlers write it, not just open the app
     parts = split_open_and_do(text)
     if not parts:
         return None
     target, action = parts
+    search = re.match(r"(?:search|look up|look for|find)(?: (?:for|up))? (.+)$", action)
+    if search and (target in _BROWSERS or target == "google") and not web_search.parse_request(action):
+        return run_web_search("google", search.group(1), context=text)   # the search opens the browser itself
     service = _SERVICE_WORDS.get(target)
     mentions_service = re.search(r"\b(netflix|stremio|youtube|spotify)\b", action)
     if service and not mentions_service:
@@ -2090,6 +2148,8 @@ def handle_multi_task(text: str):
     global _multi_active
     if _multi_active or pending_confirmation or pending_dictation:
         return None
+    if _CONTROL_EXPLICIT.match(text or "") or _CONTROL_PREAMBLE.match(text or ""):
+        return None   # "take control of my computer and open Notepad": the "and" joins the request to its goal
     parts = split_tasks(text)
     if len(parts) < 2 or split_open_and_do(text):
         return None
@@ -2124,15 +2184,37 @@ def handle_multi_task(text: str):
         _multi_active = False
 
 
+class _SettingUp:
+    """Stands in for computer_task while a goal is still being set up (resolving which app, launching Blender,
+    deciding whether to ask about its bridge...) — all of which can take a while, during which control_active()
+    must already read as busy, or a second command said in that window could start a second, colliding task."""
+    state = "starting"
+
+    def stop(self): pass
+    def pause(self): pass
+    def resume(self): pass
+
+
 # ---------- Computer control: Jervis using the mouse and keyboard (see computer_use.py) ----------
-computer_task = None            # the ComputerTask that is running, if any
+computer_task = None            # the ComputerTask (or ScriptedTask/BlenderComputerTask) currently mid-run, if any
+control_session = None          # the persistent computer_use.ControlSession, once "take control" has been granted
 _control_questions = {}         # question id -> (threading.Event, {"answer": bool | None})
 pending_control_question = None  # {"id", "at"}: the next "yes"/"no" said answers it
 
+# The wake name as speech recognition actually hears it: "Jervis", "Jarvis", or a mangled "Jargvie," before a comma.
+_WAKE_NAME = r"(?:(?:hey |ok |okay )?(?:(?:jervis|jarvis)[, ]+|j[a-z]{3,8}, ?))?"
+_TAKE_CONTROL = (r"(?:use|control|take control(?: (?:of|over|on))?|(?:stay|be|keep|remain) in control(?: (?:of|over|on))?"
+                 r"|take (?:over|on)(?: all(?: of)?)?)")
 _CONTROL_EXPLICIT = re.compile(
-    r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis)[, ]+)?(?:please |can you |could you |would you |go ahead and )*"
-    r"(?:use|control|take control(?: (?:of|over|on))?|take over) (?:my |the )?(?:computer|mouse|screen|pc|mac|laptop)"
+    r"^" + _WAKE_NAME + r"(?:please |can you |could you |would you |go ahead and )*"
+    + _TAKE_CONTROL + r" (?:my |the )?(?:computer|mouse|screen|pc|mac|laptop)"
     r"(?:,? (?:and|to|then))? (?P<goal>.+)$", re.I)
+# The same phrase with nothing after it ("Take control of my computer."): opens a persistent session with no goal
+# yet, instead of matching nothing the way it does today.
+_CONTROL_BARE = re.compile(
+    r"^" + _WAKE_NAME + r"(?:please |can you |could you |would you |go ahead and )*"
+    + _TAKE_CONTROL + r" (?:my |the )?(?:computer|mouse|screen|pc|mac|laptop)"
+    r"[.!?]*$", re.I)
 # One on-screen step said plainly ("click Save", "scroll down", "type hello into the search box"). Only phrasings
 # that can't be ordinary conversation: "tap water", "type 2 diabetes in children", "check the box office" don't match.
 _UI_NOUN = r"(?:box|field|bar|search|input|form|chat|message|document|window|tab|terminal|editor|cell|text ?box)"
@@ -2153,9 +2235,22 @@ _COMPUTER_HINT = re.compile(
     r"turn (?:on|off) (?:the )?[\w ]{1,30} (?:in|on))\b",
     re.I)
 _CONTROL_STOP = re.compile(r"(?:stop|stop it|stop now|stop that|cancel|abort|enough|that's enough|take over|"
-                           r"i'll take over|let me do it|stop using (?:my |the )?(?:computer|mouse))")
+                           r"i'll take over|let me do it|stop using (?:my |the )?(?:computer|mouse)|"
+                           r"stop controlling (?:my |the )?(?:computer|mouse)|stop computer control|"
+                           r"release control|give me (?:back )?control|exit computer control)")
 _CONTROL_PAUSE = re.compile(r"(?:pause|wait|hold on|hang on|one (?:second|moment|sec))")
 _CONTROL_RESUME = re.compile(r"(?:continue|resume|go on|go ahead|carry on|keep going|you can continue)")
+# Once a session is active, free text that doesn't match a more specific command (open app, search, etc.) is routed
+# to it as the next goal — but a plain question shouldn't be hijacked as something to click on screen.
+_SESSION_ACTION_VERB = re.compile(
+    r"\b(open|create|make|add|click|type|press|scroll|save|duplicate|move|delete|remove|close|switch|arrange|put|"
+    r"build|draw|set|change|turn|select|rotate|scale|resize|rename|group|render|export|undo|redo|go to|go back|"
+    r"bring)\b", re.I)
+_SESSION_QUESTION = re.compile(
+    # "do"/"does"/"is"/"are" only count as a question starter before a subject ("do you", "is it true") — not before
+    # an object pronoun ("do that again", "do it"), which is an imperative repeat command, not a question.
+    r"^(?:what|why|how|when|who|where|which|can you tell me|tell me about|"
+    r"(?:is|are|do|does)\s+(?:you|we|i|it|there|this|that)\b(?!\s+again\b))\b", re.I)
 _YES = re.compile(r"(?:yes|yeah|yep|sure|ok|okay|go ahead|do it|allow|allowed|fine|please do|yes please)")
 _NO = re.compile(r"(?:no|nope|don't|do not|don't do it|cancel|stop|not now|never mind|nevermind)")
 
@@ -2165,7 +2260,9 @@ def parse_computer_task(text: str):
     n = " ".join(re.sub(r"[^\w'+ ,.-]", " ", (text or "").replace("\u2019", "'")).split())   # keeps "TextEdit" as said
     match = _CONTROL_EXPLICIT.match(n) or _CONTROL_STEP.match(n)
     if not match:
-        return None
+        preamble = _CONTROL_PREAMBLE.match(n)
+        goal = n[preamble.end():].strip(" ,.") if preamble else ""
+        return goal if len(goal) > 3 else None
     goal = (match.groupdict().get("goal") or n).strip(" ,.")
     return goal if len(goal) > 3 else None
 
@@ -2178,6 +2275,10 @@ def tool_use_computer(goal: str = "", **_ignored) -> str:
     goal = " ".join(str(goal or "").split())[:300]
     if not goal:
         return "No task given."
+    # "stay in control on my computer" is permission, not a task: a free-form task with no action in it just
+    # makes the small local AI click and type at random. Open a session that waits for the next command instead.
+    if _CONTROL_BARE.match(goal) or not (_SESSION_ACTION_VERB.search(goal) or _CONTROL_STEP.match(goal)):
+        return start_computer_task("", persistent=True)
     return start_computer_task(goal)
 
 
@@ -2191,7 +2292,14 @@ def computer_environment():
     return computer_use.Environment()   # available() explains it isn't supported here
 
 
-LOCAL_CONTROL_STEPS = 12
+LOCAL_CONTROL_STEPS = 12   # plain GUI clicking with the small local model: kept tight, since unproductive clicks
+                           # compound fast and aren't individually verified the way Blender actions are.
+# Blender work is different: most of it goes through blender_commands.py's deterministic, verified one-shot
+# actions, which never touch this budget at all (see ScriptedTask). This ceiling only matters for the minority of
+# requests that genuinely need BlenderComputerTask's free-form multi-step reasoning ("build a simple house"), where
+# a persistent session must not get cut off arbitrarily early — see the user's "no 12-step cutoff" requirement.
+BLENDER_LOCAL_STEPS = 40
+BLENDER_ONLINE_STEPS = 60
 
 
 def local_llm_only() -> bool:
@@ -2253,52 +2361,281 @@ def control_active() -> bool:
     return computer_task is not None and computer_task.state not in ("completed", "stopped", "error")
 
 
-def start_computer_task(goal: str, scripted=None) -> str:
+def session_active() -> bool:
+    """A persistent "take control" session is open — it survives past any one goal; see start_computer_task."""
+    return control_session is not None
+
+
+def end_control_session(final_state: str = "stopped", detail: str = "Stopped. You have control again.") -> None:
+    global control_session
+    control_session = None
+    _report_control({"state": final_state, "detail": detail, "goal": "", "step": 0, "maxSteps": 0})
+
+
+def _is_explicit_control_phrase(text: str) -> bool:
+    """Whether `text` itself asked to take control (vs. being a bare on-screen step like "click Save"), which is
+    what makes the session this starts persist past the one goal — see start_computer_task's `persistent`."""
+    n = " ".join(re.sub(r"[^\w'+ ,.-]", " ", (text or "").replace("’", "'")).split())
+    return bool(_CONTROL_EXPLICIT.match(n) or _CONTROL_PREAMBLE.match(n))
+
+
+def looks_like_session_goal(text: str) -> bool:
+    """Whether something said while a control session is open is the next on-screen command. Only an actual
+    instruction counts: background speech ("that's a hot deal", "see you in the next video") and plain questions
+    must never become a task that clicks around and keeps everything else waiting."""
+    t = text or ""
+    if _SESSION_QUESTION.match(t) and not _SESSION_ACTION_VERB.search(t):
+        return False
+    return bool(_SESSION_ACTION_VERB.search(t) or _CONTROL_STEP.match(" ".join(t.split())))
+
+
+def _make_room_for_new_task() -> bool:
+    """A new command replaces whatever task is still running (usually one the small local AI got stuck on), rather
+    than being told "Still working on that" for minutes. False only if it can't be stopped right now."""
+    task = computer_task
+    if task is None or task.state in ("completed", "stopped", "error"):
+        return True
+    if isinstance(task, _SettingUp):
+        return False
+    task.stop()
+    deadline = time.time() + 8
+    while task.state not in ("completed", "stopped", "error") and time.time() < deadline:
+        time.sleep(0.05)
+    return task.state in ("completed", "stopped", "error")
+
+
+def scripted_steps_for(goal: str):
+    """Steps for a take-control goal that is one plain command ("open Notepad", "search Google for cats", "close
+    Discord"), so it runs exactly, visibly, step by step, instead of the AI working out clicks. None otherwise."""
+    search = web_search.parse_request(goal)
+    if search:
+        engine, query = search
+        where = "YouTube" if engine == "youtube" else "Google"
+        return [(f"Searching {where} for {query}", lambda: run_web_search(engine, query, context=goal))]
+    scroll = re.fullmatch(r"scroll (up|down|to the top|to the bottom|to the end)(?: (?:a bit|a little|more|again|"
+                          r"please|for me|on the page|the page))*", " ".join(re.sub(r"[^a-z ]", " ", goal.lower()).split()))
+    if scroll:
+        direction = scroll.group(1)
+        notches = {"up": 5, "down": -5, "to the top": 40}.get(direction, -40)
+        word = "up" if notches > 0 else "down"
+
+        def scroll_step():
+            env = computer_environment()
+            env.observe()                     # finds the window being worked in (never Jervis's own)
+            problem = env.scroll(notches)
+            return problem or f"Scrolled {word}."
+        return [(f"Scrolling {word}", scroll_step)]
+    close_target = app_launcher.parse_close_request(goal)
+    if close_target and not app_launcher.means_this_app(close_target):
+        return [(f"Closing {close_target}", lambda: app_launcher.close_application(close_target)
+                 or f"I couldn't find an open app called {close_target}.")]
+    name = parse_open_request(goal)
+    if name and not app_launcher.means_this_app(name):
+        status, value = resolve_app(name)
+        if status == "ok" or (status == "missing" and _site_for(name)):
+            shown = value if status == "ok" else name
+            # A slow app (Blender, games) can take a while to show its window: wait for it, then say it's open.
+            return [(f"Opening {shown}", lambda: open_application(name, confirm_seconds=CONTROL_LAUNCH_SECONDS))]
+    return None
+
+
+CONTROL_LAUNCH_SECONDS = 60
+
+_ONE_CLICK = re.compile(r"^(?:(?:in|on) (?:the )?[\w .'-]{2,40}?,? )?(?:double[- ]?click|right[- ]?click|click|tap on|tick|"
+                        r"untick|uncheck|check|select|choose|press (?:the )?[\w '-]{1,40}(?:button|tab|link|icon))\b")
+_ONE_PRESS = re.compile(r"^press (?:the )?(?:[\w-]+ )?(?:key|enter|return|escape|esc|tab|space ?bar|backspace)\b")
+_ONE_TYPE = re.compile(r"^(?:type|enter|write|fill in) .+ (?:in|into) ")
+
+
+def finishing_actions(goal: str):
+    """For a goal that is one action ("click the Edit menu", "press Enter", "type hello into the search box"), the
+    action kinds that complete it; None for anything longer (then the AI says when it's done)."""
+    g = " ".join((goal or "").lower().split())
+    if re.search(r"\b(?:and|then|after that)\b", g):
+        return None   # several steps
+    if _ONE_CLICK.match(g):
+        return {"click", "double_click", "right_click", "click_on"}
+    if _ONE_PRESS.match(g):
+        return {"press_keys"}
+    if _ONE_TYPE.match(g):
+        return {"type_text"}
+    return None
+
+
+def _which_app_first(goal: str):
+    """"Take control … and open Blender" with Blender 4.3 and 4.5 installed: the names to choose from, asked before
+    the permission question (so the answer can't get lost inside a running task). None when the goal is clear."""
+    name = parse_open_request(goal)
+    if not name or app_launcher.means_this_app(name):
+        return None
+    status, value = resolve_app(name)
+    return value[:4] if status == "ambiguous" else None
+
+
+def start_computer_task(goal: str, scripted=None, after=None, persistent: bool = False, blender: bool = False) -> str:
     """Use the mouse and keyboard for `goal`: worked out step by step by the AI, or, with `scripted`, a list of
-    known steps (see computer_use.ScriptedTask). Either way: asked first (Settings), shown, and stoppable."""
-    global computer_task
+    known steps (see computer_use.ScriptedTask). Either way: asked first (Settings), shown, and stoppable.
+
+    `persistent`: whether granting this keeps a computer_use.ControlSession open afterward, so later goals ("create
+    a chair" -> "make it wooden") don't need "take control" said again and don't re-ask permission. True only for
+    goals that themselves said "take control…" (see handle_direct_command); a bare one-off like "click Save" stays
+    exactly as one-shot as it is today. Once a session is already open, permission is skipped regardless of this
+    flag — whatever is already granted covers anything said next."""
+    global computer_task, control_session
     mode = (os.getenv("JERVIS_COMPUTER_CONTROL") or "ask").strip().lower()
     if mode == "off":
         return "Using the mouse and keyboard is turned off. You can allow it in Settings, under Computer control."
-    if control_active():
-        return "I'm already using the computer. Say stop first if you want me to do this instead."
+    if not _make_room_for_new_task():
+        return "Still working on that — one moment."
     env = computer_environment()
     ok, why = env.available()
     if not ok:
         return why
 
-    question = f"Can I use your mouse and keyboard to {goal}?"
-    ask_id = open_control_question(question) if mode != "on" else None
+    global pending_app_choice
+    wanted = None if scripted else parse_open_request(goal)
+    if wanted and resolve_app(wanted)[0] == "missing" and app_launcher.broken_app(wanted):
+        return open_application(wanted)   # says the shortcut is left over from an uninstall; nothing to take control for
+    options = None if scripted else _which_app_first(goal)
+    if options:
+        pending_app_choice = {"options": options, "at": time.time(), "control": True, "persistent": persistent}
+        return f"Which one should I open: {', '.join(options[:-1])} or {options[-1]}?"
+
+    already_active = session_active()
+    session = control_session if already_active else computer_use.ControlSession(env)
+    keep_session = persistent or already_active
+    bare = not goal.strip() and not scripted
+
+    # "open Blender" launched with the scripting bridge from the start, so a follow-up goal ("create a chair")
+    # doesn't have to restart it and ask first (see blender_control.ensure_bridge).
+    blender_open = None
+    if not bare and not scripted:
+        opening = parse_open_request(goal)
+        if opening and not app_launcher.means_this_app(opening):
+            status, value = resolve_app(opening)
+            if status == "ok" and "blender" in value.lower():
+                blender_open = value
+
+    question = "Can I use your mouse and keyboard?" if bare else f"Can I use your mouse and keyboard to {goal}?"
+    ask_id = open_control_question(question) if (mode != "on" and not already_active) else None
+
+    def report(state: dict) -> None:
+        # Between goals in a persistent session, "completed"/"error" would read (and look, in the overlay) as
+        # control having ended; "listening" keeps it visibly active while saying the same thing.
+        if keep_session and state.get("state") in ("completed", "error"):
+            state = {**state, "state": "listening"}
+        _report_control(state)
 
     def run():
-        global computer_task
+        global computer_task, control_session
         if ask_id and not wait_control_answer(ask_id):
             return
-        import screen_vision
-        vision = screen_vision.ScreenVision() if screen_vision.available() else None
-        # The small local model manages simple, short tasks; long ones need the online AI (see local_llm_only).
-        steps = LOCAL_CONTROL_STEPS if local_llm_only() else computer_use.MAX_STEPS
-        if scripted:
-            task = computer_use.ScriptedTask(goal, scripted, report=_report_control, cursor=spotify_local.cursor)
-        else:
-            task = computer_use.ComputerTask(goal, env, _ask_ai_for_control, report=_report_control,
-                                             confirm=ask_control_question, vision=vision, max_steps=steps)
-        computer_task = task
-        task._report("starting", "Getting out of your way…")   # the window steps aside (see main.js)
-        if connected_clients:
-            time.sleep(1.2)
-        result = task.run()
-        if task.state == "completed" and scripted:
-            _mark_spotify_playing()
-        if task.state == "error" and local_llm_only() and not scripted:
-            result += (" My local AI is small, so short, simple tasks work best. A free Groq key in Settings lets me "
-                       "do longer ones.")
-        if task.state != "stopped":   # whoever stopped it has already been told
+        if keep_session:
+            control_session = session
+        if bare:
+            report({"state": "listening", "detail": "Listening for your next command…", "goal": "", "step": 0,
+                   "maxSteps": 0})
+            return
+        # Busy from here on, even before there's a real task object — resolving the goal, launching Blender and
+        # deciding whether to ask about its bridge can all take a while, and control_active() must say so
+        # throughout, or a command said in that window could start a second, colliding task (see _SettingUp).
+        computer_task = _SettingUp()
+        # Anything below can legitimately fail (a slow/missing Blender, a Windows file-sharing hiccup, a platform
+        # quirk) — none of that may crash this thread silently and strand the session: catch everything, report
+        # it in plain words, and keep listening. See the user's own "don't lose control because of errors" ask.
+        stopped = False
+        try:
+            import screen_vision
+            vision = screen_vision.ScreenVision() if screen_vision.available() else None
+            # The small local model manages simple, short tasks; long ones need the online AI (see local_llm_only).
+            steps = LOCAL_CONTROL_STEPS if local_llm_only() else computer_use.MAX_STEPS
+            blender_steps = BLENDER_LOCAL_STEPS if local_llm_only() else BLENDER_ONLINE_STEPS
+            task_scripted = scripted
+            if blender_open and not task_scripted:
+                def _open_blender_with_bridge():
+                    bridge = blender_control.launch_with_bridge()
+                    if bridge:
+                        session.blender = bridge
+                        return f"Opened {blender_open}."
+                    return open_application(blender_open, confirm_seconds=CONTROL_LAUNCH_SECONDS)
+                task_scripted = [(f"Opening {blender_open}", _open_blender_with_bridge)]
+            task_scripted = task_scripted or scripted_steps_for(goal)
+            # `session.blender is not None` (not just live window-focus) matters here: a notification popup from
+            # some other app (Discord, chat, email) can steal the foreground for an instant, and a short ambiguous
+            # command ("move it right") said right then must still mean Blender, not whatever briefly grabbed focus.
+            blender_context = (blender or bool(re.search(r"\bblender\b", goal, re.I)) or session.blender_in_front()
+                               or session.blender is not None)
+
+            task = None
+            if task_scripted:
+                task = computer_use.ScriptedTask(goal, task_scripted, report=report, cursor=spotify_local.cursor)
+            elif blender_context:
+                bridge = blender_control.ensure_bridge(session, confirm=ask_control_question)
+                if not bridge:   # Blender unreachable, or the user declined restarting it: fall back to plain clicking
+                    task = computer_use.ComputerTask(goal, env, _ask_ai_for_control, report=report,
+                                                     confirm=ask_control_question, vision=vision, max_steps=steps,
+                                                     finish_after=finishing_actions(goal))
+                else:
+                    deterministic = blender_commands.steps_for(goal, session, bridge)
+                    if deterministic:
+                        # The common case: a known, verified bpy snippet — no model call, nothing to invent.
+                        task = computer_use.ScriptedTask(goal, deterministic, report=report,
+                                                         cursor=spotify_local.cursor)
+                    elif not blender_commands.looks_concrete(goal):
+                        # Never hand a vague/incomplete remark to the AI to interpret — ask instead.
+                        result = blender_commands.clarification_for(goal)
+                        computer_task = None
+                        report({"state": "listening", "detail": result, "goal": "", "step": 0, "maxSteps": 0})
+                    else:
+                        task = computer_use.BlenderComputerTask(goal, env, _ask_ai_for_control, bridge,
+                                                                session=session, report=report,
+                                                                confirm=ask_control_question, vision=vision,
+                                                                max_steps=blender_steps,
+                                                                finish_after=finishing_actions(goal))
+            else:
+                task = computer_use.ComputerTask(goal, env, _ask_ai_for_control, report=report,
+                                                 confirm=ask_control_question, vision=vision, max_steps=steps,
+                                                 finish_after=finishing_actions(goal))
+
+            if task is not None:
+                computer_task = task
+                task._report("starting", "Getting out of your way…")   # the window steps aside (see main.js)
+                if connected_clients:
+                    time.sleep(1.2)
+                result = task.run()
+                stopped = task.state == "stopped"
+                if task.state == "completed" and after:
+                    after()
+                if task.state == "error" and local_llm_only() and not task_scripted:
+                    result += " My local AI is small, so short, one-step requests work best: try it one step at a time."
+                if keep_session:
+                    # A step-limit/stuck message says "stopped... you have control again", which is misleading for
+                    # a persistent session: control hasn't ended, only this one goal paused. Say that instead.
+                    result = (result.replace("so I stopped. You have control again.",
+                                             "so I paused there — tell me what to do next.")
+                                    .replace("You have control again.", "I'm still listening."))
+            crashed = False
+        except Exception as e:
+            traceback.print_exc()
+            result = (f"That didn't work ({type(e).__name__}: {e}). " +
+                      ("Still listening — try that again, or tell me something else." if keep_session
+                       else "You have control again."))
+            crashed = True
+        if keep_session and not stopped:
+            session.remember(goal, result)
+            control_session = session
+            if crashed:   # a normal finish already reported "listening" itself (via the wrapped `report` above)
+                report({"state": "listening", "detail": result, "goal": "", "step": 0, "maxSteps": 0})
+        if not stopped:   # whoever stopped it has already been told
             announcements.put(result)
 
     threading.Thread(target=run, daemon=True, name="computer-control").start()
     if ask_id:
         return f"{question} Say yes or no."
+    if bare:
+        return "Sure, I'm ready."
+    if already_active:
+        return "Okay."
     return (f"Okay, I'm using the computer to {goal}. Move the mouse, press {computer_use.STOP_SHORTCUT}, "
             "or say stop to take over.")
 
@@ -2319,16 +2656,20 @@ def handle_control_voice(text: str):
         if _NO.fullmatch(n) and answer_control_question(pending_control_question["id"], False):
             pending_control_question = None
             return "Okay, I won't."
-    if control_active():
+    if session_active() or control_active():
         if _CONTROL_STOP.fullmatch(n):
-            computer_task.stop()
+            if computer_task is not None:
+                computer_task.stop()
+            if session_active():
+                end_control_session()
             return "Stopping. You have control."
-        if _CONTROL_PAUSE.fullmatch(n):
-            computer_task.pause()
-            return "Paused. Say continue when you want me to go on."
-        if _CONTROL_RESUME.fullmatch(n) and computer_task.state == "paused":
-            computer_task.resume()
-            return "Continuing."
+        if control_active():
+            if _CONTROL_PAUSE.fullmatch(n):
+                computer_task.pause()
+                return "Paused. Say continue when you want me to go on."
+            if _CONTROL_RESUME.fullmatch(n) and computer_task.state == "paused":
+                computer_task.resume()
+                return "Continuing."
     return None
 
 
@@ -2345,7 +2686,7 @@ def is_new_command(text: str, service: str) -> bool:
 
 def handle_direct_command(text: str):
     """Run reliable, explicitly spoken desktop commands without model tool-call guesses."""
-    global youtube_active, netflix_active, stremio_active
+    global youtube_active, netflix_active, stremio_active, pending_open_app, pending_app_choice
     control = handle_control_voice(text)
     if control:
         return control
@@ -2359,6 +2700,9 @@ def handle_direct_command(text: str):
     if re.search(r"\bforget\s+(?:my\s+|all\s+)?(?:paired\s+)?phones?\b|\bunpair\s+(?:my\s+)?phones?\b", text, re.I):
         return forget_paired_phones()
     text = fix_typos(text)
+    blender_reply = handle_blender_command(text)
+    if blender_reply:
+        return blender_reply
     spotify = handle_spotify_search(text)   # before splitting "take control and search … in Spotify" into parts
     if spotify:
         return spotify
@@ -2390,6 +2734,9 @@ def handle_direct_command(text: str):
     planet_reply = handle_planet_command(text)
     if planet_reply:
         return planet_reply
+    weather_reply = handle_weather_command(text)
+    if weather_reply:
+        return weather_reply
     graph_reply = handle_graph_command(text)
     if graph_reply:
         return graph_reply
@@ -2431,6 +2778,9 @@ def handle_direct_command(text: str):
             if re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|stop|nevermind)", cleaned):
                 return "Okay."
             return google_search(text)
+    app_reply = handle_app_followup(text)
+    if app_reply:
+        return app_reply
     global pending_netflix_request
     if pending_netflix_request:
         pending, pending_netflix_request = pending_netflix_request, None
@@ -2554,6 +2904,9 @@ def handle_direct_command(text: str):
         if (named.group(1) if named else last_media_app or DEFAULT_MEDIA_APP) == "netflix":
             return play_netflix_show(show, season=season, episode=episode)
         return play_stremio_title(show, kind, season, episode)
+    search = web_search.parse_request(text)
+    if search:
+        return run_web_search(*search, new_tab=wants_new_tab(text), context=text)
     if is_youtube_command(text) or is_youtube_followup(text):
         query = extract_youtube_query(text)
         if query:
@@ -2565,11 +2918,39 @@ def handle_direct_command(text: str):
         open_youtube("https://www.youtube.com", wants_new_tab(text), context=text)
         return "Opened YouTube."
 
+    close_target = app_launcher.parse_close_request(text)
+    if close_target:
+        closed = app_launcher.close_application(close_target)
+        if closed:
+            print(f"Close app: {close_target!r} -> {closed}", flush=True)
+            return closed
+
     # "Open <any installed app>" — resolved against what's actually installed.
     app_name = parse_open_request(text)
+    if app_name and app_launcher.means_this_app(app_name):
+        pending_open_app = {"at": time.time()}
+        return "Which app should I open?"
     if app_name:
         remember_media_app(app_name)
-        opened = open_application(app_name)
+        # Blender always opens with Jervis's scripting bridge running, so a later "create a chair" (in this
+        # session or a future one) never has to restart it and ask first — see blender_control.ensure_bridge.
+        blender_status, blender_value = resolve_app(app_name)
+        if blender_status == "ok" and "blender" in blender_value.lower():
+            global blender_launch
+
+            def _attach_bridge_once_ready(value=blender_value):
+                bridge = blender_control.launch_with_bridge()   # slow (Blender can take a while): off the voice thread
+                if bridge and session_active():
+                    control_session.blender = bridge
+            blender_launch = threading.Thread(target=_attach_bridge_once_ready, daemon=True,
+                                              name="blender-bridge-launch")
+            blender_launch.start()
+            opened = f"Opening {blender_value}."
+        else:
+            opened = open_application(app_name)
+        print(f"Open app: {app_name!r} -> {opened}", flush=True)
+        if app_launcher.last_choices:
+            pending_app_choice = {"options": list(app_launcher.last_choices), "at": time.time()}
         if app_name.strip().lower() == "spotify" and opened.startswith("Opened"):
             pending_spotify_request = {"at": time.time()}
             return f"{opened} What would you like to listen to?"
@@ -2586,9 +2967,145 @@ def handle_direct_command(text: str):
             pending_calendar_choice = {"at": time.time()}
             return f"{opened} Do you want to hear the next events, or make a new one?"
         return opened
+    if _CONTROL_BARE.match(text or ""):
+        return start_computer_task("", persistent=True)
     goal = parse_computer_task(text)
     if goal:
-        return start_computer_task(goal)
+        if _is_explicit_control_phrase(text):
+            blender_reply = handle_blender_command(goal)   # "take control and make the cube bigger"
+            if blender_reply:
+                return blender_reply
+        return start_computer_task(goal, persistent=_is_explicit_control_phrase(text))
+    if session_active() and _ACKNOWLEDGEMENT.fullmatch(text.strip()):
+        return "Okay."   # "okay, thank you" between commands: nothing to do, and no reason to wait for the AI
+    if session_active() and looks_like_session_goal(text):
+        # Routed through start_computer_task even while a task is already running: a new command replaces a stuck
+        # one (see _make_room_for_new_task) instead of silently falling through to the general chat AI.
+        return start_computer_task(text.strip(), persistent=True)
+    return None
+
+
+_ACKNOWLEDGEMENT = re.compile(r"(?:(?:ok(?:ay)?|thanks?|thank you(?: so much)?|cool|great|nice|got it|alright|"
+                              r"all right|good|perfect|jervis)[ ,.!]*)+", re.I)
+_BLENDER_THING = re.compile(r"\b(?:blender|cube|sphere|cylinder|cone|torus|donut|monkey|suzanne|mesh|object|"
+                            r"vertex|vertices|modifier|material)\b", re.I)
+blender_session = None     # tracks Blender objects for commands run without a "take control" session
+blender_launch = None      # the thread opening Blender with its bridge, while it runs
+
+
+def is_blender_goal(goal: str, said: str = "") -> bool:
+    """A concrete Blender instruction ("create a cube", "make the cube bigger"), with Blender open (or opening), or
+    with "Blender" said outright. Not "take control …" or "open Blender …" sentences: those have their own paths."""
+    said = said or goal
+    if not goal or not looks_like_session_goal(goal) or _is_explicit_control_phrase(said):
+        return False
+    if re.search(r"\b(?:open|launch|start)\s+(?:up\s+)?blender\b", said, re.I):
+        return False
+    known = blender_commands.is_command(goal)
+    if not (known or (_BLENDER_THING.search(said) and blender_commands.looks_concrete(goal))):
+        return False
+    named = bool(re.search(r"\bblender\b", said, re.I))
+    launching = blender_launch is not None and blender_launch.is_alive()
+    return (known and named) or launching or blender_control.blender_running()
+
+
+def run_blender_directly(goal: str):
+    """Everyday Blender commands run straight through the bridge: no mouse, no permission question, no AI — done in
+    well under a second, and checked against Blender's real state before saying so. None if this can't handle it
+    (no bridge, or not a command blender_commands.py knows), so the caller falls back to the slower paths."""
+    global blender_session
+    launching = blender_launch
+    if launching is not None and launching.is_alive():
+        launching.join(blender_control.LAUNCH_SECONDS)   # "open Blender, then create a cube": wait for it to open
+    bridge = blender_control.BlenderBridge()
+    if not bridge.ping(timeout=1.5):
+        return None
+    if session_active():
+        session = control_session
+        session.blender = bridge
+    else:
+        blender_session = blender_session or computer_use.ControlSession(None)
+        session = blender_session
+    steps = blender_commands.steps_for(goal, session, bridge)
+    if not steps:
+        return None
+    if not _make_room_for_new_task():   # a running task may be sending Blender code too: one at a time
+        return "Still working on that — one moment."
+    results = []
+    for description, action in steps:
+        print(f"Blender: {description}", flush=True)
+        try:
+            results.append(action())
+        except Exception as e:
+            results.append(str(e))
+            break
+    return " ".join(r for r in results if r)
+
+
+def handle_blender_command(text: str):
+    goal = blender_commands.normalize(text)
+    if not is_blender_goal(goal, said=text):
+        return None
+    # The chat AI can't touch Blender and would only claim it did: this never reaches it.
+    return run_blender_directly(goal) or start_computer_task(goal, persistent=True, blender=True)
+
+
+def _install_blender_bridge() -> None:
+    try:
+        count = blender_control.install_startup_script()
+        if count:
+            print(f"Blender bridge set up for {count} Blender version(s).", flush=True)
+    except Exception as e:
+        print(f"Couldn't set up the Blender bridge: {e!r}", flush=True)
+
+
+def run_web_search(engine: str, query: str, new_tab: bool = False, context: str = "") -> str:
+    """"Search Google for cats" / "search YouTube for Minecraft": the results page, in the browser."""
+    query = " ".join((query or "").split())
+    if not query:
+        return "What should I search for?"
+    if engine == "youtube":
+        try:
+            open_youtube(web_search.youtube_results_url(query), new_tab, context=context or query)
+        except Exception as e:
+            print(f"YouTube search failed: {e!r}", flush=True)
+            return f"I couldn't open YouTube to search for {query}: {e}"
+        return f"Here are YouTube results for {query}."
+    return google_search(query)
+
+
+# "Open this app" -> "Which app should I open?"; "Blender" -> "Which one did you mean: 4.3 or 4.5?": the next answer.
+pending_open_app = None    # {"at"}
+pending_app_choice = None  # {"options": [names], "at"}
+
+
+def handle_app_followup(text: str):
+    """The answer to Jervis's own "which app?" questions, or None (then the sentence is handled as usual)."""
+    global pending_open_app, pending_app_choice
+    cleaned = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
+    cancel = re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|none|stop|neither)(?: of them)?", cleaned)
+    if pending_app_choice:
+        pending, pending_app_choice = pending_app_choice, None
+        if time.time() - pending["at"] < 60:
+            if cancel:
+                return "Okay."
+            picked = app_launcher.pick_choice(text, pending["options"])
+            if picked and pending.get("control"):   # asked while taking control: carry on with that, visibly
+                return start_computer_task(f"open {picked}", persistent=pending.get("persistent", False))
+            if picked:
+                return open_application(picked)
+    if pending_open_app:
+        pending, pending_open_app = pending_open_app, None
+        if time.time() - pending["at"] < 60:
+            if cancel:
+                return "Okay."
+            name = parse_open_request(text) or app_launcher._clean_target(cleaned)
+            known = resolve_app(name)[0] != "missing" or _site_for(name) if name else False
+            if known and not app_launcher.means_this_app(name):
+                opened = open_application(name)
+                if app_launcher.last_choices:
+                    pending_app_choice = {"options": list(app_launcher.last_choices), "at": time.time()}
+                return opened
     return None
 
 
@@ -3074,8 +3591,9 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_weather",
-            "description": "Get the current weather for the city set in Settings. ONLY call when the user explicitly asks about the weather (e.g. 'what's the weather', 'is it raining', 'how hot is it outside').",
-            "parameters": {"type": "object", "properties": {}},
+            "description": "Show the weather window and get the current weather and forecast (for the city set in Settings, or the city named). ONLY call when the user explicitly asks about the weather (e.g. 'what's the weather', 'is it raining', 'how hot is it outside').",
+            "parameters": {"type": "object", "properties": {
+                "city": {"type": "string", "description": "Only if the user named a place; otherwise leave empty."}}},
         },
     },
 ]
@@ -3262,7 +3780,8 @@ def handle_spotify_search(text: str):
         if wanted:
             # "Take control" was said explicitly: show it, even if Spotify keys are set up (those would otherwise
             # play it invisibly through the online API) — the whole point of the words was to watch it happen.
-            return start_computer_task(f"play {wanted} on Spotify", scripted=spotify_local.visible_steps(wanted))
+            return start_computer_task(f"play {wanted} on Spotify", scripted=spotify_local.visible_steps(wanted),
+                                       after=_mark_spotify_playing)
     match = _SPOTIFY_SEARCH.match(rest)
     if not match:
         return None
@@ -3435,13 +3954,8 @@ def is_app_command(text: str) -> bool:
 def is_weather_command(text: str) -> bool:
     """Only allow the weather tool for an explicit question, not a passing mention of the word (e.g. "I was
     talking about the weather yesterday" must not trigger it)."""
-    normalized = " ".join((text or "").lower().strip().split())
-    return bool(
-        re.search(r"\b(what'?s|what is|how'?s|how is|check|tell me)\b.*\bweather\b", normalized)
-        or re.search(r"\bweather\b.*\b(like|today|now|outside|forecast)\b", normalized)
-        or re.search(r"\bis it (raining|snowing|sunny|cloudy|cold|hot|windy)\b", normalized)
-        or re.search(r"\b(temperature|forecast)\b.*\b(outside|today|now)\b", normalized)
-    )
+    request = parse_weather_request(text)
+    return bool(request and request["action"] == "show")
 
 
 def should_enable_tools(text: str) -> bool:
@@ -3700,7 +4214,11 @@ _CLAIMS_ACTION = re.compile(
     r"searched|started|played|launched|pressed)\b|i(?:'ll| will) (?:now )?(?:take control (?:of|over|on)|open|click|"
     r"type|search|play|launch|press)\b|(?:starts|started|is now|now) playing|is playing now|"
     r"the (?:search bar|screen|window) (?:says|shows)|the result is a list|type (?:the word )?[\"“]confirm[\"”]|"
-    r"please confirm (?:that )?you(?:'d| would)? like)", re.I)
+    r"please confirm (?:that )?you(?:'d| would)? like|"
+    r"i(?: have|'ve)? (?:selected|scaled|resized|rotated|colou?red|painted)\b|"
+    r"i(?: have|'ve)? (?:created|added|moved|deleted|made) (?:a|an|the|your) (?:cube|sphere|cylinder|cone|object|"
+    r"mesh|shape)\b|"
+    r"(?:^|[.!] )(?:scaling|resizing|creating|adding|moving|rotating|colou?ring|deleting) (?:the|a|an|it|your)\b)", re.I)
 
 
 def ask_jervis(messages, user_text=""):
@@ -4307,7 +4825,7 @@ def set_window_visible(visible: bool) -> None:
     while he's using the computer: then his window only steps aside.)"""
     global window_visible, awake
     window_visible = visible
-    if not visible and not control_active():
+    if not visible and not control_active() and not session_active():
         awake = False
 
 
@@ -4330,6 +4848,8 @@ def shutdown_now() -> None:
     try:
         if computer_task is not None:
             computer_task.stop()
+        if session_active():
+            end_control_session()
         local_ai_manager.stop()
     except Exception:
         traceback.print_exc()
@@ -4364,6 +4884,7 @@ if __name__ == "__main__":
     timer_manager.load()  # timers that were running when Jervis was last closed
     threading.Thread(target=telemetry_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()
+    threading.Thread(target=_install_blender_bridge, daemon=True, name="blender-startup-script").start()
     if os.getenv("JERVIS_SHOW_WINDOW") == "1":  # started with run.py: show the window right away, not only after "Hey Jervis"
         launch_ui()
 

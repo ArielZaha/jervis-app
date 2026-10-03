@@ -36,7 +36,10 @@ MAX_ELEMENTS_SHOWN = 120
 # What the window registers as the emergency stop (never pressed by Jervis himself), as said aloud.
 STOP_SHORTCUT = "Control Option Q" if sys.platform == "darwin" else "Ctrl+Alt+Q"
 
-STATES = ("starting", "observing", "thinking", "acting", "waiting", "paused", "completed", "stopped", "error")
+STATES = ("starting", "observing", "thinking", "acting", "waiting", "paused", "listening", "completed", "stopped",
+          "error")
+# "listening": a persistent control session is open but no task is running right now (see app.py's
+# ControlSession/start_computer_task) — control is still active, Jervis is just waiting for the next command.
 
 # What makes a step consequential enough to ask first.
 RISKY_WORDS = re.compile(
@@ -46,6 +49,12 @@ RISKY_WORDS = re.compile(
 RISKY_KEYS = {"shift+delete", "ctrl+shift+delete", "cmd+backspace", "cmd+delete", "ctrl+enter", "cmd+enter",
               "alt+f4", "cmd+q"}
 FORBIDDEN_KEYS = {"ctrl+alt+q", "ctrl+alt+delete", "cmd+alt+q"}
+# Blender code that reaches outside the scene it's meant to be building: still allowed, but only after asking
+# (saving the file the user actually asked to save is not in this list — see BLENDER_SYSTEM_PROMPT).
+BLENDER_DANGEROUS_CODE = re.compile(
+    r"\b(?:os\.(?:remove|unlink|rmdir|system|popen|rename)|shutil\.\w+|subprocess\.\w+|"
+    r"bpy\.ops\.wm\.(?:quit_blender|read_factory_settings|read_homefile)|__import__\(|"
+    r"\bexec\(|\beval\(|urllib\.\w+|requests\.\w+|socket\.\w+)")
 # Compared as sets, so "alt+ctrl+q" or "control option q" is the same shortcut.
 _RISKY_COMBOS = {frozenset(k.split("+")) for k in RISKY_KEYS}
 _FORBIDDEN_COMBOS = {frozenset(k.split("+")) for k in FORBIDDEN_KEYS}
@@ -264,6 +273,10 @@ def risk_of(action: dict, element, observation=None) -> str:
                 return "press Enter, which may send what's typed"
     if kind == "type_text" and action.get("press_enter") and _enter_sends(element or focused, observation):
         return f"send “{action.get('text', '')[:60]}”"
+    if kind == "run_python":
+        match = BLENDER_DANGEROUS_CODE.search(action.get("code", ""))
+        if match:
+            return f"run Blender code that does “{match.group(0)}”"
     return ""
 
 
@@ -310,6 +323,19 @@ def describe_change(before: Observation, after: Observation) -> str:
     return " ".join(notes)
 
 
+def tidy_summary(text, fallback: str, max_len: int = 200) -> str:
+    """A tool call's human-facing text (done's summary, fail's reason, ask_user's question) can be markdown, several
+    lines, or outright garbled — small local models especially are prone to this. None of that may reach the user
+    as internal/execution-looking text; this either cleans it up or falls back to something plain and safe."""
+    text = " ".join(str(text or "").split())            # collapse newlines/whitespace to single spaces
+    text = re.sub(r"[*_`#]|\${1,2}", "", text)            # markdown emphasis/headers, stray math delimiters
+    text = re.sub(r"^\d+[.)]\s*", "", text)               # a stray leading "1. "
+    text = text.strip(" -•")
+    if not text or not any(c.isalpha() for c in text):   # e.g. "$$", "---", "42": no actual words left
+        return fallback
+    return text[:max_len]
+
+
 class AIError(Exception):
     """The AI couldn't be asked what to do next. The message is for the user."""
 
@@ -318,12 +344,59 @@ class InputBlocked(Exception):
     """The system refused the key presses or clicks, so no step can work."""
 
 
+class ControlSession:
+    """A persistent "take control of my computer" session: it outlives any single goal. Created once, when control
+    is first granted; the same session then runs every goal the user gives until they explicitly say stop. See
+    app.py's start_computer_task / handle_control_voice."""
+
+    HISTORY = 6
+
+    def __init__(self, env: Environment):
+        self.env = env
+        self.blender = None          # a blender_control.BlenderBridge, once a Blender goal has attached one
+        self.history = []            # [(goal, result)], most recent last — short context for later goals
+        # Which Blender objects exist and in what order, so "it" / "the second one" / "the cube" resolve without
+        # asking the AI to remember — see blender_commands.py. Kept in sync by both the deterministic commands
+        # there and BlenderComputerTask (when the free-form AI creates something new itself).
+        self.blender_objects = []    # [{"name": "Cube.001", "kind": "cube"}], creation order
+        self.blender_focus = None    # the object the last Blender command worked on: what "it" means next
+        self.last_deterministic_text = None   # the last recognized blender_commands text, for "do that again"
+        self.last_undo = None   # {"description", "code"}: how to reverse the last deterministic action, for "undo"
+        self.started_at = time.time()
+        self.last_activity = time.time()
+
+    def remember(self, goal: str, result: str) -> None:
+        self.history.append((goal, result))
+        del self.history[:-self.HISTORY]
+        self.last_activity = time.time()
+
+    def blender_in_front(self) -> bool:
+        """Is Blender the app currently in front? Used to keep routing goals to it without saying "in Blender"
+        every time, for as long as it stays the window being worked in."""
+        try:
+            return "blender" in (self.env.observe().app or "").lower()
+        except Exception:
+            return False
+
+    def remember_blender_object(self, name: str, kind: str = "") -> None:
+        if name and not any(o["name"] == name for o in self.blender_objects):
+            self.blender_objects.append({"name": name, "kind": (kind or "").lower()})
+            del self.blender_objects[:-20]
+
+    @property
+    def last_blender_object(self):
+        return self.blender_objects[-1]["name"] if self.blender_objects else None
+
+
 class ComputerTask:
     """One goal, carried out step by step on its own thread. Drive it with pause(), resume(), stop()."""
 
     def __init__(self, goal: str, env: Environment, ask_ai, report=None, confirm=None, vision=None,
-                 max_steps: int = MAX_STEPS, log=print):
+                 max_steps: int = MAX_STEPS, log=print, finish_after=None):
         self.goal = goal
+        # A one-action goal ("click the Edit menu"): done as soon as an action of these kinds changes the screen,
+        # instead of relying on the AI to notice (a small model clicks the menu shut again, then wanders off).
+        self.finish_after = set(finish_after or ())
         self.env = env
         self.ask_ai = ask_ai            # (messages, tools) -> OpenAI-style response (Jervis's own AI plumbing)
         self.report = report or (lambda state: None)
@@ -331,6 +404,8 @@ class ComputerTask:
         self.vision = vision            # optional: object with look(image, question) and locate(image, description)
         self.max_steps = max_steps
         self.log = log
+        self.system_prompt = SYSTEM_PROMPT   # overridden by BlenderComputerTask
+        self.extra_tools = []                # tools this task adds on top of BASE_TOOLS (BlenderComputerTask: run_python)
         self.history = []               # [(action description, what happened)]
         self._fruitless = {}            # action description -> how often it changed nothing
         self._stop = threading.Event()
@@ -384,7 +459,7 @@ class ComputerTask:
         last_change = ""
         invalid = 0
         stale = 0
-        tools = BASE_TOOLS + (VISION_TOOLS if self.vision else [])
+        tools = BASE_TOOLS + (VISION_TOOLS if self.vision else []) + list(self.extra_tools)
         try:
             for self.step in range(1, self.max_steps + 1):
                 if not self._checkpoint():
@@ -461,7 +536,7 @@ class ComputerTask:
                                                  "locked, or the app in front runs as administrator. You have control "
                                                  "again.")
                 after = self._settle(observation)
-                last_change = f"{outcome} {describe_change(observation, after)}".strip()
+                last_change = self._change_description(kind, outcome, observation, after)
                 self.history.append((description, last_change))
                 if kind != "wait" and last_change.endswith("Nothing on screen changed."):
                     self._fruitless[description] = self._fruitless.get(description, 0) + 1
@@ -470,6 +545,9 @@ class ComputerTask:
                     stale = 0
                 self.log(f"Computer control step {self.step}: {description} -> {last_change[:160]}")
                 before = after
+                if kind in self.finish_after and not last_change.endswith("Nothing on screen changed.") \
+                        and not last_change.startswith("That action failed"):
+                    return self._finish("completed", f"Done: {description}.")
             return self._finish("error", f"I took {self.max_steps} steps without finishing, so I stopped. "
                                          "You have control again.")
         except Exception as e:
@@ -493,6 +571,12 @@ class ComputerTask:
         problem = self.env.set_value(element, wanted)
         self.log(f"Computer control: the typed text didn't arrive; set it directly ({problem or 'ok'}).")
         return f"The typing didn't reach the field ({problem})." if problem else ""
+
+    def _change_description(self, kind: str, outcome: str, before: Observation, after: Observation) -> str:
+        """What a step's outcome was, for the next prompt and for the stale/fruitless-repeat checks in run().
+        Overridden by BlenderComputerTask for run_python, where the screen (a custom-drawn viewport) doesn't
+        reflect what actually changed the way an accessibility tree does."""
+        return f"{outcome} {describe_change(before, after)}".strip()
 
     def _finish(self, state: str, message: str) -> str:
         self.result = message
@@ -549,7 +633,7 @@ class ComputerTask:
         return "\n".join(lines)
 
     def _decide(self, observation: Observation, last_change: str, tools: list):
-        messages = [{"role": "system", "content": SYSTEM_PROMPT},
+        messages = [{"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": self._prompt(observation, last_change)}]
         response = self.ask_ai(messages, tools)
         message = response.choices[0].message
@@ -584,7 +668,7 @@ class ComputerTask:
     def _validate(self, action: dict, observation: Observation) -> str:
         """Why this action can't be carried out, or "" if it can. Nothing unvalidated ever reaches the mouse."""
         kind = action.get("action")
-        names = {t["function"]["name"] for t in BASE_TOOLS + (VISION_TOOLS if self.vision else [])}
+        names = {t["function"]["name"] for t in BASE_TOOLS + (VISION_TOOLS if self.vision else []) + list(self.extra_tools)}
         if action.get("_bad_json"):
             return "its arguments weren't valid JSON."
         if kind not in names:
@@ -613,6 +697,11 @@ class ComputerTask:
             focused = next((e for e in observation.elements if e.focused), None)
             if action.get("element") is None and focused is not None and focused.password:
                 return "the focused field is a password field; Jervis never types passwords."
+            if action.get("element") is None and focused is not None and focused.role not in TEXT_ROLES:
+                # Keys sent to a menu or a button aren't typing: they're shortcuts (in Notepad's Edit menu, letters
+                # start "Search with Bing"). Only type where text goes.
+                return (f"the focus is on {focused.label()}, which doesn't take typing. Give the text field's element "
+                        "number, or use press_keys for a shortcut.")
         if kind == "press_keys":
             combo = normalize_keys(action.get("keys", ""))
             if not combo:
@@ -630,6 +719,14 @@ class ComputerTask:
             return f"{kind} needs a name."
         if kind in ("look", "click_on") and not str(action.get("question") or action.get("description") or "").strip():
             return f"{kind} needs a description."
+        # Whatever free text the AI attaches here reaches the user almost verbatim (spoken and shown) — clean it up
+        # now, once, rather than trusting it at every later use site.
+        if kind == "done":
+            action["summary"] = tidy_summary(action.get("summary"), "Done.")
+        if kind == "fail":
+            action["reason"] = tidy_summary(action.get("reason"), "I couldn't do that.")
+        if kind == "ask_user":
+            action["question"] = tidy_summary(action.get("question"), "Can you say that a different way?")
         return ""
 
     # ---------- doing it ----------
@@ -714,6 +811,145 @@ class ComputerTask:
                 raise InputBlocked() from e
             return f"That action failed ({type(e).__name__}: {str(e)[:120]})."
         return ""
+
+
+BLENDER_TOOLS = [
+    _tool("run_python", "Run Python in Blender's own scripting environment (bpy, bmesh and mathutils are already "
+                        "in scope) to create or change the scene. Prefer this over clicking for anything that "
+                        "builds or edits objects, materials, or transforms — one script can do what would "
+                        "otherwise take many clicks, and far more reliably. Set a short string on a module-level "
+                        "RESULT variable to report what you did; otherwise whatever the code prints is used.",
+          {"code": {"type": "string", "description": "Python to exec() in Blender right now."}}, ["code"]),
+]
+
+BLENDER_SYSTEM_PROMPT = """You operate Blender to achieve the user's goal, almost always by writing Python through \
+run_python (bpy/bmesh/mathutils are already imported) — one script can create a whole object, with reasonable \
+proportions and materials, at once. Virtually everything in Blender — creating, editing, selecting, moving, \
+duplicating, arranging, materials, saving — is reachable through bpy, so run_python is almost always the right \
+tool. Use the mouse/keyboard tools only for a Blender UI step that truly cannot be scripted (this is rare).
+
+The window list you're shown is the whole desktop, not just Blender — other apps (a browser, chat, an editor) may \
+be listed too. Never click, type into, or switch to anything that isn't Blender's own window: if Blender isn't in \
+front, the one UI action you may take is switch_window to bring it back, then continue with run_python.
+
+Each turn you get: a summary of the current Blender scene (read from Blender itself, not guessed), what happened \
+earlier in this session, the window's on-screen elements (for the rare UI-only step), and what your last action \
+did. Reply with exactly ONE tool call.
+
+Rules:
+- Prefer run_python for anything that changes the scene: creating/editing meshes, materials, transforms, \
+duplicating, arranging, and saving the file (bpy.ops.wm.save_as_mainfile / save_mainfile).
+- Code runs in a namespace that persists between your own steps, and across the user's earlier requests in this \
+session: reuse bpy.context.object or a variable you set earlier instead of re-deriving it from scratch.
+- Keep each script focused on one step; if it raises, the error comes back to you so you can fix it and try again.
+- Never call bpy.ops.wm.quit_blender, read_factory_settings/read_homefile, touch files outside the current \
+project, or reach outside Blender (delete files, run shell commands, use the network) without asking first.
+- Never call done before you have actually run something that changed the scene (the scene summary each turn is \
+the real state — check it, don't just assume your last script worked). If the goal is already met with no action \
+needed, say so by running a no-op check first, not by skipping straight to done.
+- When the goal is achieved, call done with a one-sentence summary. If it truly can't be done, call fail."""
+
+
+class BlenderComputerTask(ComputerTask):
+    """A ComputerTask whose AI mainly builds things by writing Python for Blender's own API (run_python) instead
+    of clicking, with the regular mouse/keyboard tools still available for the rare step that genuinely needs the
+    UI. `bridge` is a blender_control.BlenderBridge (already confirmed responsive by the caller); `session` is the
+    app.py ControlSession, if any, so earlier goals in the same session can be referred back to ("make it wooden")."""
+
+    def __init__(self, goal: str, env: Environment, ask_ai, bridge, session=None, **kwargs):
+        super().__init__(goal, env, ask_ai, **kwargs)
+        self.bridge = bridge
+        self.session = session
+        self.system_prompt = BLENDER_SYSTEM_PROMPT
+        self.extra_tools = BLENDER_TOOLS
+        self._did_something = False   # has any step actually changed Blender's state yet? see _validate's "done" check
+
+    def _scene_summary(self) -> str:
+        if self.bridge is None:
+            return "(no Blender connection)"
+        code = (
+            "objs = list(bpy.data.objects)\n"
+            "active = bpy.context.object\n"
+            "lines = [f'{o.name} ({o.type}) at ' + str(tuple(round(v, 2) for v in o.location)) for o in objs]\n"
+            "RESULT = ('Active: ' + active.name if active else 'Nothing selected') + '. Objects: ' + "
+            "('; '.join(lines) if lines else '(empty scene)')"
+        )
+        response = self.bridge.run(code, timeout=8)
+        if response.get("ok"):
+            return response.get("output") or "(empty scene)"
+        return f"(couldn't read the scene: {(response.get('error') or 'unknown error')[:200]})"
+
+    def _prompt(self, observation: Observation, last_change: str) -> str:
+        header = [f"Blender scene (from Blender itself): {self._scene_summary()}"]
+        if self.session and self.session.history:
+            header.append("Earlier in this session:")
+            header.extend(f"- {goal} -> {result[:160]}" for goal, result in self.session.history[-4:])
+        return "\n".join(header) + "\n\n" + super()._prompt(observation, last_change)
+
+    def _validate(self, action: dict, observation: Observation) -> str:
+        problem = super()._validate(action, observation)
+        if problem:
+            return problem
+        if action.get("action") == "run_python" and not str(action.get("code") or "").strip():
+            return "run_python needs some code."
+        if action.get("action") == "done" and not self._did_something:
+            # Never let the AI claim success without having actually changed anything yet — a small model
+            # especially may otherwise just assert "done" outright. (Real scene state is re-checked each turn via
+            # the scene summary in _prompt, but this stops the claim from ever being accepted in the first place.)
+            return ("you haven't actually changed anything in Blender yet for this request — call run_python (or "
+                    "a UI action) to do it first, or call fail if it genuinely can't be done.")
+        return ""
+
+    @staticmethod
+    def _describe(action: dict, element) -> str:
+        if action["action"] == "run_python":
+            first_line = next(iter((action.get("code") or "").strip().splitlines()), "")
+            shown = first_line[:60] + ("…" if len(first_line) > 60 else "")
+            return f"run Python ({shown})" if shown else "run Python"
+        return ComputerTask._describe(action, element)
+
+    def _change_description(self, kind: str, outcome: str, before: Observation, after: Observation) -> str:
+        if kind == "run_python":
+            # Blender's accessibility tree barely reflects a script's effect (the viewport is custom-drawn), so
+            # don't let describe_change() judge it; an error is the only case the stale/fruitless checks need to
+            # see as "nothing changed" (the exact sentinel run() checks for).
+            if outcome.startswith("The script raised an error") or outcome.startswith("That action failed"):
+                return f"{outcome} Nothing on screen changed."
+            self._did_something = True
+            return outcome
+        result = super()._change_description(kind, outcome, before, after)
+        if kind not in ("wait", "look") and not result.endswith("Nothing on screen changed."):
+            self._did_something = True
+        return result
+
+    def _object_names(self) -> set:
+        if self.bridge is None:
+            return set()
+        response = self.bridge.run("RESULT = '|'.join(o.name + ':' + o.type for o in bpy.data.objects)", timeout=5)
+        if not response.get("ok"):
+            return set()
+        output = response.get("output") or ""
+        return set(output.split("|")) if output else set()
+
+    def _execute(self, action: dict, element, observation: Observation) -> str:
+        if action["action"] == "run_python":
+            before_names = self._object_names() if self.session else set()
+            try:
+                response = self.bridge.run(action["code"], timeout=25)
+            except Exception as e:
+                self.log(f"Blender bridge failed: {type(e).__name__}: {e}")
+                return f"That action failed ({type(e).__name__}: {str(e)[:120]})."
+            if response.get("ok"):
+                if self.session:
+                    # So a later command ("make it red") can refer to something the free-form AI just created,
+                    # exactly as it would for something blender_commands.py created.
+                    for entry in self._object_names() - before_names:
+                        name, _, kind = entry.partition(":")
+                        if name:
+                            self.session.remember_blender_object(name, kind.lower())
+                return response.get("output") or "Done."
+            return f"The script raised an error: {(response.get('error') or 'unknown error')[:300]}"
+        return super()._execute(action, element, observation)
 
 
 class ScriptedTask(ComputerTask):

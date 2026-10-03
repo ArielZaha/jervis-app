@@ -4,6 +4,7 @@ UI Automation is the accessibility layer Windows itself provides: every button, 
 with its name and on-screen position, for normal apps, Office, File Explorer, Settings and the browsers. No special
 permission is needed. Screenshots (for the optional vision model) come from mss.
 """
+import threading
 import time
 
 import computer_use
@@ -30,6 +31,20 @@ OWN_PROCESSES = {"jervis.exe", "electron.exe", "jervis-backend.exe"}   # never o
 MAX_VISITED = 2500
 MAX_ELEMENTS = 400
 TIME_BUDGET = 2.0   # seconds; a huge web page must not stall a step
+_com_ready = threading.local()
+
+
+def _ensure_com() -> None:
+    """UI Automation is COM, and COM must be started on each thread that uses it ("CoInitialize has not been called"
+    otherwise). Computer control runs on its own thread, so start it there, once per thread."""
+    if getattr(_com_ready, "done", False):
+        return
+    import comtypes
+    try:
+        comtypes.CoInitializeEx()   # the same mode the main thread gets on import
+    except OSError:
+        pass   # already started on this thread in another mode: usable as it is
+    _com_ready.done = True
 
 
 class WindowsScreen(computer_use.Environment):
@@ -54,6 +69,7 @@ class WindowsScreen(computer_use.Environment):
         return front
 
     def observe(self) -> Observation:
+        _ensure_com()
         hwnd = self._target_window()
         self._target = hwnd
         observation = Observation()
@@ -221,7 +237,21 @@ class WindowsScreen(computer_use.Environment):
         winctl.press(*names, strict=True)
         return ""
 
+    def _target_center(self):
+        """The middle of the window being worked in (where a scroll with no element goes), or None."""
+        import ctypes
+        from ctypes import wintypes
+        target = getattr(self, "_target", None) or self._target_window()
+        rect = wintypes.RECT()
+        if not target or not ctypes.windll.user32.GetWindowRect(wintypes.HWND(target), ctypes.byref(rect)):
+            return None
+        return ((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+
     def scroll(self, amount: int, point=None) -> str:
+        # Wheel turns go to whatever is under the pointer: with no element given, that must be the window being
+        # worked in (brought forward), not wherever the pointer happened to be (Jervis's own window, the desktop).
+        self._bring_forward()
+        point = point or self._target_center()
         if point is not None:
             winctl.scroll(amount, point[0], point[1])
         else:

@@ -1,5 +1,5 @@
 // The overlay shown while Jervis uses the mouse and keyboard: what he is doing, and how to stop him.
-const ACTIVE = new Set(['starting', 'observing', 'thinking', 'acting', 'waiting', 'paused']);
+const ACTIVE = new Set(['starting', 'observing', 'thinking', 'acting', 'waiting', 'paused', 'listening']);
 const ENDED_BADGE = { completed: 'Done', stopped: 'Stopped', error: 'Stopped' };
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -10,6 +10,7 @@ let questionId = null;
 
 function badgeText() {
   if (questionId) return 'Needs your OK';
+  if (state === 'listening') return 'Ready — listening';
   if (ACTIVE.has(state)) return state === 'paused' ? 'AI control paused' : 'AI control active';
   return ENDED_BADGE[state] || 'Stopped';
 }
@@ -23,6 +24,7 @@ function render(data) {
   if (!questionId) $('detail').textContent = data.detail || '';
   $('step').textContent = active && data.step ? `Step ${data.step} of ${data.maxSteps} · ${data.goal || ''}` : (data.goal || '');
   $('pause').textContent = state === 'paused' ? 'Continue' : 'Pause';
+  $('pause').hidden = state === 'listening';   // nothing to pause between commands
   $('controls').hidden = !active || Boolean(questionId);
 }
 

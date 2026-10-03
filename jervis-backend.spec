@@ -27,6 +27,8 @@ datas += collect_data_files("speech_recognition")
 binaries += collect_dynamic_libs("av")
 datas += collect_data_files("certifi")
 datas += collect_data_files("googleapiclient")
+datas += collect_data_files("tzdata")   # zoneinfo's time zones (forecast.py)
+hiddenimports += ["tzdata", "forecast", "web_search"]
 
 if sys.platform == "win32":
     for package in ("uiautomation", "comtypes", "pycaw"):

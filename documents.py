@@ -25,7 +25,7 @@ _APPS = [
     ("word", re.compile(r"\bmicrosoft(?: office)? word\b|\bms word\b|\bword (?:document|doc|app)\b|"
                         r"\b(?:in|into|on|using|with|open|launch) (?:the )?word\b")),
     ("pages", re.compile(r"\bapple pages\b|\b(?:in|into|open|using|on) pages\b")),
-    ("textedit", re.compile(r"\btext ?edit\b|\bnotepad\b|\btext editor\b")),
+    ("textedit", re.compile(r"\btext ?edit\b|\bnote ?pad\b|\btext editor\b")),
     ("notes", re.compile(r"\bnotes app\b|\b(?:in|into|open|using|to|on) (?:the |my )?notes\b")),
 ]
 

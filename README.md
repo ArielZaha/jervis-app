@@ -204,6 +204,29 @@ A window opens and draws the curve with a glow, on a grid that fits the function
 the asymptotes marked (parabolas also get their vertex and axis of symmetry). Move the mouse over it to read any point. **Save image** stores a PNG,
 Esc or "close the graph" closes it. Every graph stays: each one is also a small clickable picture in the conversation, ‹ › (or the arrow keys) step between them, G shows or hides the last one, and "show the graph again", "the previous graph", "the next graph" work by voice, as often as you like (kept until you restart Jervis). Only what is on screen is analysed: the window shows the interesting part of the graph, not all of it.
 
+## Weather
+
+"What's the weather?", "how's the weather in Paris?", "show me the forecast" open the weather window: now (feels-like,
+high/low, humidity, wind, visibility, UV), a map of the area with the rain radar, the next 24 hours and 7 days. Click the
+weather card on the left to open it too; Esc or "close the weather" closes it. The city is the one in Settings, General,
+Weather city; without one, the area of your internet connection.
+
+Everything it uses is free, with no account, no key and no paid plan that could ever start charging:
+
+| What | Service | Terms |
+|---|---|---|
+| Forecast | [Open-Meteo](https://open-meteo.com) | Free for non-commercial use (personal use is), up to 10,000 calls a day; CC BY 4.0 (credited in the window) |
+| Backup forecast | [MET Norway](https://api.met.no) | Free, commercial use allowed; CC BY 4.0. Used automatically when Open-Meteo doesn't answer |
+| Map | [OpenFreeMap](https://openfreemap.org), OpenStreetMap data | Free, no limits, commercial use allowed; credited on the map |
+| Terrain shading | Mapzen terrain tiles (AWS Open Data) | Free public dataset; credited on the map |
+| Rain radar | [RainViewer](https://www.rainviewer.com/api.html) | Free for personal and educational use; optional (the window works without it) |
+| Place names → map position | Open-Meteo geocoding, then OpenStreetMap Nominatim as a backup | Free; Nominatim asks for light use (one lookup per place) |
+| Location without a city | [GeoJS](https://www.geojs.io) | Free, no key |
+| Drawing the map | [MapLibre GL](https://maplibre.org) 5.24 (bundled in vendor/maplibre) | BSD licence |
+
+If Jervis were ever sold or made part of a paid product, Open-Meteo (non-commercial) and RainViewer (personal use)
+would need replacing; MET Norway and OpenFreeMap already allow that.
+
 ## Distance on a 3D globe
 
 "What is the distance between New York and Tel Aviv?", "how far is Paris from Tokyo", "show me the distance between Rome and

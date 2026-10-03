@@ -158,22 +158,47 @@ def cursor_position() -> tuple:
     return (point.x, point.y)
 
 
-def window_process_name(hwnd: int) -> str:
-    """The program a window belongs to, e.g. "chrome.exe" (lower case), or "" if it can't be read."""
+_kernel32 = None
+
+
+def _process_api():
+    """kernel32 with exact signatures (set up once): a process handle is pointer-sized, and ctypes' default int
+    return type would cut it short on 64-bit Windows."""
+    global _kernel32
+    if _kernel32 is None:
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.OpenProcess.restype = wintypes.HANDLE
+        k.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        k.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+                                                 ctypes.POINTER(wintypes.DWORD))
+        k.CloseHandle.argtypes = (wintypes.HANDLE,)
+        _kernel32 = k
+    return _kernel32
+
+
+def window_process_path(hwnd: int) -> str:
+    """The full path of the program a window belongs to, e.g. "C:\\Program Files\\Blender Foundation\\Blender 4.5\\
+    blender.exe", or "" if it can't be read (another user's or an elevated process)."""
     _need_windows()
+    kernel32 = _process_api()
     pid = wintypes.DWORD()
-    ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid.value)   # PROCESS_QUERY_LIMITED_INFORMATION
+    ctypes.windll.user32.GetWindowThreadProcessId(wintypes.HWND(hwnd), ctypes.byref(pid))
+    handle = kernel32.OpenProcess(0x1000, False, pid.value)   # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
         return ""
     try:
         size = wintypes.DWORD(1024)
         buffer = ctypes.create_unicode_buffer(size.value)
-        if ctypes.windll.kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
-            return buffer.value.replace("/", "\\").rsplit("\\", 1)[-1].lower()
+        if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+            return buffer.value.replace("/", "\\")
     finally:
-        ctypes.windll.kernel32.CloseHandle(handle)
+        kernel32.CloseHandle(handle)
     return ""
+
+
+def window_process_name(hwnd: int) -> str:
+    """The program a window belongs to, e.g. "chrome.exe" (lower case), or "" if it can't be read."""
+    return window_process_path(hwnd).rsplit("\\", 1)[-1].lower()
 
 
 def foreground_window() -> int:
@@ -233,6 +258,21 @@ def focus(hwnd: int) -> bool:
     ok = bool(user32.SetForegroundWindow(hwnd))
     time.sleep(0.25)
     return ok
+
+
+WM_CLOSE = 0x0010
+
+
+def close_window(hwnd: int) -> bool:
+    """Ask a window to close, exactly like clicking its X: the app can still ask to save first. Not a kill."""
+    _need_windows()
+    return bool(ctypes.windll.user32.PostMessageW(wintypes.HWND(hwnd), WM_CLOSE, 0, 0))
+
+
+def window_exists(hwnd: int) -> bool:
+    _need_windows()
+    return bool(ctypes.windll.user32.IsWindow(wintypes.HWND(hwnd))) and \
+        bool(ctypes.windll.user32.IsWindowVisible(wintypes.HWND(hwnd)))
 
 
 def process_running(image_name: str) -> bool:

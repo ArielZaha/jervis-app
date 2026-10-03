@@ -87,11 +87,38 @@ def geocode(name: str):
             r = results[0]
             label = r["name"] + (f", {r['admin1']}" if r.get("admin1") and r["admin1"] != r["name"] else "") + \
                     (f", {r['country']}" if r.get("country") else "")
-            place = {"name": label, "country": r.get("country", ""), "lat": r["latitude"], "lon": r["longitude"]}
+            place = {"name": label, "country": r.get("country", ""), "lat": r["latitude"], "lon": r["longitude"],
+                     "timezone": r.get("timezone") or ""}
     except (requests.RequestException, ValueError, KeyError, IndexError):
-        place = None
+        place = _geocode_osm(name)   # the service is down (not "no such place"): ask OpenStreetMap instead
+        if place is None:
+            return None              # don't remember a failure as "not found"
     _CACHE[key] = place
     return place
+
+
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+USER_AGENT = "Jervis/1.0 (+https://github.com/ArielZaha/jervis-app)"   # Nominatim's policy: say who is asking
+
+
+def _geocode_osm(name: str):
+    """OpenStreetMap's free geocoder (Nominatim), used only when Open-Meteo's can't be reached. One request, cached."""
+    try:
+        response = requests.get(NOMINATIM_URL, params={"q": name, "format": "jsonv2", "limit": 1, "addressdetails": 1,
+                                                       "accept-language": "en"},
+                                headers={"User-Agent": USER_AGENT}, timeout=8)
+        response.raise_for_status()
+        results = response.json()
+        if not results:
+            return None
+        r = results[0]
+        address = r.get("address") or {}
+        city = address.get("city") or address.get("town") or address.get("village") or r.get("name") or name
+        country = address.get("country", "")
+        return {"name": ", ".join(p for p in (city, address.get("state"), country) if p), "country": country,
+                "lat": float(r["lat"]), "lon": float(r["lon"]), "timezone": ""}
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
+        return None
 
 
 def great_circle_km(lat1, lon1, lat2, lon2) -> float:

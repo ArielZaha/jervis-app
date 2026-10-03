@@ -3,6 +3,9 @@
 Everything runs in the sandbox (tests/sandbox.py): an action shows up as a recorded "run ..." / "open ..." instead of
 happening on the computer running the tests.
 """
+import sys
+from types import SimpleNamespace
+
 import pytest
 
 import sandbox
@@ -24,11 +27,18 @@ def sandboxed():
 def fresh_state(sandboxed):
     """Each sentence starts from a quiet Jervis: nothing playing, no question waiting for an answer."""
     for name in ("pending_spotify_request", "pending_spotify_play", "pending_google_search", "pending_netflix_request",
-                 "pending_stremio_request", "pending_calendar_choice", "pending_dictation"):
+                 "pending_stremio_request", "pending_calendar_choice", "pending_dictation", "pending_open_app",
+                 "pending_app_choice"):
         if hasattr(app, name):
             setattr(app, name, None)
     app.youtube_active = app.netflix_active = app.stremio_active = False
     app.last_whatsapp["at"] = 0
+    if app.computer_task is not None:   # a previous test's computer-control task must never leak into this one
+        app.computer_task.stop()
+    app.computer_task = None
+    app.control_session = None
+    while not app.announcements.empty():   # ditto for anything a previous task announced after that test returned
+        app.announcements.get_nowait()
     sandbox.reset()
     yield
 
@@ -36,6 +46,15 @@ def fresh_state(sandboxed):
 def route(text: str):
     result = app.handle_direct_command(text)
     return result, list(sandbox.actions)
+
+
+# Driving Spotify is recorded as "spotify keys cmd+k" on macOS and "keys ctrl+k" on Windows (see sandbox.py):
+# compare without the prefix, with this computer's shortcut key.
+MOD = "ctrl" if sys.platform == "win32" else "cmd"
+
+
+def plain(actions) -> list:
+    return [a.removeprefix("spotify ") for a in actions]
 
 
 # ---- the brief's own examples, and more talk *about* things ----
@@ -302,11 +321,11 @@ def test_take_control_and_spotify_is_done_visibly_step_by_step(said, monkeypatch
         if app.computer_task is not None and app.computer_task.state in ("completed", "error", "stopped"):
             break
         time.sleep(0.02)
-    actions = list(sandbox.actions)   # the task runs on its own thread: read what it did once it's finished
-    typed = [a for a in actions if a.startswith("spotify type ")]
-    assert "spotify front" in actions and "spotify keys cmd+k" in actions
-    assert "".join(a[len("spotify type "):] for a in typed) == "Jane!" and len(typed) == 5   # letter by letter
-    assert "spotify keys shift+enter" in actions and any(a.startswith("pointer to") for a in actions)
+    actions = plain(sandbox.actions)   # the task runs on its own thread: read what it did once it's finished
+    typed = [a for a in actions if a.startswith("type ")]
+    assert "front" in actions and f"keys {MOD}+k" in actions
+    assert "".join(a[len("type "):] for a in typed) == "Jane!" and len(typed) == 5   # letter by letter
+    assert "keys shift+enter" in actions and any(a.startswith("pointer to") for a in actions)
     app.computer_task = None
 
 
@@ -329,8 +348,8 @@ def test_take_control_stays_visible_even_with_spotify_keys_configured(monkeypatc
         if app.computer_task is not None and app.computer_task.state in ("completed", "error", "stopped"):
             break
         time.sleep(0.02)
-    actions = list(sandbox.actions)
-    assert "spotify front" in actions and "spotify keys cmd+k" in actions
+    actions = plain(sandbox.actions)
+    assert "front" in actions and f"keys {MOD}+k" in actions
     app.computer_task = None
 
 
@@ -406,9 +425,9 @@ def test_visible_spotify_uses_sight_when_screen_vision_is_available(monkeypatch)
     for name, action in steps:
         result = action()
     assert clicked == [(300, 200), (300, 400)]           # the search bar, then the matching result — real clicks
-    typed = [a for a in sandbox.actions if a.startswith("spotify type ")]
-    assert "".join(a[len("spotify type "):] for a in typed) == "Jane!"
-    assert "spotify keys cmd+k" not in sandbox.actions    # no shortcut guessing when sight is available
+    typed = [a for a in plain(sandbox.actions) if a.startswith("type ")]
+    assert "".join(a[len("type "):] for a in typed) == "Jane!"
+    assert f"keys {MOD}+k" not in plain(sandbox.actions)    # no shortcut guessing when sight is available
     assert result == "Playing Jane! by Someone on Spotify."
 
 
@@ -419,5 +438,118 @@ def test_without_take_control_spotify_is_played_quickly(monkeypatch):
     monkeypatch.setattr(app, "sp", None)
     monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
     result, actions = route("play Jane! on spotify")
-    assert "spotify type Jane!" in actions            # typed at once, no pointer moves
+    assert "type Jane!" in plain(actions)             # typed at once, no pointer moves
     assert not any(a.startswith("pointer to") for a in actions)
+
+
+# ---- weather: a question opens the weather window ----
+@pytest.mark.parametrize("said", ["What's the weather?", "What's the weather like?", "How's the weather?",
+                                  "What is the weather?", "weather", "show me the forecast",
+                                  "hey jarvis what's the weather like today"])
+def test_weather_questions_open_the_weather_window(said, monkeypatch):
+    sent = []
+    monkeypatch.setattr(app, "send_ui_update_once", sent.append)
+    monkeypatch.setattr(app.forecast, "get", lambda **k: (_ for _ in ()).throw(app.forecast.WeatherError("offline")))
+    result, actions = route(said)
+    assert result == "offline" and not actions
+    assert {"type": "weather_panel", "error": "offline"} in sent   # the window is told, never left spinning
+
+
+def test_weather_for_a_named_city():
+    assert app.parse_weather_request("what's the weather in Paris") == {"action": "show", "city": "paris"}
+    assert app.parse_weather_request("how's the weather in new york today") == {"action": "show", "city": "new york"}
+    assert app.parse_weather_request("close the weather") == {"action": "close"}
+
+
+@pytest.mark.parametrize("sentence", ["I was talking about the weather yesterday", "the weather was nice",
+                                      "is it going to rain", "my weather app is broken"])
+def test_talking_about_weather_is_not_a_request(sentence):
+    assert app.parse_weather_request(sentence) is None
+
+
+# ---- searches ----
+@pytest.mark.parametrize("said,url", [
+    ("Search Google for cats", "google.com/search?q=cats"),
+    ("google cats", "google.com/search?q=cats"),
+    ("Search YouTube for Minecraft", "youtube.com/results?search_query=minecraft"),
+    ("search for minecraft on youtube", "youtube.com/results?search_query=minecraft"),
+    ("open chrome and search for cats", "google.com/search?q=cats"),
+])
+def test_searches_open_the_results(said, url):
+    result, actions = route(said)
+    assert result and any(url in a for a in actions), (result, actions)
+
+
+@pytest.mark.parametrize("sentence", ["Google is down today", "I searched for my keys", "find me a good book",
+                                      "google docs", "YouTube was down this morning"])
+def test_search_words_in_conversation_dont_search(sentence):
+    assert app.web_search.parse_request(sentence) is None
+
+
+# ---- opening and closing apps ----
+def test_open_this_app_asks_which_and_the_answer_opens_it():
+    assert route("open this app")[0] == "Which app should I open?"
+    result, actions = route("Notepad")
+    assert result and any("notepad" in a.lower() for a in actions)
+
+
+def test_which_one_answer_picks_from_the_offered_apps(monkeypatch):
+    monkeypatch.setattr(app.app_launcher, "installed_apps", lambda: {"blender 4 3": "Blender 4.3", "blender 4 5": "Blender 4.5"})
+    monkeypatch.setattr(app.app_launcher, "_launch", lambda name, wait=None: f"Opened {name}.")
+    assert route("open blender")[0] == "Which one did you mean: Blender 4.3 or Blender 4.5?"
+    assert route("4.5")[0] == "Opened Blender 4.5."
+
+
+def test_closing_an_open_app_closes_its_windows(monkeypatch):
+    import winctl
+    monkeypatch.setattr(app.app_launcher, "installed_apps", lambda: {"discord": "Discord"})
+    monkeypatch.setattr(app.app_launcher, "app_windows", lambda name: [(42, "Friends - Discord")] if name == "Discord" else [])
+    monkeypatch.setattr(app.app_launcher.osal, "IS_WIN", True)
+    monkeypatch.setattr(winctl, "window_exists", lambda hwnd: False, raising=False)
+    result, actions = route("close Discord")
+    assert result == "Closed Discord." and "close window 42" in actions
+
+
+def test_close_it_alone_never_closes_your_work():
+    result, actions = route("close it")
+    assert not any(a.startswith("close window") for a in actions)
+
+
+def test_take_control_and_open_is_one_visible_task(monkeypatch):
+    started = []
+    monkeypatch.setattr(app, "start_computer_task", lambda goal, **k: started.append(goal) or "asked")
+    route("take control of my computer and open Notepad")
+    assert started == ["open Notepad"]
+    started.clear()
+    route("take control and search YouTube for Minecraft")
+    assert started == ["search YouTube for Minecraft"]
+
+
+def test_simple_take_control_goals_run_as_exact_steps():
+    steps = app.scripted_steps_for("open Notepad")
+    assert [name for name, _ in steps] == ["Opening notepad"]
+    assert [name for name, _ in app.scripted_steps_for("search Google for cats")] == ["Searching Google for cats"]
+    assert app.scripted_steps_for("click the blue button") is None   # the AI works that one out on screen
+
+
+def test_take_control_asks_which_version_before_permission_and_carries_on(monkeypatch):
+    """"Take control … and open Blender" with 4.3 and 4.5 installed: which one is asked first, and the answer goes on
+    as the same take-control task (asked, shown), opening exactly that version."""
+    started = []
+    monkeypatch.setattr(app.app_launcher, "installed_apps", lambda: {"blender 4 3": "Blender 4.3", "blender 4 5": "Blender 4.5"})
+    real_start = app.start_computer_task
+    monkeypatch.setattr(app, "start_computer_task", lambda goal, **k: started.append(goal) or real_start(goal, **k))
+    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "ask")
+    monkeypatch.setattr(app, "computer_environment", lambda: SimpleNamespace(available=lambda: (True, "")))
+    monkeypatch.setattr(app, "open_control_question", lambda question, kind="computer": "q1")
+    monkeypatch.setattr(app, "wait_control_answer", lambda ask_id, timeout=90.0: False)   # (answered "no" here)
+    assert route("take control of my computer and open Blender")[0] == "Which one should I open: Blender 4.3 or Blender 4.5?"
+    assert route("4.5")[0] == "Can I use your mouse and keyboard to open Blender 4.5? Say yes or no."
+    assert started == ["open Blender", "open Blender 4.5"]
+    steps = app.scripted_steps_for("open Blender 4.5")
+    assert [name for name, _ in steps] == ["Opening Blender 4.5"]
+
+
+def test_scroll_goals_are_exact_steps():
+    assert [n for n, _ in app.scripted_steps_for("scroll down")] == ["Scrolling down"]
+    assert [n for n, _ in app.scripted_steps_for("scroll to the top")] == ["Scrolling up"]

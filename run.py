@@ -43,12 +43,16 @@ def move_to_plain_folder() -> None:
     target = os.environ.get("JERVIS_PLAIN_ROOT") or r"C:\Jervis"
     say("This folder's path has non-English letters, which stops Jervis's window from installing.")
     say(f"Copying Jervis to {target} and continuing from there (your files here stay untouched)...")
-    skip = shutil.ignore_patterns("venv", "node_modules", "__pycache__", "transcripts", "images", "*.zip", ".electron-cache")
+    # .git is excluded: it's not needed to run Jervis, it's large, and git marks its object files
+    # read-only on Windows, which makes a second copy (overwriting a .git left by the first) fail
+    # with "Permission denied" and abort the whole move.
+    skip_names = ("venv", "node_modules", "__pycache__", "transcripts", "images", ".electron-cache", ".git")
+    skip = shutil.ignore_patterns(*skip_names, "*.zip")
     try:
         os.makedirs(target, exist_ok=True)
         for name in os.listdir(ROOT):
             source, destination = os.path.join(ROOT, name), os.path.join(target, name)
-            if name in ("venv", "node_modules", "__pycache__", "transcripts", "images", ".electron-cache") or name.endswith(".zip"):
+            if name in skip_names or name.endswith(".zip"):
                 continue
             if name == ".env" and os.path.exists(destination):
                 continue  # keep the key already pasted into the new folder

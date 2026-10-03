@@ -38,6 +38,7 @@
       "graph.js",
       "earth.js",
       "planet.js",
+      "weather/**",
       "index.html",
       "style.css",
       "control.html",

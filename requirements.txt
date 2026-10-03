@@ -30,3 +30,4 @@ mss
 pyobjc-framework-ApplicationServices; sys_platform == "darwin"
 pyobjc-framework-Quartz; sys_platform == "darwin"
 pyobjc-framework-Cocoa; sys_platform == "darwin"
+tzdata  # time zones for the weather window's backup forecast (Windows has no built-in database)

@@ -201,7 +201,7 @@ ipcMain.on('restart-backend', () => backend && backend.restart());
 // While Jervis uses the mouse and keyboard, a glowing edge and a bar with Pause and Stop sit on top of everything.
 // The overlay never takes focus and lets clicks through (except on its bar), is left out of screenshots, and goes
 // away a few seconds after the task ends. The backend decides everything; this only shows it and relays buttons.
-const CONTROL_ACTIVE = new Set(['starting', 'observing', 'thinking', 'acting', 'waiting', 'paused']);
+const CONTROL_ACTIVE = new Set(['starting', 'observing', 'thinking', 'acting', 'waiting', 'paused', 'listening']);
 const STOP_ACCELERATOR = 'Control+Alt+Q';
 const STOP_LABEL = process.platform === 'darwin' ? '⌃⌥Q' : 'Ctrl+Alt+Q';
 let overlay = null;

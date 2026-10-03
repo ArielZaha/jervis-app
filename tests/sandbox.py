@@ -146,9 +146,18 @@ def install() -> None:
     # Windows key presses, clicks and window switching go straight to the system, not through subprocess
     import winctl
     if winctl.IS_WIN:
-        _saved[0].extend((winctl, n, getattr(winctl, n)) for n in ("_send", "focus"))
+        _saved[0].extend((winctl, n, getattr(winctl, n)) for n in ("_send", "focus", "list_windows", "close_window",
+                                                                   "press", "type_text"))
         winctl._send = lambda events, strict=False: actions.append(f"input {len(events)} events")
+        # readable, like the macOS recordings: "keys ctrl+k", "type Jane!"
+        winctl.press = lambda *names, strict=False: actions.append("keys " + "+".join(names))
+        winctl.type_text = lambda text, strict=False: actions.append(f"type {text}")
         winctl.focus = lambda hwnd: actions.append(f"focus window {hwnd}") or True
+        winctl.list_windows = lambda: []   # the developer's real windows must not count as "already open"
+        winctl.close_window = lambda hwnd: actions.append(f"close window {hwnd}") or True
+    import app_launcher
+    _saved[0].append((app_launcher, "LAUNCH_CONFIRM_SECONDS", app_launcher.LAUNCH_CONFIRM_SECONDS))
+    app_launcher.LAUNCH_CONFIRM_SECONDS = 0   # nothing really starts, so there is no window to wait for
 
 
 def uninstall() -> None:
