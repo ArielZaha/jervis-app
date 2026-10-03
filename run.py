@@ -4,10 +4,13 @@
 The first run sets everything up (a private Python environment, the Python packages, the window's Node packages) and
 creates a .env file to fill in. After that it just starts Jervis, and its window opens right away.
 """
+import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
+import zipfile
 
 VERSION = "1.0.6"  # printed at start, so it is obvious which copy of Jervis is running
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -161,7 +164,69 @@ def install_electron(npm: str) -> bool:
             return True
         tail = "\n".join((result.stdout + "\n" + result.stderr).strip().splitlines()[-12:])
         say("What npm said:\n" + tail)
+    # Last resort: seen on a real machine where every attempt above genuinely downloaded a good zip (each one
+    # logged "Cache hit"/"Cache miss" then a real download, never a network failure) — node install.js's own
+    # extraction of it just silently failed every time, no error, nothing in node_modules/electron/dist at all,
+    # while the exact same zip extracted perfectly with Windows' own Expand-Archive. Finish the job ourselves
+    # with Python's zipfile, which doesn't go through whatever's failing in node's own extractor.
+    version = electron_package_version()
+    if version:
+        zip_path = find_cached_electron_zip(version)
+        if zip_path:
+            say("The download worked but Node's own extraction step failed silently — finishing it directly...")
+            if manually_extract_electron(zip_path):
+                return True
     return False
+
+
+def electron_package_version() -> str:
+    """npm always unpacks electron's own package.json from its npm tarball even when the *separate* postinstall
+    step (downloading and extracting the real Electron binary from GitHub) fails — that's what's actually broken
+    above, not this — so the resolved version is reliably readable here regardless."""
+    try:
+        with open(os.path.join(ROOT, "node_modules", "electron", "package.json"), encoding="utf-8") as f:
+            return json.load(f).get("version", "")
+    except (OSError, ValueError):
+        return ""
+
+
+def electron_platform_arch() -> str:
+    machine = platform.machine().lower()
+    arch = "arm64" if machine in ("arm64", "aarch64") else "x64" if machine in ("x86_64", "amd64", "x64") else machine
+    plat = "win32" if IS_WIN else "darwin" if sys.platform == "darwin" else "linux"
+    return f"{plat}-{arch}"
+
+
+def find_cached_electron_zip(version: str) -> str:
+    """Searches every electron_cache_dirs() location for an already-downloaded electron-v<version>-<platform>.zip
+    — see manually_extract_electron for why a perfectly good cached zip can still need finding by hand."""
+    name = f"electron-v{version}-{electron_platform_arch()}.zip"
+    for cache_dir in electron_cache_dirs():
+        if not os.path.isdir(cache_dir):
+            continue
+        for found_root, _dirs, files in os.walk(cache_dir):
+            if name in files:
+                return os.path.join(found_root, name)
+    return ""
+
+
+def manually_extract_electron(zip_path: str) -> bool:
+    """Unzips a known-good, already-downloaded Electron archive ourselves and writes the path.txt electron's own
+    `require('electron')` reads to find its binary — the same two things node install.js does, minus whatever in
+    its own extraction step was silently failing."""
+    dist_dir = os.path.join(ROOT, "node_modules", "electron", "dist")
+    try:
+        os.makedirs(dist_dir, exist_ok=True)
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(dist_dir)
+        exe_name = ("electron.exe" if IS_WIN else
+                    "Electron.app/Contents/MacOS/Electron" if sys.platform == "darwin" else "electron")
+        with open(os.path.join(ROOT, "node_modules", "electron", "path.txt"), "w", encoding="utf-8") as f:
+            f.write(exe_name)
+        return electron_installed()
+    except (OSError, zipfile.BadZipFile) as e:
+        say(f"Manual extraction also failed: {e}")
+        return False
 
 
 def ensure_window_packages():
