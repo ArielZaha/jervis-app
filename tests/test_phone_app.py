@@ -360,20 +360,18 @@ def test_a_local_session_attaches_and_runs_a_command_without_a_relay(monkeypatch
             paired = json.loads(await pairing_ws.recv())
 
         assert paired["relayUrl"].startswith("ws://") and str(app.PHONE_WS_PORT) in paired["relayUrl"]
-        key = phone_crypto.key_from_b64(paired["key"])
         session = app.phone_server.begin_session()
         assert app.phone_server.decide_session(session.id, session.secret, True)
 
         async with websockets.connect(f"ws://127.0.0.1:{port}/") as ws:
             await ws.send(json.dumps({"type": "session_attach", "sessionId": session.id,
                                       "deviceId": paired["deviceId"], "token": paired["token"]}))
-            ready = phone_crypto.decrypt(key, json.loads(await ws.recv()))
+            ready = json.loads(await ws.recv())   # a local session is sent in the clear, never encrypted
             assert ready == {"type": "session_ready"}
 
-            command = phone_crypto.encrypt(key, {"type": "command", "commandId": "c1",
-                                                  "commandType": "OPEN_APPLICATION", "payload": {"app_name": "Chrome"}})
-            await ws.send(json.dumps(command))
-            result = phone_crypto.decrypt(key, json.loads(await ws.recv()))
+            await ws.send(json.dumps({"type": "command", "commandId": "c1",
+                                      "commandType": "OPEN_APPLICATION", "payload": {"app_name": "Chrome"}}))
+            result = json.loads(await ws.recv())
             assert result["type"] == "result" and result["commandId"] == "c1" and result["status"] == "SUCCEEDED"
 
     _drive(port, scenario())
@@ -388,7 +386,7 @@ def test_a_session_attaches_over_the_real_wire_after_a_hello_handshake():
     waiting for a reply that never came — this never showed up locally because every other local test attaches a
     session by sending session_attach directly, skipping the handshake a real phone always does first."""
     port = _free_port()
-    device_id, token, key = app.phone_server.registry.add("Test Phone")
+    device_id, token, _key = app.phone_server.registry.add("Test Phone")
     session = app.phone_server.begin_session()
     app.phone_server.decide_session(session.id, session.secret, True)
 
@@ -400,8 +398,7 @@ def test_a_session_attaches_over_the_real_wire_after_a_hello_handshake():
 
             await ws.send(json.dumps({"type": "session_attach", "sessionId": session.id,
                                       "deviceId": device_id, "token": token}))
-            envelope = json.loads(await ws.recv())
-            return phone_crypto.decrypt(key, envelope)
+            return json.loads(await ws.recv())   # a local session is sent in the clear, never encrypted
 
     message = _drive(port, client())
     assert message == {"type": "session_ready"}
@@ -414,7 +411,7 @@ def test_auto_attach_over_the_real_wire_lands_the_phone_in_chat_with_no_approval
     at "Connecting…" forever. Same class of gap as the "hello" handshake above, same reason it went unnoticed:
     every other local test reaches session_router directly, never through this function's own kind dispatch."""
     port = _free_port()
-    device_id, token, key = app.phone_server.registry.add("Test Phone")
+    device_id, token, _key = app.phone_server.registry.add("Test Phone")
 
     async def client():
         async with websockets.connect(f"ws://127.0.0.1:{port}/") as ws:
@@ -422,8 +419,7 @@ def test_auto_attach_over_the_real_wire_lands_the_phone_in_chat_with_no_approval
             await ws.recv()
 
             await ws.send(json.dumps({"type": "auto_attach", "deviceId": device_id, "token": token}))
-            envelope = json.loads(await ws.recv())
-            return phone_crypto.decrypt(key, envelope)
+            return json.loads(await ws.recv())   # a local session is sent in the clear, never encrypted
 
     message = _drive(port, client())
     assert message == {"type": "session_ready"}

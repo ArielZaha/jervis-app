@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import json
 import os
 
@@ -111,6 +112,25 @@ RELAY_URL = (os.getenv("JERVIS_RELAY_URL") or "").strip()
 RESTART_EXIT_CODE = 75
 PORT_BUSY_EXIT_CODE = 76
 AUDIO_OFF = os.getenv("JERVIS_AUDIO", "on").strip().lower() == "off"   # tests: typed input only, replies printed
+
+
+def speak_volume() -> int:
+    """Jervis's own speaking volume (0-100), set from the speaker control next to the mic button."""
+    try:
+        return max(0, min(100, int(os.getenv("JERVIS_SPEAK_VOLUME", "100"))))
+    except ValueError:
+        return 100
+
+
+def speak_muted() -> bool:
+    return (os.getenv("JERVIS_SPEAK_MUTED") or "off").strip().lower() == "on"
+
+
+def set_speak_volume(volume: int, muted: bool) -> None:
+    """Applied instantly (settings.update writes .env/settings.json and re-syncs os.environ) and echoed back to
+    every window, including ones that connect later (send_ui_update), so the slider reflects reality on load."""
+    settings.update({"JERVIS_SPEAK_VOLUME": str(volume), "JERVIS_SPEAK_MUTED": "on" if muted else "off"})
+    send_ui_update("speak_volume", {"volume": volume, "muted": muted})
 
 sp = None
 try:
@@ -350,6 +370,31 @@ def broadcast(sender, text="", image=None, image_kind=None):
             if image_kind:
                 payload["imageKind"] = image_kind
         asyncio.run_coroutine_threadsafe(_send_payload_async(payload), ws_loop)
+    chat_message = {"type": "chat", "sender": "user" if sender == "user" else "ai", "text": text}
+    if image:
+        # The relay caps a message at 512 KB (relay/server.py), and encryption grows it by about a third again.
+        chat_message["image"] = image if len(image) <= PHONE_IMAGE_MAX_CHARS else ""
+    phone_chat_history.append(chat_message)
+    mirror_to_phone(chat_message)
+
+
+# ---------- the phone's chat: a live mirror of this window's conversation (see phone_client.html) ----------
+PHONE_HISTORY_MESSAGES = 60        # what a phone sees of the conversation so far, the moment it connects
+PHONE_IMAGE_MAX_CHARS = 300_000
+phone_chat_history = collections.deque(maxlen=PHONE_HISTORY_MESSAGES)
+
+
+def mirror_to_phone(message: dict) -> None:
+    """Sends `message` to the phone attached right now, if any, over whichever transport (LAN or relay) it's on."""
+    session_id = phone_server.current_session_id()
+    if session_id:
+        session_router.send(session_id, message)
+
+
+def phone_history() -> list:
+    """session_router's callback when a phone attaches: the conversation so far, oldest first, with pictures left
+    out (they'd blow well past the relay's message size limit all together) — new ones still arrive live."""
+    return [{**m, "image": ""} if m.get("image") else m for m in phone_chat_history]
 
 
 def send_status(status):
@@ -357,9 +402,18 @@ def send_status(status):
         asyncio.run_coroutine_threadsafe(
             _send_payload_async({"status": status}), ws_loop
         )
+    global _phone_status
+    if status != _phone_status:   # main_loop re-sends the same status every pass; the phone only needs changes
+        _phone_status = status
+        mirror_to_phone({"type": "status", "status": status})
+
+
+_phone_status = None
 
 
 latest_ui_updates = {}  # last payload per type, replayed to windows that connect later
+latest_ui_updates["speak_volume"] = {"type": "speak_volume",
+                                     "data": {"volume": speak_volume(), "muted": speak_muted()}}
 
 
 def send_ui_update_once(payload: dict) -> None:
@@ -493,6 +547,12 @@ async def handle_client(websocket):
                 mic_muted.set()
             elif data.get("type") == "unmute":
                 mic_muted.clear()
+            elif data.get("type") == "set_speak_volume":
+                try:
+                    volume = max(0, min(100, int(data.get("volume", 100))))
+                except (TypeError, ValueError):
+                    volume = speak_volume()
+                set_speak_volume(volume, data.get("muted") is True)
             elif data.get("type") == "interrupt":
                 interrupt_speech.set()
                 if tts_engine is not None:  # the fallback voice can't be stopped from outside, so ask it to
@@ -652,6 +712,12 @@ async def handle_phone_client(websocket) -> None:
                 data = json.loads(message)
             except (ValueError, TypeError):
                 continue
+            if session_router.is_attached(conn_id):
+                # Every later frame on an attached connection is the session protocol, whatever its own "type"
+                # looks like (plaintext for a local session, {"n","ct"} for a relayed one) — including "command",
+                # which would otherwise collide with the unrelated LAN quick-action kind just below.
+                await session_router.on_frame(conn_id, data, schedule_send, schedule_end, local=True)
+                continue
             kind = data.get("type")
             if kind == "hello":
                 # Same handshake relay/server.py answers for a relay-routed session (connectSession in
@@ -709,9 +775,12 @@ async def handle_phone_client(websocket) -> None:
                         str(data.get("commandType")), data.get("payload") or {})
                     await websocket.send(json.dumps({"type": "result", "commandId": command_id, **result}))
             elif kind in ("session_attach", "auto_attach") or ("n" in data and "ct" in data):
-                await session_router.on_frame(conn_id, data, schedule_send, schedule_end)
+                await session_router.on_frame(conn_id, data, schedule_send, schedule_end, local=True)
     except websockets.exceptions.ConnectionClosed:
         pass
+    except Exception as e:
+        print(f"Phone connection handler crashed: {e!r}", flush=True)
+        raise
     finally:
         session_router.forget(conn_id)
 
@@ -747,8 +816,12 @@ def run_phone_server() -> None:
     phone_server_loop = loop
 
     async def main():
+        # ping_interval disabled: the main thread does CPU-heavy work (local speech recognition, local AI
+        # inference) that can starve this event loop's thread of the GIL for long enough to miss a pong, which
+        # would otherwise make the library close an otherwise-healthy connection. Real traffic (a status mirror
+        # every listen cycle) already proves it's alive, so the library's own keepalive adds risk without benefit.
         async with websockets.serve(handle_phone_client, "0.0.0.0", PHONE_WS_PORT,
-                                    process_request=local_process_request,
+                                    process_request=local_process_request, ping_interval=None,
                                     max_size=phone_session.VOICE_MAX_BYTES + 4096):
             await asyncio.Future()
 
@@ -769,43 +842,23 @@ def is_phone_pair_command(text: str) -> bool:
 
 
 def start_phone_pairing() -> str:
-    """"Connect my phone": bootstraps trust with a brand-new phone (no phone has ever paired yet), the mandatory
-    confirmation then, only on "yes", a fresh pairing code and this computer's address on the local network, shown
-    and spoken. Mirrors start_computer_task's own ask-first-then-continue-in-the-background shape.
-
-    Once at least one phone has paired, "connect my phone" instead means start_phone_session() — a notification
-    to tap, not a code to type; see phone_control.py's module docstring for why these are two different things."""
+    """"Connect my phone": straight to a QR code on screen — a fresh pairing code inside this computer's local
+    address. Scanning it opens phone_client.html on a Confirmed/Not Confirmed tap (its pairCard); that tap, on the
+    phone in hand, is the approval, and Confirmed lands straight in the phone's chat. Works the same for a brand-new
+    phone and one paired before (which re-pairs, replacing its old record — see handle_phone_client's "pair").
+    Needs the phone on the same Wi-Fi: pairing is local-only on purpose, see phone_control.py's module docstring."""
     if phone_control_mode() == "off":
         return ("Phone control is turned off. Turn on “Let your phone control this computer” in Settings, "
                 "Computer control, then ask me again.")
-    if phone_server.registry.list():
-        return start_phone_session()
-    question = "Want to connect your phone, so you can talk to me and control this computer from it?"
-    ask_id = open_control_question(question, kind="phone")
-    threading.Thread(target=push.send_to_all, daemon=True, name="phone-pairing-push",
-                     args=(push_store, "Jervis", question)).start()
-    if sms.configured():
-        threading.Thread(target=sms.send, daemon=True, name="phone-pairing-sms",
-                         args=(f"Jervis: {question} Say yes or no on your computer.",)).start()
-
-    def run():
-        if not wait_control_answer(ask_id):
-            return   # whoever answered (or the timeout) already has their own reply
-        code = phone_server.begin_pairing()
-        address = f"http://{phone_control.lan_address()}:{PHONE_WS_PORT}"
-        pair_url = f"{address}/?code={code}"   # the code travels in the link, never typed: scanning the QR opens
-        # phone_client.html straight to a Confirmed/Not Confirmed tap (see its pairCard) — the address and code are
-        # still shown on the panel itself, in full, as a fallback for a phone that can't scan, not spoken, to keep
-        # this one line, said once.
-        announcements.put("Scan the QR code on your screen with your phone to connect.")
-        # send_ui_update, not the "once" version: this is meant to still be there if the window wasn't open the
-        # instant this fired, or gets reopened a minute later — see that function's own docstring on the
-        # difference. Cleared on phone_paired below, so a window opened after that doesn't see a stale QR.
-        send_ui_update("phone_pairing", {"address": address, "pairUrl": pair_url, "code": code,
-                                         "expiresAt": time.time() + phone_control.PAIR_CODE_TTL})
-
-    threading.Thread(target=run, daemon=True, name="phone-pairing").start()
-    return f"{question} Say yes or no."
+    code = phone_server.begin_pairing()
+    address = f"http://{phone_control.lan_address()}:{PHONE_WS_PORT}"
+    pair_url = f"{address}/?code={code}"   # the code travels in the link, never typed; the address and code are
+    # still shown on the panel in full, as a fallback for a phone that can't scan.
+    # send_ui_update, not the "once" version: still there if the window wasn't open the instant this fired, or gets
+    # reopened a minute later. Cleared on "paired" (handle_phone_client), so a later window never sees a stale QR.
+    send_ui_update("phone_pairing", {"address": address, "pairUrl": pair_url, "code": code,
+                                     "expiresAt": time.time() + phone_control.PAIR_CODE_TTL})
+    return "Scan the QR code on your screen with your phone, on the same Wi-Fi, and tap Confirmed."
 
 
 def start_phone_session() -> str:
@@ -1484,7 +1537,7 @@ def parse_spotify_request(text: str):
         return None
     m = re.match(
         r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
-        r"(?:play|put on|start|listen to)\s+(.+)$", n, re.I)
+        r"(?:play|put on|start|listen to|open)\s+(.+)$", n, re.I)
     if not m:
         return None
     query = re.sub(r"\b(?:(?:on|in|with|using|from)\s+)?spotify\b", " ", m.group(1), flags=re.I)
@@ -2207,14 +2260,15 @@ def _ask_ai_for_control(messages, tools):
         raise computer_use.AIError(groq_error_reply(e)) from e
 
 
-def open_control_question(question: str, kind: str = "computer") -> str:
+def open_control_question(question: str) -> str:
     """Show a yes/no question in the window and listen for "yes"/"no". Returns its id for wait_control_answer.
-    `kind` ("computer" or "phone") only affects which immediate reply handle_control_voice gives on "yes"."""
+    Also shown in a connected phone's chat, where typing "yes"/"no" answers it the same way."""
     global pending_control_question
     ask_id = f"q{int(time.time() * 1000)}"
     _control_questions[ask_id] = (threading.Event(), {"answer": None})
-    pending_control_question = {"id": ask_id, "at": time.time(), "kind": kind}
+    pending_control_question = {"id": ask_id, "at": time.time()}
     send_ui_update_once({"type": "control_confirm", "id": ask_id, "question": question})
+    mirror_to_phone({"type": "chat", "sender": "ai", "text": f"{question} (yes / no)"})
     return ask_id
 
 
@@ -2309,11 +2363,8 @@ def handle_control_voice(text: str):
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower().replace("\u2019", "'")).split())
     n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jervis|jarvis) ", "", n)   # "Hey Jervis, stop"
     if pending_control_question and time.time() - pending_control_question["at"] < 120:
-        kind = pending_control_question.get("kind", "computer")
         if _YES.fullmatch(n) and answer_control_question(pending_control_question["id"], True):
             pending_control_question = None
-            if kind == "phone":
-                return "Okay, pairing your phone now."
             return (f"Okay. Move the mouse, press {computer_use.STOP_SHORTCUT}, or say stop "
                     "whenever you want to take over.")
         if _NO.fullmatch(n) and answer_control_question(pending_control_question["id"], False):
@@ -3238,7 +3289,7 @@ _SPOTIFY_SEARCH = re.compile(
     r"(?: bar| box)?)?(?: for)?)\s+(?P<query>.+?)\s+(?:in|on|with)\s+(?:the\s+)?spotify(?: search(?: bar| box)?)?"
     r"(?: app)?[.!?]*$", re.I)
 _SPOTIFY_PLAY = re.compile(
-    r"^(?:(?:please|can you|could you|go ahead and) )*(?:play|put on|start|listen to)\s+(?P<query>.+?)\s+"
+    r"^(?:(?:please|can you|could you|go ahead and) )*(?:play|put on|start|listen to|open)\s+(?P<query>.+?)\s+"
     r"(?:on|in|with|using|from)\s+(?:the\s+)?spotify(?: app)?[.!?]*$", re.I)
 _PLAY_IT = re.compile(r"^(?:yes|yeah|yep|sure|ok|okay)?[, ]*(?:please )?(?:play (?:it|that|this|the first one|the song)"
                       r"|start it|yes|yeah|yep|sure|go ahead)(?: please)?[.!]*$", re.I)
@@ -4137,15 +4188,17 @@ def speak(text):
     send_status("speaking")
     print(f"Speaking: {text}")
     interrupt_speech.clear()
-    if AUDIO_OFF:   # test mode: the reply was printed and shown, nothing is played
+    volume = speak_volume()
+    if AUDIO_OFF or speak_muted() or volume == 0:   # test mode, or the user muted/zeroed Jervis's voice
         send_status("idle")
         return
 
     try:
-        proc = osal.speech_process(text)
+        proc = osal.speech_process(text, volume)
         if proc is not None:
             wait_for_speech(proc)
         elif get_tts_engine() is not None:
+            get_tts_engine().setProperty("volume", volume / 100)
             get_tts_engine().say(text)
             get_tts_engine().runAndWait()
         else:

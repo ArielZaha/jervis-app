@@ -10,6 +10,8 @@ import platform
 import re
 import shutil
 import subprocess
+import tempfile
+import threading
 
 SYSTEM = platform.system()
 IS_MAC = SYSTEM == "Darwin"
@@ -81,6 +83,7 @@ def run_powershell(script: str, env: dict = None, timeout: int = 30):
 _WIN_SPEECH = r"""
 Add-Type -AssemblyName System.Speech
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+if ($env:JERVIS_VOLUME) { $s.Volume = [int]$env:JERVIS_VOLUME }
 if ($env:JERVIS_HEBREW -eq '1') {
   foreach ($v in $s.GetInstalledVoices()) {
     if ($v.Enabled -and $v.VoiceInfo.Culture.Name -like 'he*') { $s.SelectVoice($v.VoiceInfo.Name); break }
@@ -97,19 +100,41 @@ foreach ($v in $s.GetInstalledVoices()) { if ($v.Enabled) { $v.VoiceInfo.Name + 
 """
 
 
-def speech_process(text: str):
-    """Start speaking `text` and return the running process (so it can be stopped), or None if this machine can't."""
+def _cleanup_after(proc, path: str) -> None:
+    """Removes a temp audio file once the process playing it exits (doesn't block the caller's own wait/stop)."""
+    def runner():
+        proc.wait()
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    threading.Thread(target=runner, daemon=True).start()
+
+
+def speech_process(text: str, volume: int = 100):
+    """Start speaking `text` at `volume` (0-100) and return the running process (so it can be stopped), or None if
+    this machine can't speak at all."""
     if IS_MAC:
         chosen = os.getenv("JERVIS_VOICE", "").strip()
         voice = ["-v", "Carmit"] if has_hebrew(text) else (["-v", chosen] if chosen else [])
-        return subprocess.Popen(["say", *voice, text])
+        if volume >= 100:   # the common case: speak directly, exactly as before (no extra latency)
+            return subprocess.Popen(["say", *voice, text])
+        # `say` has no volume knob: render to a file, then play it back at the chosen level (afplay -v is 0.0-1.0).
+        path = tempfile.mktemp(suffix=".aiff")
+        subprocess.run(["say", *voice, "-o", path, text])
+        proc = subprocess.Popen(["afplay", "-v", f"{max(0, volume) / 100:.2f}", path])
+        _cleanup_after(proc, path)
+        return proc
     if IS_WIN:
-        env = {**os.environ, "JERVIS_TEXT": text, "JERVIS_HEBREW": "1" if has_hebrew(text) else "0"}
+        env = {**os.environ, "JERVIS_TEXT": text, "JERVIS_HEBREW": "1" if has_hebrew(text) else "0",
+               "JERVIS_VOLUME": str(max(0, min(100, volume)))}
         return subprocess.Popen(powershell_command(_WIN_SPEECH), env=env, creationflags=_NO_WINDOW,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for tool in ("espeak-ng", "espeak", "spd-say"):
+    for tool in ("espeak-ng", "espeak"):
         if shutil.which(tool):
-            return subprocess.Popen([tool, text])
+            return subprocess.Popen([tool, "-a", str(max(0, min(200, round(volume * 2)))), text])
+    if shutil.which("spd-say"):   # no absolute volume flag here (its -i is a relative offset) - left alone
+        return subprocess.Popen(["spd-say", text])
     return None
 
 

@@ -29,6 +29,10 @@
   }
   .screen .brand { text-align: center; margin-bottom: 28px; }
   .screen .brand h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .logo-mark { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+  .logo-mark svg { width: 26px; height: 26px; flex-shrink: 0; }
+  .chat-header .title.logo-mark { justify-content: flex-start; }
+  .chat-header .title.logo-mark svg { width: 19px; height: 19px; }
   .screen .brand .tagline { color: var(--text-dim); font-size: 14px; }
   .card {
     width: 100%; max-width: 420px; background: var(--bg-elevated); border: 1px solid var(--border);
@@ -139,6 +143,11 @@
   }
   .msg.system.err { color: var(--danger); }
   .msg.system.ok { color: var(--success); }
+  .typing { align-self: flex-start; display: flex; gap: 5px; align-items: center; padding: 13px 16px; margin: 3px 0; }
+  .typing i { width: 4px; height: 14px; border-radius: 2px; background: var(--accent); animation: eq 1s ease-in-out infinite; }
+  .typing i:nth-child(2) { animation-delay: .15s; }
+  .typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes eq { 0%, 100% { transform: scaleY(.35); opacity: .5; } 50% { transform: scaleY(1.2); opacity: 1; } }
   .empty-state {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
     color: var(--text-faint); text-align: center; padding: 20px; gap: 6px;
@@ -183,7 +192,7 @@
   </div>
 
   <div class="screen" id="pairCard">
-    <div class="brand"><h1>Jervis</h1><div class="tagline">Talk to your computer from your phone</div></div>
+    <div class="brand"><h1 class="logo-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lgPair" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="#a58bff"/></linearGradient></defs><circle cx="16" cy="16" r="6" fill="url(#lgPair)"/><ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#lgPair)" stroke-width="1.4" transform="rotate(-25 16 16)" opacity=".85"/><ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#lgPair)" stroke-width="1.4" transform="rotate(35 16 16)" opacity=".45"/></svg>Jervis</h1><div class="tagline">Talk to your computer from your phone</div></div>
     <div class="card">
       <div class="icon" id="pairIcon">📱</div>
       <h2 id="pairTitle">Jervis wants to pair with this phone.</h2>
@@ -200,7 +209,7 @@
        notification_setup_url() in app.py. Only ever about turning notifications on for an already-paired phone;
        pairing a brand-new phone always stays local (see phone_control.py's module docstring on why). -->
   <div class="screen" id="relayNotifyCard" style="display:none">
-    <div class="brand"><h1>Jervis</h1><div class="tagline">Talk to your computer from your phone</div></div>
+    <div class="brand"><h1 class="logo-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lgRelay" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="#a58bff"/></linearGradient></defs><circle cx="16" cy="16" r="6" fill="url(#lgRelay)"/><ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#lgRelay)" stroke-width="1.4" transform="rotate(-25 16 16)" opacity=".85"/><ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#lgRelay)" stroke-width="1.4" transform="rotate(35 16 16)" opacity=".45"/></svg>Jervis</h1><div class="tagline">Talk to your computer from your phone</div></div>
     <div class="card">
       <div class="status-row"><span class="dot" id="relayNotifyDot"></span><span id="relayNotifyStatusText">Connecting…</span></div>
       <h2 id="relayNotifyTitle">Enable notifications</h2>
@@ -230,7 +239,7 @@
   <div class="chat-screen" id="sessionCard">
     <div class="chat-header">
       <div>
-        <div class="title">Jervis</div>
+        <div class="title logo-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lgChat" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="#a58bff"/></linearGradient></defs><circle cx="16" cy="16" r="6" fill="url(#lgChat)"/><ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#lgChat)" stroke-width="1.4" transform="rotate(-25 16 16)" opacity=".85"/><ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#lgChat)" stroke-width="1.4" transform="rotate(35 16 16)" opacity=".45"/></svg>Jervis</div>
         <div class="status-pill"><span class="dot" id="sessDot"></span><span id="sessStatusText">Connecting…</span></div>
       </div>
       <div class="spacer"></div>
@@ -358,11 +367,12 @@
     if (otherOrigin === location.origin) return;
     if (localStorage.getItem("jervis_synced_to") === otherOrigin) return;   // already done; don't loop
     const fragment = encodeURIComponent(JSON.stringify(device));
-    // Normally "come back here" means this same page (the common case: a paired phone backfilling a sync that
-    // never ran). But reached via a relay link's own "open this once" hint (backTo, see setUpNotificationsViaRelay
-    // above), the place to come back to is that relay page, not this one — otherwise the round trip strands the
-    // user back on the local page instead of the Enable Notifications screen they were actually trying to reach.
-    const returnUrl = returnTo || (location.origin + location.pathname);
+    // Always come back to this same page, so it can record the sync as done (?synced=1 below) — otherwise every
+    // later visit here would repeat the whole round trip. Reached via a relay link's own "open this once" hint
+    // (returnTo, see setUpNotificationsViaRelay above), it's passed along as backTo and this page forwards there
+    // right after recording, so the user still lands on the Enable Notifications screen they were trying to reach.
+    const returnUrl = location.origin + location.pathname +
+      (returnTo ? `?backTo=${encodeURIComponent(returnTo)}` : "");
     location.href = `${otherOrigin}/?sync=1&return=${encodeURIComponent(returnUrl)}#${fragment}`;
   }
 
@@ -378,6 +388,23 @@
     log.appendChild(el);
     while (log.children.length > 200) log.removeChild(log.firstChild);
     log.scrollTop = log.scrollHeight;
+  }
+
+  // "Working on it": the same equalizer-bars indicator the desktop app's own chat shows while Jervis is
+  // thinking, mirrored here from the status updates send_status() already relays to an attached phone.
+  let typingEl = null;
+  function showTyping() {
+    if (typingEl) return;
+    if (emptyState && emptyState.parentNode) emptyState.remove();
+    typingEl = document.createElement("div");
+    typingEl.className = "typing";
+    typingEl.innerHTML = "<i></i><i></i><i></i>";
+    log.appendChild(typingEl);
+    log.scrollTop = log.scrollHeight;
+  }
+  function hideTyping() {
+    typingEl?.remove();
+    typingEl = null;
   }
 
   function setStatus(dotEl, textEl, on, text) {
@@ -585,6 +612,15 @@
 
   let sessionWs = null, sessionKey = null, mediaRecorder = null, mediaStream = null;
   let sessionAutoReconnect = false, sessionReconnectTimer = null;
+  // Local (same-Wi-Fi) sessions are sent in the clear, same as phone_crypto.py already documents for local traffic
+  // — and not just by choice: iOS Safari (and other browsers) disable crypto.subtle entirely on a plain-http
+  // origin that isn't localhost, so encryption genuinely cannot work here. Only relay-routed sessions (a real
+  // sessionId, always over device.relayUrl) still encrypt, since that traffic does leave the LAN.
+  let isLocalSession = false, sessionReady = false;
+  async function sendSessionMessage(obj) {
+    if (!sessionWs || sessionWs.readyState !== WebSocket.OPEN) return;
+    sessionWs.send(JSON.stringify(isLocalSession ? obj : await encryptEnvelope(sessionKey, obj)));
+  }
 
   function sessionStatus(on, text) { setStatus($("sessDot"), $("sessStatusText"), on, text); }
 
@@ -592,8 +628,9 @@
   // see handleSessionEvent below), or null for this phone reconnecting on its own, the normal way home: the
   // saved bookmark, or right after pairing. With null, the device's own token is proof enough — no push, no tap
   // — the computer sends auto_attach the deviceId/token directly (phone_session.py's _auto_attach) instead of a
-  // sessionId it was never given. Worth retrying if that connection drops, unlike a one-off approved session.
-  async function connectSession(sessionId) {
+  // sessionId it was never given. A dropped connection is retried either way, always as auto_attach over the same
+  // address it was on (viaUrl) — the token is already enough, so a blip never needs a fresh notification tap.
+  async function connectSession(sessionId, viaUrl) {
     const device = saved();
     if (!device || !device.relayUrl || !device.computerId) {
       showUnpaired();
@@ -604,39 +641,47 @@
       return;
     }
     clearTimeout(sessionReconnectTimer);
-    sessionAutoReconnect = !sessionId;
+    isLocalSession = !sessionId;
+    sessionReady = false;
+    sessionAutoReconnect = true;
     showCard(sessionCard);
     sessionStatus(false, "Connecting…");
     closeMenu();
-    const url = sessionId ? device.relayUrl
-                          : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`;
-    sessionWs = new WebSocket(url);
-    sessionWs.onopen = () => {
-      sessionWs.send(JSON.stringify({ type: "hello", role: "phone", computerId: device.computerId }));
+    const url = viaUrl || (sessionId ? device.relayUrl
+                                     : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`);
+    const keyReady = isLocalSession ? null : importKey(device.key);   // not needed at all for a local session
+    const ws = sessionWs = new WebSocket(url);
+    ws.onopen = () => {
+      // hello and the attach go out together: both the relay and the local server read them in order, so waiting
+      // for hello_ok first would only add a round trip (the relay still answers hello_ok, which we just ignore).
+      ws.send(JSON.stringify({ type: "hello", role: "phone", computerId: device.computerId }));
+      ws.send(JSON.stringify(sessionId
+        ? { type: "session_attach", sessionId, deviceId: device.id, token: device.token }
+        : { type: "auto_attach", deviceId: device.id, token: device.token }));
     };
-    sessionWs.onclose = () => {
+    ws.onclose = () => {
+      if (sessionWs !== ws) return;   // an older socket closing after a newer one already replaced it
+      sessionReady = false;
       sessionStatus(false, sessionAutoReconnect ? "Reconnecting…" : "Disconnected");
+      hideTyping();
       stopRecording();
       $("chatInput").disabled = true;
       $("chatSendBtn").disabled = true;
-      if (sessionAutoReconnect) sessionReconnectTimer = setTimeout(() => connectSession(null), 2000);
+      if (sessionAutoReconnect) sessionReconnectTimer = setTimeout(() => connectSession(null, url), 2000);
     };
-    sessionWs.onerror = () => sessionWs.close();
-    sessionWs.onmessage = async (event) => {
+    ws.onerror = () => ws.close();
+    ws.onmessage = async (event) => {
       let data;
       try { data = JSON.parse(event.data); } catch { return; }
       if (data.type === "offline") {
         sessionStatus(false, "Jervis isn't reachable right now");
-      } else if (data.type === "hello_ok") {
-        sessionKey = await importKey(device.key);
-        if (sessionId) {
-          sessionWs.send(JSON.stringify({ type: "session_attach", sessionId, deviceId: device.id, token: device.token }));
-        } else {
-          sessionWs.send(JSON.stringify({ type: "auto_attach", deviceId: device.id, token: device.token }));
-        }
       } else if (data.type === "session_error") {
+        sessionAutoReconnect = false;   // the computer said no; retrying the same credentials won't change that
         sessionStatus(false, data.message || "That connection request is no longer valid.");
+      } else if (isLocalSession) {
+        handleSessionMessage(data);   // sent in the clear — see isLocalSession's own comment
       } else if (data.n && data.ct) {
+        sessionKey = await keyReady;
         const message = await decryptEnvelope(sessionKey, data);
         if (message) handleSessionMessage(message);
       }
@@ -645,14 +690,22 @@
 
   function handleSessionMessage(message) {
     if (message.type === "session_ready") {
+      sessionReady = true;
       sessionStatus(true, "Connected");
       $("micWrap").classList.toggle("show", mediaDevicesAvailable());
       $("chatInput").disabled = false;
       $("chatSendBtn").disabled = false;
+      logLine("Hello there, Jervis is here for you (Created by Ariel and Shalev).", "jervis");
+    } else if (message.type === "status") {
+      // Mirrored from send_status() on the computer — "thinking" covers both a typed message and a voice one
+      // being worked on; everything else means whatever was being worked on is done (or never started).
+      if (message.status === "thinking") showTyping(); else hideTyping();
     } else if (message.type === "result") {
+      hideTyping();
       logLine((message.status === "SUCCEEDED" ? "✓ " : "✗ ") + (message.message || message.status),
               message.status === "SUCCEEDED" ? "ok" : "err");
     } else if (message.type === "reply") {
+      hideTyping();
       logLine(message.text, "jervis");
       try {
         const utter = new SpeechSynthesisUtterance(message.text);
@@ -673,7 +726,7 @@
   }
 
   async function beginTalking() {
-    if (!sessionKey || mediaRecorder) return;
+    if (!sessionReady || mediaRecorder) return;
     $("micBtn").classList.add("live");
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -685,14 +738,12 @@
     const mimeType = pickMimeType();
     mediaRecorder = new MediaRecorder(mediaStream, mimeType ? { mimeType } : undefined);
     mediaRecorder.ondataavailable = async (event) => {
-      if (!event.data || !event.data.size || !sessionWs || sessionWs.readyState !== WebSocket.OPEN) return;
+      if (!event.data || !event.data.size) return;
       const buf = await event.data.arrayBuffer();
       const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-      sessionWs.send(JSON.stringify(await encryptEnvelope(sessionKey, { type: "voice_chunk", data: b64 })));
+      await sendSessionMessage({ type: "voice_chunk", data: b64 });
     };
-    if (sessionWs && sessionWs.readyState === WebSocket.OPEN) {
-      sessionWs.send(JSON.stringify(await encryptEnvelope(sessionKey, { type: "voice_start" })));
-    }
+    await sendSessionMessage({ type: "voice_start" });
     mediaRecorder.start(300);   // fire ondataavailable every ~300ms while held, so a long hold still streams
   }
 
@@ -706,9 +757,7 @@
   async function endTalking() {
     $("micBtn").classList.remove("live");
     stopRecording();
-    if (sessionKey && sessionWs && sessionWs.readyState === WebSocket.OPEN) {
-      sessionWs.send(JSON.stringify(await encryptEnvelope(sessionKey, { type: "voice_end" })));
-    }
+    if (sessionReady) await sendSessionMessage({ type: "voice_end" });
   }
 
   const micBtn = $("micBtn");
@@ -720,10 +769,10 @@
   // phone_session.py's "text" handling), with the reply coming back the same way voice replies already do.
   async function sendChatText() {
     const text = $("chatInput").value.trim();
-    if (!text || !sessionKey || !sessionWs || sessionWs.readyState !== WebSocket.OPEN) return;
+    if (!text || !sessionReady || !sessionWs || sessionWs.readyState !== WebSocket.OPEN) return;
     $("chatInput").value = "";
     logLine(text, "you");
-    sessionWs.send(JSON.stringify(await encryptEnvelope(sessionKey, { type: "text", text })));
+    await sendSessionMessage({ type: "text", text });
   }
   $("chatSendBtn").onclick = sendChatText;
   $("chatInput").addEventListener("keydown", (e) => {
@@ -740,9 +789,7 @@
     closeMenu();
     sessionAutoReconnect = false;   // asked for, not dropped — don't reconnect behind the user's back
     clearTimeout(sessionReconnectTimer);
-    if (sessionKey && sessionWs && sessionWs.readyState === WebSocket.OPEN) {
-      sessionWs.send(JSON.stringify(await encryptEnvelope(sessionKey, { type: "disconnect" })));
-    }
+    if (sessionReady) await sendSessionMessage({ type: "disconnect" });
     if (sessionWs) sessionWs.close();
     stopRecording();
     history.replaceState(null, "", location.pathname);
@@ -773,6 +820,11 @@
 
   const urlSession = params.get("session");
 
+  // Only ever forward to the relay's own pages — never wherever an arbitrary ?backTo= link says.
+  function sameOriginAs(url, relayUrl) {
+    try { return new URL(url).origin === new URL(relayUrl.replace(/^ws/, "http")).origin; } catch { return false; }
+  }
+
   if (params.get("sync") === "1") {
     // The other origin sent us here (syncToOtherOrigin) with the pairing in the URL fragment — a real top-level
     // visit, which (unlike an iframe) Safari's tracking prevention doesn't block from writing storage. Save it,
@@ -801,7 +853,10 @@
       history.replaceState(null, "", location.pathname + (urlSession ? `?session=${urlSession}` : ""));
     }
 
-    if (urlSession && saved()) {
+    const backTo = params.get("backTo");
+    if (params.get("synced") === "1" && backTo && sameOriginAs(backTo, saved() && saved().relayUrl)) {
+      location.replace(backTo);   // see syncToOtherOrigin: recorded above, now on to where it was headed
+    } else if (urlSession && saved()) {
       handleSessionEvent(urlSession, params.get("decision"));
     } else if (SERVED_BY_RELAY) {
       // Reached via the relay's own link (notification_setup_url() in app.py), not a "connect my phone" tap —

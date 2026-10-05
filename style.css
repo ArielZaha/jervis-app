@@ -472,6 +472,29 @@ button { font: inherit; color: inherit; }
 .stop-btn:hover { background: rgb(var(--accent-rgb) / .45); }
 .stop-btn:active { transform: translate(0, -50%) scale(.92); }
 .stop-btn:focus-visible { outline: 2px solid rgb(var(--accent-rgb)); outline-offset: 3px; }
+
+/* Jervis's own speaking volume: mirrors stop-btn's position on the mic's other side, always visible (not tied to
+   data-state) since it's useful whether or not he's currently talking. */
+.speak-vol {
+  position: absolute; right: calc(100% + 24px); top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 8px;
+  -webkit-app-region: no-drag;
+}
+.speak-vol-btn {
+  width: 40px; height: 40px; border-radius: 50%; border: 0;
+  display: grid; place-items: center;
+  background: rgb(var(--accent-rgb) / .2); color: #fff; cursor: pointer;
+  transition: background .2s, transform .2s;
+}
+.speak-vol-btn:hover { background: rgb(var(--accent-rgb) / .45); }
+.speak-vol-btn:active { transform: scale(.92); }
+.speak-vol-btn:focus-visible { outline: 2px solid rgb(var(--accent-rgb)); outline-offset: 3px; }
+.speak-vol-btn svg { width: 18px; height: 18px; filter: drop-shadow(0 0 5px rgb(var(--accent-rgb))); }
+.speak-vol-btn .ic-mute { display: none; }
+.speak-vol.muted .speak-vol-btn .ic-loud { display: none; }
+.speak-vol.muted .speak-vol-btn .ic-mute { display: block; }
+#speakVolSlider { width: 80px; accent-color: rgb(var(--accent-rgb)); cursor: pointer; }
+.speak-vol.muted #speakVolSlider { opacity: .4; }
 kbd { padding: 1px 6px; border: 1px solid rgb(var(--accent-rgb) / .4); border-radius: 3px; background: rgb(var(--accent-rgb) / .08); color: rgb(var(--accent-rgb)); font-family: var(--mono); font-size: 10.5px; }
 
 /* ---------- Chat ---------- */

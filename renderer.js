@@ -652,6 +652,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.type === 'timers') setTimers(data.data);
       if (data.type === 'timer_done' && data.data) showAlert(data.data);
       if (data.type === 'dismiss_alert' && alerts.length) dismissAlert(alerts.length);
+      if (data.type === 'speak_volume' && data.data) applySpeakVolume(data.data);
     } catch (error) {
       console.error('Error handling WebSocket message:', error);
     }
@@ -719,6 +720,43 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   $('stopBtn').addEventListener('click', () => { if (app.dataset.state === 'speaking') interruptSpeech(); });
   connectBtn.addEventListener('click', () => applyMute(!isMuted));
+
+  // ---------- Jervis's own speaking volume (separate from the mic above) ----------
+  const speakVolWrap = $('speakVol'), speakVolBtn = $('speakVolBtn'), speakVolSlider = $('speakVolSlider');
+  let speakVolume = 100, speakMuted = false, lastSpeakVolume = 100;
+  function renderSpeakVol() {
+    speakVolWrap.classList.toggle('muted', speakMuted || speakVolume === 0);
+    speakVolBtn.setAttribute('aria-pressed', String(speakMuted));
+    speakVolBtn.title = speakMuted ? "Unmute Jervis's voice" : "Mute Jervis's voice";
+    speakVolSlider.value = speakVolume;
+  }
+  function sendSpeakVolume() {
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'set_speak_volume', volume: speakVolume, muted: speakMuted }));
+    }
+  }
+  // The server is the source of truth (settings persist across restarts) — this applies its state on connect
+  // and echoes it back after every change, so every window stays in sync with every other one.
+  function applySpeakVolume(data) {
+    speakVolume = Math.max(0, Math.min(100, Number(data.volume) || 0));
+    speakMuted = data.muted === true;
+    if (speakVolume > 0) lastSpeakVolume = speakVolume;
+    renderSpeakVol();
+  }
+  speakVolBtn.addEventListener('click', () => {
+    speakMuted = !speakMuted;
+    if (!speakMuted && speakVolume === 0) speakVolume = lastSpeakVolume || 100;
+    renderSpeakVol();
+    sendSpeakVolume();
+  });
+  speakVolSlider.addEventListener('input', () => {
+    speakVolume = Number(speakVolSlider.value);
+    speakMuted = false;
+    renderSpeakVol();
+  });
+  speakVolSlider.addEventListener('change', sendSpeakVolume);   // persisted once the user releases the slider
+  renderSpeakVol();
+
   document.addEventListener('keydown', (e) => {
     if (typing(e)) return;
     if (e.key.toLowerCase() === 'f' && !alerts.length && !e.metaKey && !e.ctrlKey && !e.altKey) {   // F: full screen on/off

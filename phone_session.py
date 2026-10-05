@@ -75,6 +75,13 @@ class PhoneSessionRouter:
     def forget(self, conn_id) -> None:
         self._conns.pop(conn_id, None)
 
+    def is_attached(self, conn_id) -> bool:
+        """Whether `conn_id` has already attached a session — a transport uses this to tell a first "session_attach"
+        / "auto_attach" frame (still dispatched on its own) from everything that follows it on the same connection
+        (text, voice, commands, disconnect — plaintext for a local session, an envelope for a relayed one), which
+        must always reach on_frame regardless of what kind of frame it looks like."""
+        return conn_id in self._conns
+
     def forget_matching(self, predicate) -> None:
         """Drops every connection whose conn_id satisfies `predicate` — for a transport to clean up its own
         entries (e.g. relay_client.py, on reconnecting to the relay) without touching another transport's."""
@@ -84,10 +91,20 @@ class PhoneSessionRouter:
     def deliver_reply(self, session_id: str, text: str) -> None:
         """A reply to something a phone said, once the main loop has worked one out (app.py calls this from the
         three places a turn's reply is finalized — see PhoneVoiceInput)."""
+        self.send(session_id, {"type": "reply", "text": text})
+
+    def send(self, session_id: str, message: dict) -> None:
+        """Delivers an arbitrary message (status updates, chat mirrors, ...) to the phone attached to this
+        session, if any — the general case deliver_reply is a shorthand for."""
         conn_id = self.phone_server.active_session_conn(session_id)
         state = self._conns.get(conn_id) if conn_id else None
         if state:
-            state["schedule_send"](phone_crypto.encrypt(state["key"], {"type": "reply", "text": text}))
+            self._send(state, message)
+
+    def _send(self, state: dict, message: dict) -> None:
+        """Local (same-Wi-Fi) connections are sent in the clear — see phone_crypto.py's own docstring on why, and
+        _attach/_auto_attach's `local` flag for where this is decided. Only relay-routed traffic is encrypted."""
+        state["schedule_send"](message if state["local"] else phone_crypto.encrypt(state["key"], message))
 
     def end_session(self, session_id: str) -> None:
         conn_id = self.phone_server.active_session_conn(session_id)
@@ -97,20 +114,20 @@ class PhoneSessionRouter:
             if state and state.get("schedule_end"):
                 state["schedule_end"]()
 
-    async def on_frame(self, conn_id, payload, schedule_send, schedule_end=None) -> None:
+    async def on_frame(self, conn_id, payload, schedule_send, schedule_end=None, local: bool = False) -> None:
         if not isinstance(payload, dict):
             return
         state = self._conns.get(conn_id)
         if state is None:
             if payload.get("type") == "session_attach":
-                await self._attach(conn_id, payload, schedule_send, schedule_end)
+                await self._attach(conn_id, payload, schedule_send, schedule_end, local)
             elif payload.get("type") == "auto_attach":
-                await self._auto_attach(conn_id, payload, schedule_send, schedule_end)
+                await self._auto_attach(conn_id, payload, schedule_send, schedule_end, local)
             elif DEVICE_MESSAGE_ENVELOPE <= payload.keys():
                 await self._handle_device_message(payload, schedule_send)
             # else: nothing else is meaningful before a session is attached
             return
-        message = phone_crypto.decrypt(state["key"], payload)
+        message = payload if state["local"] else phone_crypto.decrypt(state["key"], payload)
         if message is None:
             return
         await self._on_decrypted(conn_id, state, message)
@@ -139,16 +156,16 @@ class PhoneSessionRouter:
             if endpoint:
                 self.on_push_unsubscribe(endpoint)
 
-    async def _attach(self, conn_id, payload: dict, schedule_send, schedule_end) -> None:
+    async def _attach(self, conn_id, payload: dict, schedule_send, schedule_end, local: bool = False) -> None:
         device_id = str(payload.get("deviceId") or "")
         session_id = str(payload.get("sessionId") or "")
         key = self.phone_server.attach_session(session_id, device_id, str(payload.get("token") or ""), conn_id)
         if key is None:
             schedule_send({"type": "session_error", "message": "That connection request is no longer valid."})
             return
-        self._finish_attach(conn_id, device_id, session_id, key, schedule_send, schedule_end)
+        self._finish_attach(conn_id, device_id, session_id, key, schedule_send, schedule_end, local)
 
-    async def _auto_attach(self, conn_id, payload: dict, schedule_send, schedule_end) -> None:
+    async def _auto_attach(self, conn_id, payload: dict, schedule_send, schedule_end, local: bool = False) -> None:
         """An already-paired phone reconnecting on its own (phone_client.html's saved-bookmark path, or right
         after pairing) — no "connect my phone" push/tap needed, since the device token itself already proves it
         (see PhoneControlServer.begin_and_approve_session). Same result as _attach from here on, just starting
@@ -163,12 +180,13 @@ class PhoneSessionRouter:
         if key is None:
             schedule_send({"type": "session_error", "message": "That didn't work. Try again."})
             return
-        self._finish_attach(conn_id, device_id, session.id, key, schedule_send, schedule_end)
+        self._finish_attach(conn_id, device_id, session.id, key, schedule_send, schedule_end, local)
 
-    def _finish_attach(self, conn_id, device_id: str, session_id: str, key, schedule_send, schedule_end) -> None:
+    def _finish_attach(self, conn_id, device_id: str, session_id: str, key, schedule_send, schedule_end,
+                       local: bool = False) -> None:
         self._conns[conn_id] = {"device_id": device_id, "key": key, "session_id": session_id, "voice": None,
-                                "schedule_send": schedule_send, "schedule_end": schedule_end}
-        schedule_send(phone_crypto.encrypt(key, {"type": "session_ready"}))
+                                "schedule_send": schedule_send, "schedule_end": schedule_end, "local": local}
+        self._send(self._conns[conn_id], {"type": "session_ready"})
 
     async def _on_decrypted(self, conn_id, state: dict, message: dict) -> None:
         kind = message.get("type")
@@ -181,8 +199,7 @@ class PhoneSessionRouter:
             result = await asyncio.get_event_loop().run_in_executor(
                 None, self.phone_server.run_command, state["device_id"], command_id,
                 str(message.get("commandType") or ""), message.get("payload") or {})
-            state["schedule_send"](phone_crypto.encrypt(state["key"],
-                                                        {"type": "result", "commandId": command_id, **result}))
+            self._send(state, {"type": "result", "commandId": command_id, **result})
         elif kind == "voice_start":
             state["voice"] = {"chunks": [], "bytes": 0, "started": time.time()}
         elif kind == "voice_chunk" and state.get("voice") is not None:

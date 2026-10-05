@@ -21,6 +21,8 @@ SUBSCRIPTIONS_FILE = paths.data("push_subscriptions.json")
 # Required by the Web Push spec (an "audience" contact for the push service to reach if it needs to complain about
 # this key being misused) — not a real inbox, never emailed by anything here.
 VAPID_CLAIMS = {"sub": "mailto:jervis-app@example.invalid"}
+PUSH_TTL = 120       # seconds a push service keeps trying a sleeping phone — matches phone_control.SESSION_TTL
+PUSH_TIMEOUT = 5     # seconds to wait on one push service before giving up on that phone
 
 _vapid_lock = threading.Lock()
 _vapid_instance = None
@@ -116,12 +118,18 @@ def send_to_all(store: SubscriptionStore, title: str, body: str, tag: str = "", 
     from pywebpush import webpush, WebPushException
     payload = json.dumps({"title": title, "body": body, "tag": tag or "jervis", "at": time.time(),
                           "actions": actions or [], "data": data or {}})
-    sent = 0
-    for subscription_info in store.list():
+    vapid = _vapid()
+    results = []
+
+    def send_one(subscription_info: dict) -> None:
         try:
-            webpush(subscription_info=subscription_info, data=payload, vapid_private_key=_vapid(),
-                   vapid_claims=dict(VAPID_CLAIMS))
-            sent += 1
+            # Urgency high: without it Android's Doze may hold a "normal" push for minutes. A real TTL: pywebpush's
+            # default of 0 means "deliver this instant or drop it", which silently loses pushes to a sleeping phone.
+            # A timeout: one slow push service must not stall the others (they're sent in parallel below anyway).
+            webpush(subscription_info=subscription_info, data=payload, vapid_private_key=vapid,
+                    vapid_claims=dict(VAPID_CLAIMS), ttl=PUSH_TTL, timeout=PUSH_TIMEOUT,
+                    headers={"Urgency": "high"})
+            results.append(True)
         except WebPushException as e:
             status = getattr(getattr(e, "response", None), "status_code", None)
             if status in (404, 410):   # the push service says this subscription no longer exists
@@ -130,4 +138,10 @@ def send_to_all(store: SubscriptionStore, title: str, body: str, tag: str = "", 
                 print(f"Push notification failed: {e}", flush=True)
         except Exception as e:
             print(f"Push notification failed: {e}", flush=True)
-    return sent
+
+    threads = [threading.Thread(target=send_one, args=(s,), daemon=True, name="push-send") for s in store.list()]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(PUSH_TIMEOUT + 2)
+    return len(results)
