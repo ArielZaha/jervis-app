@@ -79,6 +79,9 @@ def test_send_to_all_calls_webpush_once_per_subscription(monkeypatch, store):
     assert sent == 2
     assert len(calls) == 2
     assert all(json_has_title(c["data"]) for c in calls)
+    # Delivered promptly to a sleeping phone, and never stalled forever on one slow push service.
+    assert all(c["headers"] == {"Urgency": "high"} for c in calls)
+    assert all(c["ttl"] == push.PUSH_TTL > 0 and c["timeout"] == push.PUSH_TIMEOUT for c in calls)
 
 
 def json_has_title(data: str) -> bool:

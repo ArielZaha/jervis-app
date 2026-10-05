@@ -59,6 +59,11 @@
         '<p>Jervis knows on your computer too. You can close this page, or keep talking to Jervis here.</p>' +
         '<div class="actions"><a class="link-btn" id="openBtn">Open Jervis</a></div>';
       $("openBtn").href = `/?session=${encodeURIComponent(sessionId)}&decision=confirm`;
+      // Straight into the chat when this phone's pairing is already on this origin (same storage phone_client.html
+      // reads) — no second tap. Without it the chat page could only say "not recognized", so stay here instead.
+      let paired = false;
+      try { paired = !!localStorage.getItem("jervis_device"); } catch { /* storage blocked: keep the button */ }
+      if (paired) location.replace($("openBtn").href);
     } else if (decision === "reject" && ok) {
       card.innerHTML = '<div class="status-icon">✕</div><h1>Connection cancelled.</h1>' +
         '<p>Nothing was connected. You can close this page.</p>';

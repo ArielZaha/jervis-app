@@ -144,6 +144,13 @@
           <button class="stop-btn" id="stopBtn" type="button" title="Stop talking and listen to me (Space)" aria-label="Stop talking and listen">
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.2"/></svg>
           </button>
+          <div class="speak-vol" id="speakVol">
+            <button class="speak-vol-btn" id="speakVolBtn" type="button" aria-pressed="false" aria-label="Mute Jervis's voice">
+              <svg class="ic-loud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4h3l4 4V6l-4 4H4z"/><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/></svg>
+              <svg class="ic-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4h3l4 4V6l-4 4H4z"/><path d="M16 9l5 5M21 9l-5 5"/></svg>
+            </button>
+            <input type="range" id="speakVolSlider" min="0" max="100" step="1" value="100" aria-label="Jervis's speaking volume" />
+          </div>
           </div>
           <p class="mic-hint"><span id="pillText">Microphone on</span> · press <kbd>M</kbd> to <span id="buttonHint">mute</span> · <kbd>/</kbd> to type</p>
         </div>

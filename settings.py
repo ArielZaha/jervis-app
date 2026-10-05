@@ -53,6 +53,10 @@ SCHEMA = [
     {"key": "JERVIS_VOICE", "section": "Voice", "label": "Jervis's voice", "type": "voice", "default": ""},
     {"key": "JERVIS_WAKE_WORD", "section": "Voice", "label": "Wait for “Hey Jervis”", "type": "toggle",
      "default": "on", "help": "Off: Jervis listens all the time while the microphone is on."},
+    {"key": "JERVIS_SPEAK_VOLUME", "section": "Voice", "label": "Speaking volume", "type": "text", "default": "100",
+     "help": "0-100. Set from the speaker control next to the microphone button.", "advanced": True},
+    {"key": "JERVIS_SPEAK_MUTED", "section": "Voice", "label": "Mute Jervis's voice", "type": "toggle",
+     "default": "off", "advanced": True},
     # --- Computer control ---
     {"key": "JERVIS_COMPUTER_CONTROL", "section": "Computer control", "label": "Let Jervis use the mouse and keyboard",
      "type": "choice", "default": "ask",
@@ -265,6 +269,9 @@ def validate(key: str, value) -> str:
         raise ValueError(f"{item['label']}: choose one of the listed options")
     if item["type"] == "toggle" and value not in ("on", "off"):
         raise ValueError(f"{item['label']} must be on or off")
+    if key == "JERVIS_SPEAK_VOLUME":
+        if not value.isdigit() or not 0 <= int(value) <= 100:
+            raise ValueError(f"{item['label']} must be a number from 0 to 100")
     if any(ch in value for ch in "\r\n\0"):
         raise ValueError(f"{item['label']} can't contain line breaks")
     return value

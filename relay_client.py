@@ -17,8 +17,9 @@ import paths
 import phone_session
 
 IDENTITY_FILE = paths.data("relay_identity.json")
-RECONNECT_MIN = 2
-RECONNECT_MAX = 30
+RECONNECT_MIN = 1
+RECONNECT_MAX = 5    # kept short: while this side is reconnecting, every phone just sees "Jervis isn't reachable"
+PING_INTERVAL = 10   # a link that died silently (laptop sleep, Wi-Fi change) is noticed within ~20s, not ~40s
 
 
 def load_or_create_computer_id() -> str:
@@ -55,6 +56,7 @@ class RelayClient:
         self.get_local_address = get_local_address   # () -> str ; this computer's current http://lan-ip:port
         self._ws = None
         self._loop = None
+        self._tasks = set()   # in-flight _on_message tasks, held so they aren't garbage-collected mid-run
 
     def deliver_reply(self, session_id: str, text: str) -> None:
         self.router.deliver_reply(session_id, text)
@@ -98,12 +100,18 @@ class RelayClient:
                 continue
             self.router.forget_matching(lambda c: c.startswith("relay:"))   # a fresh relay connection means
             try:                                                            # every old relay connId is dead
-                async with websockets.connect(self.relay_url, max_size=phone_session.VOICE_MAX_BYTES + 4096) as ws:
+                async with websockets.connect(self.relay_url, max_size=phone_session.VOICE_MAX_BYTES + 4096,
+                                              ping_interval=PING_INTERVAL, ping_timeout=PING_INTERVAL) as ws:
                     self._ws = ws
                     await ws.send(json.dumps({"type": "hello", "role": "computer", "computerId": self.computer_id}))
                     delay = RECONNECT_MIN
                     async for message in ws:
-                        await self._on_message(message)
+                        # Its own task, not awaited inline: a phone command runs in an executor and can take
+                        # seconds, and every other phone's attach, /decide and page load would queue behind it.
+                        # Tasks still start in arrival order, so one phone's attach/voice frames stay in sequence.
+                        task = asyncio.ensure_future(self._on_message(message))
+                        self._tasks.add(task)
+                        task.add_done_callback(self._tasks.discard)
             except (websockets.exceptions.WebSocketException, OSError):
                 pass
             self._ws = None
