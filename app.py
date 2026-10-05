@@ -60,6 +60,12 @@ import local_ai
 import stt_local
 import blender_commands
 import blender_control
+import agent_blender
+import agent_core
+import agent_memory
+import agent_minecraft
+import reasoning
+import nlu
 import computer_use
 import spotify_local
 import osal
@@ -2139,7 +2145,8 @@ _BROWSERS = {"chrome", "google chrome", "browser", "the browser", "my browser", 
 _COMPOUND = re.compile(
     r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
     r"(?:open|launch|start)\s+(?:up\s+)?(?:the\s+)?(.+?)(?:\s+(?:app|application))?\s+(?:and\s+then|and|then)\s+"
-    r"((?:play|watch|put on|write|type|draft|compose|search|find|set|remind|pause|stop|resume|go|skip|jump|turn|make|create|show|listen)\b.*)$")
+    r"((?:play|watch|put on|write|type|draft|compose|search|find|set|remind|pause|stop|resume|go|skip|jump|turn|make|create|show|listen|"
+    r"build|construct|model|design|place|sculpt|add|put)\b.*)$")
 
 
 def split_open_and_do(text: str):
@@ -2172,6 +2179,12 @@ def handle_compound_command(text: str):
             action = f"{action} on {service}"  # playing there opens the app or site by itself
             result = handle_direct_command(action)
             return result or f"I couldn't work out '{action}'."
+    status, value = resolve_app(target)
+    if status == "ok" and "blender" in value.lower():
+        # "Open Blender and build a house": open it with its bridge; the build waits for it, then runs the agent.
+        open_blender_in_background()
+        result = handle_direct_command(action)
+        return f"Opening {value}. {result}" if result else f"Opening {value}."
     opened = open_application(target)
     remember_media_app(target)
     result = handle_direct_command(action)
@@ -2183,7 +2196,8 @@ chat_history = None   # the conversation the main loop keeps, so a part that isn
 _multi_active = False
 _TASK_START = (r"(?:draw|drew|graph|plot|sketch|paint|solve|find|calculate|compute|factor|expand|simplify|open|close|play|pause|stop|resume|skip|set|start|"
                r"cancel|remind|write|read|check|tell|show|what|what's|whats|how|who|where|when|why|search|google|turn|mute|unmute|send|make|create|give|"
-               r"explain|list|translate|convert|remember|call|text|schedule|add|remove|delete|type|launch|switch|go|save|put|bring|take)")
+               r"explain|list|translate|convert|remember|call|text|schedule|add|remove|delete|type|launch|switch|go|save|put|bring|take|"
+               r"build|construct|model|design|place|in blender)")
 _TASK_SPLIT = re.compile(
     rf"(?:\s*[.;!?]+\s+(?:(?:and|then|also)\s+(?:then\s+|also\s+)?)?|\s*,\s*(?:and\s+)?(?:then\s+|also\s+)?|\s+(?:and\s+then|and\s+also|and|then|also|after\s+that|afterwards|plus)\s+)(?=(?i:{_TASK_START})\b)",
     re.I)
@@ -2202,8 +2216,11 @@ def handle_multi_task(text: str):
     if _multi_active or pending_confirmation or pending_dictation:
         return None
     if _CONTROL_EXPLICIT.match(text or "") or _CONTROL_PREAMBLE.match(text or ""):
-        return None   # "take control of my computer and open Notepad": the "and" joins the request to its goal
-    parts = split_tasks(text)
+        goal = parse_computer_task(text) or ""
+        if not re.search(r"\bblender\b", goal, re.I):
+            return None   # "take control of my computer and open Notepad": the "and" joins the request to its goal
+        text = goal   # "take control, open Blender, then make the cube bigger": each part on its own, in order
+    parts = [p for p in split_tasks(text) if not _CONTROL_BARE.match(p)]   # "take on my computer, then …"
     if len(parts) < 2 or split_open_and_do(text):
         return None
     _multi_active = True
@@ -2249,7 +2266,8 @@ class _SettingUp:
 
 
 # ---------- Computer control: Jervis using the mouse and keyboard (see computer_use.py) ----------
-computer_task = None            # the ComputerTask (or ScriptedTask/BlenderComputerTask) currently mid-run, if any
+computer_task = None            # the ComputerTask (or ScriptedTask/AgentTask) currently mid-run, if any
+agent_memory_store = agent_memory.Memory()   # requests the agent fully verified before: examples for similar ones
 control_session = None          # the persistent computer_use.ControlSession, once "take control" has been granted
 _control_questions = {}         # question id -> (threading.Event, {"answer": bool | None})
 pending_control_question = None  # {"id", "at"}: the next "yes"/"no" said answers it
@@ -2298,7 +2316,7 @@ _CONTROL_RESUME = re.compile(r"(?:continue|resume|go on|go ahead|carry on|keep g
 _SESSION_ACTION_VERB = re.compile(
     r"\b(open|create|make|add|click|type|press|scroll|save|duplicate|move|delete|remove|close|switch|arrange|put|"
     r"build|draw|set|change|turn|select|rotate|scale|resize|rename|group|render|export|undo|redo|go to|go back|"
-    r"bring)\b", re.I)
+    r"bring|colou?r|paint|spin)\b", re.I)
 _SESSION_QUESTION = re.compile(
     # "do"/"does"/"is"/"are" only count as a question starter before a subject ("do you", "is it true") — not before
     # an object pronoun ("do that again", "do it"), which is an imperative repeat command, not a question.
@@ -2345,8 +2363,8 @@ def computer_environment():
     return computer_use.Environment()   # available() explains it isn't supported here
 
 
-LOCAL_CONTROL_STEPS = 12   # plain GUI clicking with the small local model: kept tight, since unproductive clicks
-                           # compound fast and aren't individually verified the way Blender actions are.
+LOCAL_CONTROL_STEPS = 20   # plain GUI clicking with the local agent model (a 7B when installed): unproductive clicks
+                           # compound, and aren't individually verified the way agent (Blender) steps are.
 # Blender work is different: most of it goes through blender_commands.py's deterministic, verified one-shot
 # actions, which never touch this budget at all (see ScriptedTask). This ceiling only matters for the minority of
 # requests that genuinely need BlenderComputerTask's free-form multi-step reasoning ("build a simple house"), where
@@ -2362,7 +2380,7 @@ def local_llm_only() -> bool:
 
 def _ask_ai_for_control(messages, tools):
     try:
-        return groq_chat(model=GROQ_MODEL, messages=messages, tools=tools, tool_choice="required")
+        return groq_chat(model=GROQ_MODEL, messages=messages, tools=tools, tool_choice="required", role="agent")
     except Exception as e:
         log_ai_error(e)
         raise computer_use.AIError(groq_error_reply(e)) from e
@@ -2526,7 +2544,8 @@ def _which_app_first(goal: str):
     return value[:4] if status == "ambiguous" else None
 
 
-def start_computer_task(goal: str, scripted=None, after=None, persistent: bool = False, blender: bool = False) -> str:
+def start_computer_task(goal: str, scripted=None, after=None, persistent: bool = False, blender: bool = False,
+                        agent_adapter=None) -> str:
     """Use the mouse and keyboard for `goal`: worked out step by step by the AI, or, with `scripted`, a list of
     known steps (see computer_use.ScriptedTask). Either way: asked first (Settings), shown, and stoppable.
 
@@ -2571,7 +2590,9 @@ def start_computer_task(goal: str, scripted=None, after=None, persistent: bool =
                 blender_open = value
 
     question = "Can I use your mouse and keyboard?" if bare else f"Can I use your mouse and keyboard to {goal}?"
-    ask_id = open_control_question(question) if (mode != "on" and not already_active) else None
+    # Blender work through its scripting bridge never touches the mouse or keyboard: nothing to ask permission for.
+    code_only = blender and not bare and (blender_launching() or blender_control.BlenderBridge().ping(timeout=1.5))
+    ask_id = open_control_question(question) if (mode != "on" and not already_active and not code_only) else None
 
     def report(state: dict) -> None:
         # Between goals in a persistent session, "completed"/"error" would read (and look, in the overlay) as
@@ -2621,9 +2642,18 @@ def start_computer_task(goal: str, scripted=None, after=None, persistent: bool =
                                or session.blender is not None)
 
             task = None
-            if task_scripted:
+            if agent_adapter is not None:
+                # An app with its own agent adapter (Minecraft...): plan -> act -> verify -> repair, agent_core.py.
+                task = agent_core.AgentTask(goal, agent_adapter(), report=report, confirm=ask_control_question,
+                                            history=session.history, memory=agent_memory_store)
+            elif task_scripted:
                 task = computer_use.ScriptedTask(goal, task_scripted, report=report, cursor=spotify_local.cursor)
             elif blender_context:
+                launching = blender_launch
+                if launching is not None and launching.is_alive():
+                    report({"state": "starting", "detail": "Waiting for Blender to open…", "goal": goal, "step": 0,
+                            "maxSteps": 0})
+                    launching.join(blender_control.LAUNCH_SECONDS)   # never start a second Blender meanwhile
                 bridge = blender_control.ensure_bridge(session, confirm=ask_control_question)
                 if not bridge:   # Blender unreachable, or the user declined restarting it: fall back to plain clicking
                     task = computer_use.ComputerTask(goal, env, _ask_ai_for_control, report=report,
@@ -2640,7 +2670,12 @@ def start_computer_task(goal: str, scripted=None, after=None, persistent: bool =
                         result = blender_commands.clarification_for(goal)
                         computer_task = None
                         report({"state": "listening", "detail": result, "goal": "", "step": 0, "maxSteps": 0})
-                    else:
+                    elif local_llm.role_model("agent"):
+                        # Plan -> build with the kit -> verify against the real scene -> repair (agent_core.py).
+                        task = agent_core.AgentTask(goal, agent_blender.BlenderAdapter(bridge, session),
+                                                    report=report, confirm=ask_control_question,
+                                                    history=session.history, memory=agent_memory_store)
+                    else:   # no local model yet (only the online AI): the older step-by-step Blender loop
                         task = computer_use.BlenderComputerTask(goal, env, _ask_ai_for_control, bridge,
                                                                 session=session, report=report,
                                                                 confirm=ask_control_question, vision=vision,
@@ -2690,6 +2725,8 @@ def start_computer_task(goal: str, scripted=None, after=None, persistent: bool =
         return "Sure, I'm ready."
     if already_active:
         return "Okay."
+    if code_only:
+        return "On it."   # the verified result is announced when it's done
     return (f"Okay, I'm using the computer to {goal}. Move the mouse, press {computer_use.STOP_SHORTCUT}, "
             "or say stop to take over.")
 
@@ -2754,6 +2791,9 @@ def handle_direct_command(text: str):
     blender_reply = handle_blender_command(text)
     if blender_reply:
         return blender_reply
+    game_reply = handle_minecraft_command(text)
+    if game_reply:
+        return game_reply
     spotify = handle_spotify_search(text)   # before splitting "take control and search … in Spotify" into parts
     if spotify:
         return spotify
@@ -2987,15 +3027,7 @@ def handle_direct_command(text: str):
         # session or a future one) never has to restart it and ask first — see blender_control.ensure_bridge.
         blender_status, blender_value = resolve_app(app_name)
         if blender_status == "ok" and "blender" in blender_value.lower():
-            global blender_launch
-
-            def _attach_bridge_once_ready(value=blender_value):
-                bridge = blender_control.launch_with_bridge()   # slow (Blender can take a while): off the voice thread
-                if bridge and session_active():
-                    control_session.blender = bridge
-            blender_launch = threading.Thread(target=_attach_bridge_once_ready, daemon=True,
-                                              name="blender-bridge-launch")
-            blender_launch.start()
+            open_blender_in_background()
             opened = f"Opening {blender_value}."
         else:
             opened = open_application(app_name)
@@ -3048,16 +3080,55 @@ def is_blender_goal(goal: str, said: str = "") -> bool:
     """A concrete Blender instruction ("create a cube", "make the cube bigger"), with Blender open (or opening), or
     with "Blender" said outright. Not "take control …" or "open Blender …" sentences: those have their own paths."""
     said = said or goal
+    named = bool(re.search(r"\bblender\b", said, re.I))
+    if goal and _BLENDER_HOUSEKEEPING.fullmatch(goal) and (named or time.time() - blender_last_used <
+                                                           BLENDER_RECENT_SECONDS):
+        return True   # "undo" / "do it again" right after working in Blender means Blender's last change
     if not goal or not looks_like_session_goal(goal) or _is_explicit_control_phrase(said):
         return False
     if re.search(r"\b(?:open|launch|start)\s+(?:up\s+)?blender\b", said, re.I):
         return False
     known = blender_commands.is_command(goal)
-    if not (known or (_BLENDER_THING.search(said) and blender_commands.looks_concrete(goal))):
+    thing = bool(_BLENDER_THING.search(said)) and blender_commands.looks_concrete(goal)
+    build = (bool(_BUILD_REQUEST.match(goal)) and blender_commands.looks_concrete(goal)
+             and not _NOT_BLENDER.search(goal))
+    if not (known or thing or build):
         return False
-    named = bool(re.search(r"\bblender\b", said, re.I))
-    launching = blender_launch is not None and blender_launch.is_alive()
-    return (known and named) or launching or blender_control.blender_running()
+    if named or blender_launching():
+        return True
+    if not blender_control.blender_running():
+        return False
+    if known or thing:
+        return True
+    # "Make a car" with Blender merely open somewhere could mean anything: only when Blender is what's being worked in.
+    return time.time() - blender_last_used < BLENDER_RECENT_SECONDS or app_in_front("blender")
+
+
+_BUILD_REQUEST = re.compile(r"^(?:please |can you |could you |now |then |also )*(?:create|make|build|model|design|"
+                            r"add|draw|generate|construct|put|place|give me|sculpt|colou?r|paint|rotate|spin|scale|"
+                            r"resize|duplicate|rename|move|delete|remove|stack|arrange|align)\b", re.I)
+# "Remove the timer" / "move the song to my playlist" with Blender in front are still not about the scene.
+_NOT_BLENDER = re.compile(r"\b(?:timers?|alarms?|songs?|music|tracks?|volume|reminders?|playlists?|videos?|tabs?|"
+                          r"windows? (?:of|in) (?:chrome|the browser)|emails?|messages?|events?|meetings?)\b", re.I)
+BLENDER_RECENT_SECONDS = 15 * 60
+_BLENDER_HOUSEKEEPING = re.compile(r"(?:please )?(?:undo|redo)(?: (?:that|it|the last (?:change|action|step)))?|"
+                                   r"do (?:that|it) again|again|one more time|save(?: (?:it|the (?:file|project|scene)))?",
+                                   re.I)
+blender_last_used = 0.0
+
+
+def app_in_front(name: str) -> bool:
+    """Is `name` (e.g. "blender", "minecraft") the app the user is working in?"""
+    window = app_launcher.front_app_window()
+    if not window:
+        return False
+    hwnd, title, friendly = window
+    try:
+        import winctl
+        exe = winctl.window_process_name(hwnd) or ""
+    except Exception:
+        exe = ""
+    return name.lower() in f"{title} {friendly} {exe}".lower()
 
 
 def run_blender_directly(goal: str):
@@ -3065,9 +3136,8 @@ def run_blender_directly(goal: str):
     well under a second, and checked against Blender's real state before saying so. None if this can't handle it
     (no bridge, or not a command blender_commands.py knows), so the caller falls back to the slower paths."""
     global blender_session
-    launching = blender_launch
-    if launching is not None and launching.is_alive():
-        launching.join(blender_control.LAUNCH_SECONDS)   # "open Blender, then create a cube": wait for it to open
+    if blender_launching():
+        return None   # still opening: the task thread waits for it (start_computer_task), the voice thread doesn't
     bridge = blender_control.BlenderBridge()
     if not bridge.ping(timeout=1.5):
         return None
@@ -3093,12 +3163,89 @@ def run_blender_directly(goal: str):
     return " ".join(r for r in results if r)
 
 
+def open_blender_in_background() -> None:
+    """Open Blender with its scripting bridge (slow: off the voice thread). A request said meanwhile ("open Blender
+    and build a house") waits for it in run_blender_directly; the agent model is loaded into the GPU in parallel."""
+    global blender_launch, blender_last_used
+
+    def launch():
+        bridge = blender_control.launch_with_bridge()
+        if bridge and session_active():
+            control_session.blender = bridge
+    blender_last_used = time.time()
+    blender_launch = threading.Thread(target=launch, daemon=True, name="blender-bridge-launch")
+    blender_launch.start()
+    threading.Thread(target=prime_blender_agent, daemon=True, name="agent-warm-up").start()
+
+
+def blender_launching() -> bool:
+    return blender_launch is not None and blender_launch.is_alive()
+
+
+def prime_blender_agent() -> None:
+    agent_core.AgentTask("", agent_blender.BlenderAdapter(None)).prime()
+
+
 def handle_blender_command(text: str):
+    global blender_last_used
     goal = blender_commands.normalize(text)
     if not is_blender_goal(goal, said=text):
         return None
+    blender_last_used = time.time()
     # The chat AI can't touch Blender and would only claim it did: this never reaches it.
-    return run_blender_directly(goal) or start_computer_task(goal, persistent=True, blender=True)
+    direct = run_blender_directly(goal)
+    if direct:
+        threading.Thread(target=prime_blender_agent, daemon=True).start()   # ready for a bigger request next
+        return direct
+    understood = understand_blender_command(text)
+    if understood:
+        return understood
+    return start_computer_task(goal, persistent=True, blender=True)
+
+
+# "Make it nicer / more realistic": real requests for the modelling agent's inspect-and-refine, never a question.
+_BLENDER_REFINE = re.compile(r"\b(?:nicer|better|prettier|cooler|cuter|improve|polish|refine|realistic|detailed|"
+                             r"beautiful|interesting|more (?:detail|realism|style))\b", re.I)
+
+
+def understand_blender_command(text: str):
+    """A Blender command the quick commands didn't recognise as said ("put more size on the cube"): if the language
+    model reads it as one of them, run that (instant, exact) instead of the modelling agent — which, given a
+    one-line edit, can plan something else entirely. Unclear ("make it", "do the thing"): ask. None: the agent."""
+    global pending_clarify
+    if _BLENDER_REFINE.search(text) or not nlu.worth_understanding(text) or text.lower().startswith("in blender, "):
+        return None    # (the last: already the language model's own reading of a build request)
+    try:
+        kind, value = nlu.interpret(text, language_context(), local_llm.chat_json)
+    except Exception as e:
+        print(f"Language understanding unavailable: {str(e)[:120]}", flush=True)
+        return None
+    print(f"Understood Blender request {text!r} as {kind}: {value!r}", flush=True)
+    if kind == "command" and blender_commands.is_command(value):
+        return run_blender_directly(blender_commands.normalize(value))
+    if kind == "clarify":
+        pending_clarify = {"said": text, "question": value, "at": time.time()}
+        return value
+    return None
+
+
+_GAME_ACTION = re.compile(r"^(?:please |can you |could you |now |then |also )*(?:create|make|build|construct|put|"
+                          r"place|give me|summon|spawn|teleport|tp|set|change|turn|fill|clear|dig|make it)\b", re.I)
+
+
+def handle_minecraft_command(text: str):
+    """"Build a stone tower" while playing Minecraft (or "… in Minecraft"): the agent, with the Minecraft adapter."""
+    named = bool(re.search(r"\bminecraft\b", text or "", re.I))
+    goal = re.sub(r",?\s*\b(?:in|on|inside)\s+minecraft\b,?", " ", text or "", flags=re.I)
+    goal = re.sub(r"^(?:(?:okay|ok|so|now|hey|jervis|jarvis)\b[,.!]?\s*)+", "", " ".join(goal.split())).strip(" ,.!?")
+    if not goal or not _GAME_ACTION.match(goal) or not looks_like_session_goal(goal):
+        return None
+    if not (named or app_in_front("minecraft")):
+        return None
+    if not app_launcher.app_windows("Minecraft"):
+        return "Minecraft isn't open. Start a world first, then ask me again." if named else None
+    threading.Thread(target=local_llm.warm_up, args=("agent",), daemon=True).start()
+    return start_computer_task(goal, persistent=True, agent_adapter=agent_minecraft.MinecraftAdapter)
 
 
 def _install_blender_bridge() -> None:
@@ -3331,7 +3478,13 @@ def spotify_playback_action(text: str):
         return None
     if youtube_active or netflix_active or stremio_active:
         return None
-    return action if (spotify_active or spotify_is_playing()) else None
+    if spotify_active or spotify_is_playing():
+        return action
+    # Paused in a Spotify the user opened themselves: "resume the music" / "continue the song" (but not a bare
+    # "continue", which could mean anything) still means Spotify when it's running.
+    if action == "resume" and re.search(r"\b(music|song|track|spotify)\b", n) and spotify_local.running():
+        return action
+    return None
 
 
 def pause_music(**kwargs) -> str:
@@ -3661,6 +3814,7 @@ SYSTEM_PROMPT = """You are Jervis, an AI desktop assistant.
 - get_weather answers a direct weather question with the city set in Settings. Call it only when the user is actually asking about the weather.
 - After using a tool, give the user a short natural spoken confirmation.
 - Keep casual answers concise and natural, never emoji.
+- Reply in English. Only when the user's message is written in Hebrew, reply in Hebrew.
 - When you recommend a movie or series, always write its exact title in **bold**.
 - When the user asks to be taught something, or asks for an explanation, steps, a list or a comparison, answer in clean, well-organized Markdown that is shown on screen: start with ONE short spoken-style sentence, then a few short bullet points or a numbered list, with **bold** for the key terms. Use a table only to compare several things across the same columns, with the header row and the |---| separator row each on their own line. Keep it under about 150 words unless the user asks for more, and end with one short follow-up question.
 - Math (any calculation, equation or word problem) is ALWAYS answered in this exact layout, every part on its own line, and no follow-up question. Write ALL formulas in LaTeX between dollar signs, and put each display formula alone on its own line between $$ and $$:
@@ -4093,6 +4247,8 @@ def local_ai_status_reply() -> str:
 
 def groq_error_reply(error: Exception) -> str:
     if isinstance(error, local_llm.LocalAIUnavailable):
+        if "ReadTimeout" in str(error):   # it's running, just busy (a long Blender build on the same GPU)
+            return "My local AI is busy with another job and didn't answer in time. Ask me again in a moment."
         return local_ai_status_reply()
     status = getattr(error, "status_code", None)
     if status in (401, 403):
@@ -4186,13 +4342,14 @@ def groq_chat(**kwargs):
     After a failure the online AI is skipped for a few minutes, so every question isn't delayed by timeouts.
     """
     global groq_down_until
+    role = kwargs.pop("role", "chat")   # which local model does this job (see local_llm.model_for)
     if "gpt-oss" in str(kwargs.get("model", "")):  # a "thinking" model: keep the thinking short, it counts against the limit
         kwargs.setdefault("reasoning_effort", "low")
         kwargs.setdefault("max_tokens", 1500)
     if LLM_BACKEND == "ollama":
-        return local_llm.chat(**kwargs)
+        return local_llm.chat(role=role, **kwargs)
     if LLM_BACKEND == "auto" and time.time() < groq_down_until:
-        return local_llm.chat(**kwargs)
+        return local_llm.chat(role=role, **kwargs)
     try:
         return _groq_chat_with_retry(**kwargs)
     except Exception as e:
@@ -4201,7 +4358,7 @@ def groq_chat(**kwargs):
         if LLM_BACKEND == "auto" and is_model_glitch(e):
             try:
                 print("The online AI glitched twice; using the local AI for this answer.", flush=True)
-                return local_llm.chat(**kwargs)
+                return local_llm.chat(role=role, **kwargs)
             except local_llm.LocalAIUnavailable:
                 raise e
         if LLM_BACKEND != "auto" or status in (400, 404, 422):  # a bad request is not a reason to switch AI
@@ -4209,7 +4366,7 @@ def groq_chat(**kwargs):
         groq_down_until = time.time() + (60 if status == 429 else 300)
         print(f"Online AI unavailable ({type(e.__cause__ or e).__name__}); switching to the local AI for a while.", flush=True)
         try:
-            return local_llm.chat(**kwargs)
+            return local_llm.chat(role=role, **kwargs)
         except local_llm.LocalAIUnavailable as local_problem:
             groq_down_until = 0.0  # nothing to switch to: try the online AI again next time
             if status == 429:
@@ -4269,13 +4426,32 @@ _CLAIMS_ACTION = re.compile(
     r"i(?: have|'ve)? (?:selected|scaled|resized|rotated|colou?red|painted)\b|"
     r"i(?: have|'ve)? (?:created|added|moved|deleted|made) (?:a|an|the|your) (?:cube|sphere|cylinder|cone|object|"
     r"mesh|shape)\b|"
-    r"(?:^|[.!] )(?:scaling|resizing|creating|adding|moving|rotating|colou?ring|deleting) (?:the|a|an|it|your)\b)", re.I)
+    r"(?:^|[.!] )(?:scaling|resizing|creating|adding|moving|rotating|colou?ring|deleting) (?:the|a|an|it|your)\b|"
+    # Jervis's own command replies start "Done —": the chat model copies them from the history ("Done — Cube.002 is
+    # taller now.") for something that never ran
+    r"^done\b|\b(?:is|are) (?:now (?:taller|shorter|bigger|smaller|wider|narrower|larger|thinner)\b|"
+    r"(?:taller|shorter|bigger|smaller|wider|narrower|larger|thinner) now\b)|"
+    r"\bi(?: have|'ve)? (?:made|undid|undone|duplicated) (?:it|that|the|a|an)\b)", re.I)
+
+
+def with_verified_math(messages: list, user_text: str) -> list:
+    """For a question with numbers in it, the exact answer worked out in code (reasoning.py), handed to the AI as a
+    fact for this one answer — so the explanation can be its own, but the numbers are right."""
+    if not reasoning.looks_quantitative(user_text) or not local_llm.role_model("agent"):
+        return messages
+    facts = reasoning.verified_facts(user_text, local_llm.chat_json)
+    if not facts:
+        return messages
+    print(f"Verified math: {facts}", flush=True)
+    note = {"role": "system", "content": f"Exact result, computed in code for the user's last question: {facts} "
+                                         "Use exactly these numbers in your answer."}
+    return messages[:-1] + [note] + messages[-1:] if messages else messages
 
 
 def ask_jervis(messages, user_text=""):
     tools, tool_choice = select_tools(user_text)
     try:
-        kwargs = {"model": GROQ_MODEL, "messages": trim_for_ai(messages)}
+        kwargs = {"model": GROQ_MODEL, "messages": trim_for_ai(with_verified_math(messages, user_text))}
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice
@@ -4307,8 +4483,8 @@ def ask_jervis(messages, user_text=""):
                          or is_app_command(user_text))
         if content and (action_shaped or _CLAIMS_ACTION.search(content)):
             print("The AI answered in text instead of acting on a request that needed a tool; replaced.", flush=True)
-            return ("I didn't do anything on your computer for that. Say it as a command, like “play Jane on Spotify” "
-                    "or “use my computer to open Downloads”.")
+            return ("I didn't do anything on your computer for that. Say it as a command, like “make it taller”, "
+                    "“play Jane on Spotify” or “use my computer to open Downloads”.")
         return content if content else "I'm listening. How can I help?"
 
     messages.append({
@@ -4512,19 +4688,20 @@ def transcribe_groq(wav_bytes: bytes) -> str:
     No `prompt` on purpose: with silence or noise Whisper echoes the prompt back
     ("Play a song."), which would fire commands from background noise.
     """
+    language = stt_local.whisper_language()    # JERVIS_STT_LANGUAGE: "en" unless Hebrew speech was turned on
     result = groq_client.audio.transcriptions.create(
         file=("speech.wav", wav_bytes),
         model=STT_MODEL,
-        language="en",
         temperature=0.0,
         timeout=15,
+        **({"language": language} if language else {}),
     )
     return (result.text or "").strip()
 
 
 def transcribe_google(audio) -> str:
     try:
-        return recognizer.recognize_google(audio, language="en-US").strip()
+        return recognizer.recognize_google(audio, language="he-IL" if stt_local.LANGUAGE == "he" else "en-US").strip()
     except sr.UnknownValueError:
         return ""
 
@@ -4555,7 +4732,7 @@ def transcribe(audio, passive=False) -> str:
         cleaned = " ".join(re.sub(r"[^a-z0-9' ]", " ", text.lower()).split())
         if cleaned in WHISPER_HALLUCINATIONS:
             return ""
-        return text
+        return nlu.latin_names(text)   # Hebrew speech: "היי ג'רביס" -> "hey Jervis", so the wake phrases still work
     return ""
 
 
@@ -4732,6 +4909,97 @@ def speak(text):
             send_status("idle")
 
 
+# ---------------------------------------------------------------- language understanding (nlu.py)
+# Speech -> STT -> deterministic rewrite (Hebrew, mixed, known speech slips) -> the command handlers -> if still
+# unhandled and it reads like a command: the local model's structured intent -> validated -> canonical English ->
+# the same handlers. The model only ever picks from a closed set of intents; it never writes code that runs.
+
+SAY_NOTHING = PrivateReply("")      # handle_command's answer for speech that wasn't meant for Jervis
+CLARIFY_SECONDS = 90                # how long an answer to "Which colour?" still belongs to the unclear command
+last_command = {"text": None, "at": 0.0}
+pending_clarify = None              # {"said", "question", "at"} after Jervis asked what an unclear command meant
+
+
+def language_context() -> dict:
+    """What "it", "the second one", "go back" and "again" can refer to — small, so the model call stays fast."""
+    context = {}
+    try:
+        window = app_launcher.front_app_window()
+        if window:
+            context["app_in_front"] = (window[2] or window[1] or "")[:60]
+    except Exception:
+        pass
+    session = control_session if session_active() else blender_session
+    if session is not None and getattr(session, "blender_objects", None):
+        context["blender_objects"] = [o["name"] for o in session.blender_objects[-8:]]
+        if session.blender_focus:
+            context["blender_focus"] = str(session.blender_focus)[:60]
+    if session_active():
+        context["control_session"] = True
+    if spotify_active or youtube_active:
+        context["music_playing_on"] = "Spotify" if spotify_active else "YouTube"
+    if last_command["text"] and time.time() - last_command["at"] < 15 * 60:
+        context["last_command"] = last_command["text"][:120]
+    return context
+
+
+def _run_command(text):
+    result = handle_direct_command(text)
+    if result:
+        last_command.update(text=str(text), at=time.time())
+    return result
+
+
+def handle_command(text, typed: bool = False):
+    """A reply when Jervis handled `text` as a command (or asked what it meant), SAY_NOTHING for background speech,
+    None for conversation (the chat model answers it, as before)."""
+    global pending_clarify
+    if isinstance(text, ImageCaption):
+        return handle_direct_command(text)
+    pending, pending_clarify = pending_clarify, None
+    if pending and time.time() - pending["at"] > CLARIFY_SECONDS:
+        pending = None
+    rewritten = nlu.rewrite(text)
+    for candidate in ([rewritten] if rewritten else []) + [text]:
+        result = _run_command(candidate)
+        if result:
+            if rewritten and candidate == rewritten:
+                print(f"Understood {text!r} as {rewritten!r}", flush=True)
+            return result
+    if pending and len(text.split()) <= 8 and not nlu.has_hebrew(text):   # "make it" ... "Which way?" ... "taller"
+        result = _run_command(f"{pending['said']} {text}")
+        if result:
+            return result
+    # A bare "taller" / "to the left" while working in Blender is a follow-up, not chat: the chat model can't act,
+    # and once answered "Done — it's taller now" for a change that never happened.
+    follow_up = len(text.split()) <= 4 and time.time() - blender_last_used < BLENDER_RECENT_SECONDS
+    if is_shutdown_command(text) or not (pending or follow_up or nlu.worth_understanding(text)):
+        return None
+    context = language_context()
+    if pending:
+        context.update(unclear_command=pending["said"], you_asked=pending["question"])
+    started = time.time()
+    try:
+        kind, value = nlu.interpret(text, context, local_llm.chat_json)
+    except Exception as e:   # no local AI (or it failed): the chat path answers, and says so if the AI is down
+        print(f"Language understanding unavailable: {str(e)[:120]}", flush=True)
+        return None
+    print(f"Understood {text!r} as {kind}: {value!r} ({time.time() - started:.1f}s)", flush=True)
+    if kind == "command":
+        # English requests for computer control already reach the chat model, which has the control tool and more
+        # (WhatsApp, documents...): only take them over for Hebrew, which used to have no way in.
+        if not nlu.has_hebrew(text) and value.startswith(("use my computer to ", "take control of my computer and ")):
+            return None
+        return _run_command(value)
+    if kind == "clarify":
+        said = f"{pending['said']} {text}" if pending else text
+        pending_clarify = {"said": said, "question": value, "at": time.time()}
+        return value
+    if kind == "ignore" and not typed:
+        return SAY_NOTHING
+    return None
+
+
 def remember_turn(messages: list, user_text: str, reply: str, turn_started: float, private: bool = False) -> None:
     """Put a command Jervis handled himself into the AI's memory, so "read the story" or "shorten it" makes sense later."""
     messages.append({"role": "user", "content": user_text})
@@ -4805,11 +5073,15 @@ def main_loop():
 
         turn_started = time.time()
         try:
-            direct_result = handle_direct_command(text)
+            direct_result = handle_command(text, typed=bool(typed))
         except Exception:
             # A bug in one command must never take the whole assistant down.
             traceback.print_exc()
             direct_result = "Sorry, something went wrong with that command."
+        if direct_result is SAY_NOTHING:
+            print(f"Not for me, staying quiet: {text!r}", flush=True)
+            send_status("idle")
+            continue
         if direct_result:
             broadcast("ai", direct_result)
             reply_to_phone_if_needed(typed, str(direct_result))
@@ -4938,6 +5210,8 @@ if __name__ == "__main__":
     threading.Thread(target=telemetry_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()
     threading.Thread(target=_install_blender_bridge, daemon=True, name="blender-startup-script").start()
+    if LLM_BACKEND in ("ollama", "auto"):   # load the local model now, so the first question doesn't wait for it
+        threading.Thread(target=local_llm.warm_up, args=("chat",), daemon=True, name="model-warm-up").start()
     if os.getenv("JERVIS_SHOW_WINDOW") == "1":  # started with run.py: show the window right away, not only after "Hey Jervis"
         launch_ui()
 
