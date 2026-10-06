@@ -1,4 +1,4 @@
-"""Repair speech-recognition mishearings of the names Jervis has to understand.
+"""Repair speech-recognition mishearings of the names Jarvis has to understand.
 
 Recognizers turn "Stremio" into "Streamio", "Stream here", "Freemio", "Thremial"
 and so on. Fixing them before any command parsing keeps every downstream parser

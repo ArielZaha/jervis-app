@@ -1,5 +1,5 @@
-// Jervis's panels: the first-start setup of the AI, the Settings screen, and the engine banner.
-// They talk to the backend through window.jervisSend() and the 'jervis-message' event (see renderer.js), and to the
+// Jarvis's panels: the first-start setup of the AI, the Settings screen, and the engine banner.
+// They talk to the backend through window.jarvisSend() and the 'jarvis-message' event (see renderer.js), and to the
 // window's main process for things only it can do (open a folder, start at sign-in).
 document.addEventListener('DOMContentLoaded', () => {
   const $ = (id) => document.getElementById(id);
@@ -88,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   $('setupHide').addEventListener('click', () => { setupDismissed = true; closePanel(setupLayer); });
-  $('setupRetry').addEventListener('click', () => { setupDismissed = false; window.jervisSend({ type: 'setup_retry' }); });
+  $('setupRetry').addEventListener('click', () => { setupDismissed = false; window.jarvisSend({ type: 'setup_retry' }); });
   setupChip.addEventListener('click', () => { setupDismissed = false; if (setup) openPanel(setupLayer); });
 
   // =====================================================================================================
@@ -98,9 +98,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let welcomeDone = false;   // this session already continued or skipped it: don't reopen on a reconnect
 
   function welcomeValues() {
-    const values = { JERVIS_WAKE_WORD: $('welcomeWake').checked ? 'on' : 'off' };
+    const values = { JARVIS_WAKE_WORD: $('welcomeWake').checked ? 'on' : 'off' };
     const name = $('welcomeName').value.trim();
-    if (name) values.JERVIS_USER_NAME = name;
+    if (name) values.JARVIS_USER_NAME = name;
     const phone = $('welcomePhone').value.trim();
     if (phone) values.TWILIO_TO_NUMBER = phone;
     return values;
@@ -108,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeWelcome(values) {
     welcomeDone = true;
     closePanel(welcomeLayer);
-    window.jervisSend({ type: 'set_settings', values: values || {} });
+    window.jarvisSend({ type: 'set_settings', values: values || {} });
   }
   $('welcomeContinue').addEventListener('click', () => closeWelcome(welcomeValues()));
   $('welcomeSkip').addEventListener('click', () => closeWelcome({}));
@@ -116,7 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const values = welcomeValues();
     welcomeDone = true;
     closePanel(welcomeLayer);
-    window.jervisSend({ type: 'set_settings', values });
+    window.jarvisSend({ type: 'set_settings', values });
     $('settingsAdvanced').checked = true;
     openSettings();
   });
@@ -132,8 +132,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function openSettings() {
     openPanel(settingsLayer);
     $('settingsStatus').textContent = '';
-    if (!window.jervisSend({ type: 'get_settings' })) {
-      $('settingsBody').replaceChildren(make('p', 'sheet-sub', 'Jervis’s engine isn’t connected yet. Try again in a moment.'));
+    if (!window.jarvisSend({ type: 'get_settings' })) {
+      $('settingsBody').replaceChildren(make('p', 'sheet-sub', 'Jarvis’s engine isn’t connected yet. Try again in a moment.'));
     }
     ipcRenderer.invoke('app-info').then((info) => { appInfo = info; if (loaded) renderSettings(loaded); }).catch(() => {});
   }
@@ -238,9 +238,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (appInfo && appInfo.packaged) {
       const row = make('div', 'set-row toggle');
       const text = make('div', 'set-text');
-      const label = make('label', '', 'Start Jervis when I sign in');
+      const label = make('label', '', 'Start Jarvis when I sign in');
       label.htmlFor = 'set-login';
-      text.append(label, make('small', '', 'He starts in the background, listening for “Hey Jervis”.'));
+      text.append(label, make('small', '', 'He starts in the background, listening for “Hey Jarvis”.'));
       const box = make('input');
       box.type = 'checkbox'; box.className = 'switch'; box.id = 'set-login'; box.checked = Boolean(appInfo.openAtLogin);
       box.addEventListener('change', () => ipcRenderer.invoke('set-open-at-login', box.checked).then((on) => { box.checked = on; }));
@@ -254,12 +254,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const logs = make('button', 'ghost', 'Open log files');
     logs.type = 'button';
     logs.addEventListener('click', () => ipcRenderer.invoke('open-path', 'logs'));
-    const restart = make('button', 'ghost', 'Restart Jervis’s engine');
+    const restart = make('button', 'ghost', 'Restart Jarvis’s engine');
     restart.type = 'button';
     restart.addEventListener('click', () => ipcRenderer.send('restart-backend'));
     tools.append(folder, logs, restart);
     system.append(tools);
-    if (appInfo) system.append(make('small', 'set-version', `Jervis ${appInfo.version}${appInfo.packaged ? '' : ' (running from source)'}`));
+    if (appInfo) system.append(make('small', 'set-version', `Jarvis ${appInfo.version}${appInfo.packaged ? '' : ' (running from source)'}`));
     blocks.push(system);
     body.replaceChildren(...blocks);
     $('settingsSave').disabled = true;
@@ -273,8 +273,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!values) return;
     $('settingsSave').disabled = true;
     $('settingsStatus').textContent = 'Saving…';
-    if (!window.jervisSend({ type: 'set_settings', values })) {
-      $('settingsStatus').textContent = 'Jervis’s engine isn’t connected; your changes weren’t saved.';
+    if (!window.jarvisSend({ type: 'set_settings', values })) {
+      $('settingsStatus').textContent = 'Jarvis’s engine isn’t connected; your changes weren’t saved.';
       $('settingsSave').disabled = false;
     }
   });
@@ -299,8 +299,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let engineState = 'starting';
   let micMessage = '';
   function refreshBanner() {
-    if (engineState === 'failed') showBanner(lastEngineDetail || 'Jervis’s engine stopped.', 'bad', 'Restart', () => ipcRenderer.send('restart-backend'));
-    else if (engineState === 'restarting') showBanner(lastEngineDetail || 'Restarting Jervis’s engine…', 'warn');
+    if (engineState === 'failed') showBanner(lastEngineDetail || 'Jarvis’s engine stopped.', 'bad', 'Restart', () => ipcRenderer.send('restart-backend'));
+    else if (engineState === 'restarting') showBanner(lastEngineDetail || 'Restarting Jarvis’s engine…', 'warn');
     else if (micMessage) showBanner(micMessage, 'warn', 'Settings', openSettings);
     else showBanner('');
   }
@@ -314,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // =====================================================================================================
   // Messages from the backend
   // =====================================================================================================
-  window.addEventListener('jervis-message', (event) => {
+  window.addEventListener('jarvis-message', (event) => {
     const data = event.detail || {};
     if (data.type === 'first_run') {
       if (!welcomeDone) openPanel(welcomeLayer);
@@ -325,7 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Fresher microphone and voice lists: rebuild just those two lists, keeping what's selected.
       loaded.microphones = data.microphones;
       loaded.voices = data.voices;
-      for (const key of ['JERVIS_MIC', 'JERVIS_VOICE']) {
+      for (const key of ['JARVIS_MIC', 'JARVIS_VOICE']) {
         const old = inputs[key];
         if (!old) continue;
         const item = loaded.schema.find((s) => s.key === key);
@@ -336,8 +336,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     else if (data.type === 'settings_saved') {
-      $('settingsStatus').textContent = data.restart ? 'Saved. Restarting Jervis’s engine to apply it…' : 'Saved.';
-      if (loaded) window.jervisSend({ type: 'get_settings' });
+      $('settingsStatus').textContent = data.restart ? 'Saved. Restarting Jarvis’s engine to apply it…' : 'Saved.';
+      if (loaded) window.jarvisSend({ type: 'get_settings' });
     } else if (data.type === 'settings_error') {
       $('settingsStatus').textContent = data.message || 'Couldn’t save.';
       $('settingsSave').disabled = false;
@@ -347,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   // =====================================================================================================
-  // Computer control: the question before Jervis starts, and relaying the overlay's buttons (see main.js)
+  // Computer control: the question before Jarvis starts, and relaying the overlay's buttons (see main.js)
   // =====================================================================================================
   const CONTROL_ACTIVE = new Set(['starting', 'observing', 'thinking', 'acting', 'waiting', 'paused']);
   const controlLayer = $('controlLayer');
@@ -355,29 +355,29 @@ document.addEventListener('DOMContentLoaded', () => {
   let controlStateName = '';
   let controlAskId = null;
   function answerControl(allow) {
-    if (controlAskId) window.jervisSend({ type: 'control_answer', id: controlAskId, allow });
+    if (controlAskId) window.jarvisSend({ type: 'control_answer', id: controlAskId, allow });
     controlAskId = null;
     closePanel(controlLayer);
   }
   $('controlAllow').addEventListener('click', () => answerControl(true));
   $('controlDeny').addEventListener('click', () => answerControl(false));
   controlLayer.addEventListener('keydown', (e) => { if (e.key === 'Escape') answerControl(false); });
-  ipcRenderer.on('control-relay', (_event, message) => window.jervisSend(message));
+  ipcRenderer.on('control-relay', (_event, message) => window.jarvisSend(message));
   // Whether the window is open or closed (hidden in the tray), for the engine: see set_window_visible in app.py.
   let windowVisible = true;
   ipcRenderer.on('window-visibility', (_event, visible) => {
     windowVisible = Boolean(visible);
-    window.jervisSend({ type: 'window_visibility', visible: windowVisible });
+    window.jarvisSend({ type: 'window_visibility', visible: windowVisible });
   });
-  window.addEventListener('jervis-connected', () => window.jervisSend({ type: 'window_visibility', visible: windowVisible }));
-  window.addEventListener('jervis-message', (event) => {
+  window.addEventListener('jarvis-connected', () => window.jarvisSend({ type: 'window_visibility', visible: windowVisible }));
+  window.addEventListener('jarvis-message', (event) => {
     const data = event.detail || {};
     if (data.type === 'control' && data.data) {
       controlStateName = data.data.state;
       ipcRenderer.send('control-event', data);
     } else if (data.type === 'control_confirm') {
       ipcRenderer.send('control-event', data);
-      if (CONTROL_ACTIVE.has(controlStateName)) return;   // the overlay asks while Jervis is working
+      if (CONTROL_ACTIVE.has(controlStateName)) return;   // the overlay asks while Jarvis is working
       controlAskId = data.id;
       $('controlQuestion').textContent = data.question;
       openPanel(controlLayer);
@@ -398,7 +398,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function closePhonePairing() { closePanel(phonePairingLayer); phonePairingExpiry = null; }
   $('phonePairingClose').addEventListener('click', closePhonePairing);
   phonePairingLayer.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePhonePairing(); });
-  window.addEventListener('jervis-message', (event) => {
+  window.addEventListener('jarvis-message', (event) => {
     const data = event.detail || {};
     if (data.type === 'phone_pairing' && data.data) {
       // sent via send_ui_update, not the "once" version, so this is still here (replayed on connect) if the
@@ -408,6 +408,10 @@ document.addEventListener('DOMContentLoaded', () => {
       // not a separately-typed code.
       const info = data.data;
       $('phonePairingAddress').textContent = info.pairUrl || info.address || '';
+      // The same code, readable: an installed Jarvis app (its own storage on iPhone) can pair by typing it.
+      const code = String(info.code || '');
+      $('phonePairingCodeRow').hidden = !code;
+      $('phonePairingCode').textContent = code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code;
       const qrEl = $('phonePairingQr');
       qrEl.innerHTML = '';
       if (qrcode && info.pairUrl) {
@@ -422,14 +426,20 @@ document.addEventListener('DOMContentLoaded', () => {
       openPanel(phonePairingLayer);
     } else if (data.type === 'phone_paired' || data.type === 'phone_notify_enabled') {
       closePhonePairing();
+    } else if (data.type === 'phone_connection' && data.data) {
+      // Which paired phones are attached right now (app.py's _on_phone_presence) — the phone app and this window
+      // are two views of the same Jarvis, so this one shows when the other is live.
+      const devices = data.data.devices || [];
+      $('phoneChip').hidden = !data.data.connected;
+      $('phoneChipText').textContent = devices.length === 1 ? `${devices[0]} connected` : `${devices.length} phones connected`;
     }
   });
   setInterval(() => {
     if (phonePairingExpiry && Date.now() / 1000 > phonePairingExpiry) closePhonePairing();
   }, 1000);
 
-  window.addEventListener('jervis-connected', () => {
+  window.addEventListener('jarvis-connected', () => {
     if (engineState !== 'failed') { engineState = 'running'; refreshBanner(); }
-    if (!settingsLayer.hidden) window.jervisSend({ type: 'get_settings' });
+    if (!settingsLayer.hidden) window.jarvisSend({ type: 'get_settings' });
   });
 });

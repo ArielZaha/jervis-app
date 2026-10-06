@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Standalone worker: loads a local diffusion model and generates one image, then exits.
 
-Run as a separate OS process (never imported) so a hang here can never affect Jervis itself. torch's MPS/CUDA calls
+Run as a separate OS process (never imported) so a hang here can never affect Jarvis itself. torch's MPS/CUDA calls
 can hold Python's GIL for a long time, or the GPU driver itself can stall, in a way a thread-based timeout cannot
 interrupt — only killing the whole process (subprocess.run(..., timeout=...) in images.py) can guarantee that.
 

@@ -1,8 +1,8 @@
-"""Jervis's diagnostic log: logs/jervis.log in the data folder, kept to a few MB.
+"""Jarvis's diagnostic log: logs/jarvis.log in the data folder, kept to a few MB.
 
-Jervis reports what he is doing with print() all over the code. Rather than rewrite hundreds of lines, install()
+Jarvis reports what he is doing with print() all over the code. Rather than rewrite hundreds of lines, install()
 copies everything printed to the console into the log file as well, with a timestamp. What the user said or what
-Jervis answered is never written to the log (those lines are replaced by a placeholder): conversation text belongs in
+Jarvis answered is never written to the log (those lines are replaced by a placeholder): conversation text belongs in
 the transcripts, which the user can switch off, not in a diagnostic file that may be shared to report a problem.
 """
 import os
@@ -14,10 +14,10 @@ import time
 import paths
 
 MAX_BYTES = 2 * 1024 * 1024
-KEEP = 3  # jervis.log plus jervis.log.1 .. .3
+KEEP = 3  # jarvis.log plus jarvis.log.1 .. .3
 
 # Console lines that carry what was said. Only their label reaches the log.
-_PRIVATE = re.compile(r"^(\s*)(Recognized|Speaking|Typed|Heard|You said|Transcript|User|Jervis says|Reply)\s*:\s*.+$",
+_PRIVATE = re.compile(r"^(\s*)(Recognized|Speaking|Typed|Heard|You said|Transcript|User|Jarvis says|Reply)\s*:\s*.+$",
                       re.IGNORECASE)
 _lock = threading.Lock()
 _log_file = None
@@ -25,7 +25,7 @@ _log_path = None
 
 
 def log_path() -> str:
-    return os.path.join(paths.logs_dir(), "jervis.log")
+    return os.path.join(paths.logs_dir(), "jarvis.log")
 
 
 def redact(line: str) -> str:
@@ -123,8 +123,8 @@ def install() -> str:
     try:
         _log_file = open(_log_path, "a", encoding="utf-8")
     except OSError:
-        return _log_path   # no log (read-only disk?): Jervis still runs, just without the file
-    write(f"===== Jervis backend starting (pid {os.getpid()}, data folder {paths.DATA_DIR}) =====")
+        return _log_path   # no log (read-only disk?): Jarvis still runs, just without the file
+    write(f"===== Jarvis backend starting (pid {os.getpid()}, data folder {paths.DATA_DIR}) =====")
     sys.stdout = _Tee(sys.stdout)
     sys.stderr = _Tee(sys.stderr)
     return _log_path

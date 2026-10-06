@@ -139,7 +139,7 @@ def test_resize_fails_cleanly_when_nothing_exists_yet():
 
 
 def test_resize_finds_blenders_default_cube_in_the_scene():
-    """Blender opens with a "Cube" Jervis never created: "make the cube bigger" must still reach it."""
+    """Blender opens with a "Cube" Jarvis never created: "make the cube bigger" must still reach it."""
     session = new_session()
     bridge = FakeBridge(responses=[{"ok": True, "output": "Cube"},
                                    {"ok": True, "output": "(1.0, 1.0, 1.0)|(2.0, 2.0, 2.0)"}])
@@ -207,7 +207,7 @@ def test_do_that_again_with_nothing_prior_is_not_recognized():
     assert bc.steps_for("do that again", new_session(), FakeBridge()) is None
 
 
-# ---------- undo reverses Jervis's own last action (bpy.ops.ed.undo's poll() rejects calls from a script context,
+# ---------- undo reverses Jarvis's own last action (bpy.ops.ed.undo's poll() rejects calls from a script context,
 # confirmed against a real Blender even with temp_override, so this tracks and reverses the change directly) ----------
 
 def test_create_then_undo_removes_the_object_it_created():

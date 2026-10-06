@@ -45,20 +45,20 @@ BODIES = {
 ALIASES = {"jarvis": None, "sol": "sun", "the sun": "sun", "planet earth": "earth", "our moon": "moon", "the moon": "moon", "luna": "moon"}
 _NAMES = "|".join(sorted([*BODIES, "the sun", "the moon"], key=len, reverse=True))
 
-_LEAD = r"(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
+_LEAD = r"(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
 _VERB = r"(?:tell me about|show me|show|see|view|display|describe|what is|whats|what's|what do you know about|give me (?:info|information|facts) (?:on|about))"
 _FILLER = r"(?:\s*(?:[-:,]|from (?:the )?solar system|in (?:the )?solar system|called|named))*\s*"
 _PATTERNS = [
     re.compile(rf"^{_LEAD}{_VERB} (?:a |the )?(?:planet|moon|dwarf planet|star)?s?{_FILLER}(?P<name>{_NAMES})\b.*$"),
     re.compile(rf"^{_LEAD}(?P<name>{_NAMES}) facts\b.*$"),
 ]
-_GENERIC = re.compile(r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you) )*tell me about (?:a |the )?planet\b\s*[:.,-]?\s*$")
+_GENERIC = re.compile(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you) )*tell me about (?:a |the )?planet\b\s*[:.,-]?\s*$")
 _CLOSE = re.compile(r"\b(?:close|hide|dismiss)\b.{0,20}\b(?:planet|globe|model)\b")
 _RESHOW = re.compile(
     r"\b(?:show|open|bring\s+up|pull\s+up|display|see|reopen|put\s+up|look\s+at|let\s+me\s+see|go\s+back\s+to)\b.*"
     r"\b(?:planet|model)\b.*\b(?:again|last|previous|earlier|before|back|once\s+more|one\s+more\s+time|next|first)\b"
     r"|\b(?:the\s+)?(?:previous|last|next|earlier|first)\s+planet\b|\bplanet\s+(?:again|from\s+before)\b")
-_LEAD_WORDS = {"", "hey", "jervis", "jarvis", "ok", "okay", "please", "can", "could", "would", "you", "now", "then", "and",
+_LEAD_WORDS = {"", "hey", "jarvis", "jervis", "ok", "okay", "please", "can", "could", "would", "you", "now", "then", "and",
                "just", "lets", "let", "i", "want", "need", "to", "wanna", "like", "me", "also", "so", "well", "show", "see", "the"}
 
 
@@ -147,7 +147,7 @@ def chips(body: dict) -> list:
 
 
 def build(key: str) -> dict:
-    """Everything the window needs to draw the body, plus what Jervis says about it."""
+    """Everything the window needs to draw the body, plus what Jarvis says about it."""
     body = BODIES[key]
     return {"kind": "planet", "key": key, "name": body["name"], "bodyKind": body["kind"], "texture": body["texture"],
             "colorKind": body["color_kind"], "rings": bool(body.get("rings")), "radiusKm": body["radius_km"],

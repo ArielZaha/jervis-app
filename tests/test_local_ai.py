@@ -25,15 +25,15 @@ def test_vision_only_with_enough_memory(monkeypatch):
     class Memory:
         def __init__(self, gb):
             self.total = gb * 1024 ** 3
-    monkeypatch.delenv("JERVIS_LOCAL_VISION", raising=False)
+    monkeypatch.delenv("JARVIS_LOCAL_VISION", raising=False)
     monkeypatch.setattr(local_ai.psutil, "virtual_memory", lambda: Memory(8))
     assert not local_ai.wants_vision()          # 8 GB: measured to swap for minutes
     monkeypatch.setattr(local_ai.psutil, "virtual_memory", lambda: Memory(15.7))
     assert local_ai.wants_vision()              # a "16 GB" machine
-    monkeypatch.setenv("JERVIS_LOCAL_VISION", "on")
+    monkeypatch.setenv("JARVIS_LOCAL_VISION", "on")
     monkeypatch.setattr(local_ai.psutil, "virtual_memory", lambda: Memory(8))
     assert local_ai.wants_vision()              # the user's choice wins
-    monkeypatch.setenv("JERVIS_LOCAL_VISION", "off")
+    monkeypatch.setenv("JARVIS_LOCAL_VISION", "off")
     monkeypatch.setattr(local_ai.psutil, "virtual_memory", lambda: Memory(64))
     assert not local_ai.wants_vision()
 

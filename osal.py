@@ -1,4 +1,4 @@
-"""The few things Jervis does that differ per operating system, in one place: speech, notifications, chime, clipboard.
+"""The few things Jarvis does that differ per operating system, in one place: speech, notifications, chime, clipboard.
 
 macOS uses the built-in tools (say, osascript, afplay, pbcopy). Windows uses PowerShell, which ships with every
 Windows 10/11 (System.Speech for the voice, a toast for notifications, Set-Clipboard). Linux uses espeak / xclip when
@@ -22,7 +22,7 @@ _NO_WINDOW = 0x08000000 if IS_WIN else 0  # don't flash a console window when ru
 
 
 # ---------- macOS: never fork this process ----------
-# Jervis runs many threads (microphone, network, timers). On macOS, fork()ing a multi-threaded process can crash the
+# Jarvis runs many threads (microphone, network, timers). On macOS, fork()ing a multi-threaded process can crash the
 # forked copy before it ever starts the program ("crashed on child side of fork pre-exec": Apple's networking library
 # runs code in the child that isn't safe there). Python's subprocess forks by default, so every launch (say, osascript,
 # open, ...) risked it. posix_spawn starts the program without forking, so this makes subprocess use it everywhere:
@@ -31,7 +31,7 @@ _NO_WINDOW = 0x08000000 if IS_WIN else 0  # don't flash a console window when ru
 #   - a working directory (`cwd`), which would force a fork, is applied by a tiny `sh` wrapper instead.
 def _make_subprocess_fork_free() -> None:
     original_init = subprocess.Popen.__init__
-    if getattr(original_init, "_jervis_fork_free", False):
+    if getattr(original_init, "_jarvis_fork_free", False):
         return
 
     def init(self, args, *pos, **kw):
@@ -50,7 +50,7 @@ def _make_subprocess_fork_free() -> None:
             kw.setdefault("close_fds", False)
         original_init(self, args, *pos, **kw)
 
-    init._jervis_fork_free = True
+    init._jarvis_fork_free = True
     subprocess.Popen.__init__ = init
 
 
@@ -83,15 +83,15 @@ def run_powershell(script: str, env: dict = None, timeout: int = 30):
 _WIN_SPEECH = r"""
 Add-Type -AssemblyName System.Speech
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
-if ($env:JERVIS_VOLUME) { $s.Volume = [int]$env:JERVIS_VOLUME }
-if ($env:JERVIS_HEBREW -eq '1') {
+if ($env:JARVIS_VOLUME) { $s.Volume = [int]$env:JARVIS_VOLUME }
+if ($env:JARVIS_HEBREW -eq '1') {
   foreach ($v in $s.GetInstalledVoices()) {
     if ($v.Enabled -and $v.VoiceInfo.Culture.Name -like 'he*') { $s.SelectVoice($v.VoiceInfo.Name); break }
   }
-} elseif ($env:JERVIS_VOICE) {
-  try { $s.SelectVoice($env:JERVIS_VOICE) } catch { }
+} elseif ($env:JARVIS_VOICE) {
+  try { $s.SelectVoice($env:JARVIS_VOICE) } catch { }
 }
-$s.Speak($env:JERVIS_TEXT)
+$s.Speak($env:JARVIS_TEXT)
 """
 _WIN_VOICES = r"""
 Add-Type -AssemblyName System.Speech
@@ -115,7 +115,7 @@ def speech_process(text: str, volume: int = 100):
     """Start speaking `text` at `volume` (0-100) and return the running process (so it can be stopped), or None if
     this machine can't speak at all."""
     if IS_MAC:
-        chosen = os.getenv("JERVIS_VOICE", "").strip()
+        chosen = os.getenv("JARVIS_VOICE", "").strip()
         voice = ["-v", "Carmit"] if has_hebrew(text) else (["-v", chosen] if chosen else [])
         if volume >= 100:   # the common case: speak directly, exactly as before (no extra latency)
             return subprocess.Popen(["say", *voice, text])
@@ -126,8 +126,8 @@ def speech_process(text: str, volume: int = 100):
         _cleanup_after(proc, path)
         return proc
     if IS_WIN:
-        env = {**os.environ, "JERVIS_TEXT": text, "JERVIS_HEBREW": "1" if has_hebrew(text) else "0",
-               "JERVIS_VOLUME": str(max(0, min(100, volume)))}
+        env = {**os.environ, "JARVIS_TEXT": text, "JARVIS_HEBREW": "1" if has_hebrew(text) else "0",
+               "JARVIS_VOLUME": str(max(0, min(100, volume)))}
         return subprocess.Popen(powershell_command(_WIN_SPEECH), env=env, creationflags=_NO_WINDOW,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for tool in ("espeak-ng", "espeak"):
@@ -166,8 +166,8 @@ _WIN_TOAST = r"""
 [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
 $xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
 $text = $xml.GetElementsByTagName('text')
-$text.Item(0).AppendChild($xml.CreateTextNode($env:JERVIS_TITLE)) | Out-Null
-$text.Item(1).AppendChild($xml.CreateTextNode($env:JERVIS_MESSAGE)) | Out-Null
+$text.Item(0).AppendChild($xml.CreateTextNode($env:JARVIS_TITLE)) | Out-Null
+$text.Item(1).AppendChild($xml.CreateTextNode($env:JARVIS_MESSAGE)) | Out-Null
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
@@ -181,7 +181,7 @@ def notify(title: str, message: str) -> None:
                 ["osascript", "-e", "on run argv\ndisplay notification (item 2 of argv) with title (item 1 of argv)\nend run",
                  title, message], capture_output=True, timeout=5)
         elif IS_WIN:
-            run_powershell(_WIN_TOAST, {"JERVIS_TITLE": title, "JERVIS_MESSAGE": message}, timeout=15)
+            run_powershell(_WIN_TOAST, {"JARVIS_TITLE": title, "JARVIS_MESSAGE": message}, timeout=15)
         elif shutil.which("notify-send"):
             subprocess.run(["notify-send", title, message], capture_output=True, timeout=5)
     except (subprocess.SubprocessError, OSError):
@@ -225,7 +225,7 @@ def set_clipboard(text: str) -> None:
     if IS_MAC:
         subprocess.run(["pbcopy"], input=text.encode("utf-8"), timeout=5)
     elif IS_WIN:
-        run_powershell("Set-Clipboard -Value $env:JERVIS_TEXT", {"JERVIS_TEXT": text}, timeout=15)
+        run_powershell("Set-Clipboard -Value $env:JARVIS_TEXT", {"JARVIS_TEXT": text}, timeout=15)
     else:
         for cmd in (["wl-copy"], ["xclip", "-selection", "clipboard"]):
             if shutil.which(cmd[0]):

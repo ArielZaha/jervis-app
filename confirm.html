@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Jervis</title>
+<title>Jarvis</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -34,7 +34,7 @@
 </head>
 <body>
   <div class="card" id="card">
-    <h1 id="title">Jervis wants to connect to this computer.</h1>
+    <h1 id="title">Jarvis wants to connect to this computer.</h1>
     <p id="sub">Confirm only if you asked for this just now.</p>
     <div class="actions" id="actions">
       <button id="confirmBtn">Confirmed</button>
@@ -56,20 +56,20 @@
     if (decision === "confirm" && ok) {
       card.innerHTML = '<div class="status-icon">✓</div>' +
         '<h1>Your phone is connected.</h1>' +
-        '<p>Jervis knows on your computer too. You can close this page, or keep talking to Jervis here.</p>' +
-        '<div class="actions"><a class="link-btn" id="openBtn">Open Jervis</a></div>';
+        '<p>Jarvis knows on your computer too. You can close this page, or keep talking to Jarvis here.</p>' +
+        '<div class="actions"><a class="link-btn" id="openBtn">Open Jarvis</a></div>';
       $("openBtn").href = `/?session=${encodeURIComponent(sessionId)}&decision=confirm`;
       // Straight into the chat when this phone's pairing is already on this origin (same storage phone_client.html
       // reads) — no second tap. Without it the chat page could only say "not recognized", so stay here instead.
       let paired = false;
-      try { paired = !!localStorage.getItem("jervis_device"); } catch { /* storage blocked: keep the button */ }
+      try { paired = !!(localStorage.getItem("jarvis_device") || localStorage.getItem("je" + "rvis_device")); } catch { /* storage blocked: keep the button */ }   // (old name too)
       if (paired) location.replace($("openBtn").href);
     } else if (decision === "reject" && ok) {
       card.innerHTML = '<div class="status-icon">✕</div><h1>Connection cancelled.</h1>' +
         '<p>Nothing was connected. You can close this page.</p>';
     } else {
       card.innerHTML = '<div class="status-icon">⚠</div><h1>That didn\'t work.</h1>' +
-        '<p>This request may have expired, or your computer isn\'t reachable right now. Ask Jervis to ' +
+        '<p>This request may have expired, or your computer isn\'t reachable right now. Ask Jarvis to ' +
         '"connect my phone" again for a fresh one.</p>';
     }
   }
@@ -104,7 +104,7 @@
     decide(prefilled);
   } else if (!sessionId || !secret) {
     $("title").textContent = "This link is missing something.";
-    $("sub").textContent = "Ask Jervis to “connect my phone” again for a fresh link.";
+    $("sub").textContent = "Ask Jarvis to “connect my phone” again for a fresh link.";
     $("actions").style.display = "none";
   }
 })();

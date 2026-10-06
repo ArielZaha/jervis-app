@@ -2,7 +2,7 @@
 .env
 .cache
 .calendar_token.json
-.jervis-netflix-profile/
+.jarvis-netflix-profile/
 transcripts/
 logs/
 images/
@@ -30,7 +30,7 @@ release/
 # Old hand-made copies of the app
 *.zip
 
-# The website has its own repository (ArielZaha/jervis)
+# The website has its own repository (ArielZaha/jarvis)
 website/
 
 # Downloaded ML models (large binaries, fetched at runtime)
@@ -45,3 +45,4 @@ models/
 
 # Build logs
 *.log
+.jervis-netflix-profile/

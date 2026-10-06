@@ -1,4 +1,4 @@
-"""Computer control on a real Windows desktop (run in CI): Jervis types into Notepad through the whole loop.
+"""Computer control on a real Windows desktop (run in CI): Jarvis types into Notepad through the whole loop.
 
 The AI is scripted (type, then done), but everything else is real: UI Automation reads Notepad, the cursor is put in
 its text area, SendInput types, and the result is read back from the window. Notepad is closed without saving.
@@ -17,7 +17,7 @@ import computer_use  # noqa: E402
 import screen_windows  # noqa: E402
 import winctl  # noqa: E402
 
-TEXT = "Hello from Jervis, typed on Windows."
+TEXT = "Hello from Jarvis, typed on Windows."
 EDITABLE = ("document", "text field")
 
 

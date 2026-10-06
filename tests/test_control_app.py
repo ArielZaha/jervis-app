@@ -1,4 +1,4 @@
-"""Computer control inside Jervis: which sentences start it, the permission question, and stop/pause by voice.
+"""Computer control inside Jarvis: which sentences start it, the permission question, and stop/pause by voice.
 
 Runs in the sandbox (tests/sandbox.py); the task itself uses a pretend screen, so no real mouse or keyboard is touched.
 """
@@ -49,7 +49,7 @@ def test_the_goal_keeps_the_users_wording():
 
 STARTS = {
     "click the blue Save button": "click the blue save button",
-    "Jervis, click on Downloads": "click on downloads",
+    "Jarvis, click on Downloads": "click on downloads",
     "can you scroll down": "scroll down",
     "please press the submit button": "press the submit button",
     "type hello world into the search box": "type hello world into the search box",
@@ -89,13 +89,13 @@ def test_the_ai_tool_is_blocked_for_conversation(text):
 
 
 def test_off_setting_refuses(monkeypatch):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "off")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "off")
     assert "turned off" in app.start_computer_task("click save")
     assert app.computer_task is None
 
 
 def test_asks_first_and_does_nothing_on_no(monkeypatch, clean):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "ask")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "ask")
     reply = app.handle_direct_command("click the Search button")
     assert "Can I use your mouse and keyboard" in reply and "yes or no" in reply
     assert any(p.get("type") == "control_confirm" for p in clean)
@@ -105,7 +105,7 @@ def test_asks_first_and_does_nothing_on_no(monkeypatch, clean):
 
 
 def test_yes_by_voice_runs_the_task(monkeypatch, clean):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "ask")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "ask")
     monkeypatch.setattr(app, "_ask_ai_for_control", ai(("click", {"element": 2}), ("done", {"summary": "Searched."})))
     app.handle_direct_command("click the Search button")
     assert "Move the mouse" in app.handle_control_voice("yes")
@@ -121,8 +121,8 @@ def test_yes_by_voice_runs_the_task(monkeypatch, clean):
     assert app.announcements.get(timeout=1) == "Done: click button “Search”."
 
 
-def test_hey_jervis_stop_stops_a_running_task(monkeypatch):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+def test_hey_jarvis_stop_stops_a_running_task(monkeypatch):
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     gate = threading.Event()
 
     def slow_ai(messages, tools):
@@ -134,7 +134,7 @@ def test_hey_jervis_stop_stops_a_running_task(monkeypatch):
         if app.control_active():
             break
         time.sleep(0.02)
-    assert app.handle_control_voice("Hey Jervis, stop") == "Stopping. You have control."
+    assert app.handle_control_voice("Hey Jarvis, stop") == "Stopping. You have control."
     gate.set()
     for _ in range(200):
         if app.computer_task.state == "stopped":
@@ -145,13 +145,13 @@ def test_hey_jervis_stop_stops_a_running_task(monkeypatch):
     assert app.announcements.empty()   # "Stopping" was the answer; no second "Stopped" message
 
 
-def test_stop_words_do_nothing_when_jervis_is_not_in_control():
+def test_stop_words_do_nothing_when_jarvis_is_not_in_control():
     assert app.handle_control_voice("stop") is None
     assert app.handle_control_voice("yes") is None
 
 
 def test_a_second_task_waits_for_the_first(monkeypatch):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     gate = threading.Event()
     monkeypatch.setattr(app, "_ask_ai_for_control", lambda m, t: (gate.wait(5), ai()(m, t))[1])
     app.start_computer_task("first")
@@ -189,7 +189,7 @@ def test_new_stop_phrasings_are_recognized(phrase):
 
 
 def test_bare_take_control_opens_a_session_and_replies_ready(monkeypatch, clean):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     assert app.handle_direct_command("Take control of my computer.") == "Sure, I'm ready."
     for _ in range(200):
         if app.session_active():
@@ -200,9 +200,9 @@ def test_bare_take_control_opens_a_session_and_replies_ready(monkeypatch, clean)
 
 
 @pytest.mark.parametrize("heard", ["Jargvie, stay in control on my computer.", "stay in control of my computer",
-                                   "Jervis, be in control of my PC"])
+                                   "Jarvis, be in control of my PC"])
 def test_misheard_stay_in_control_opens_a_waiting_session_not_a_task(monkeypatch, clean, heard):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     assert app.handle_direct_command(heard) == "Sure, I'm ready."
     for _ in range(200):
         if app.session_active():
@@ -214,7 +214,7 @@ def test_misheard_stay_in_control_opens_a_waiting_session_not_a_task(monkeypatch
 @pytest.mark.parametrize("goal", ["stay in control on my computer", "take control of my computer", "be in control"])
 def test_the_ai_tool_with_no_real_task_never_clicks_around(monkeypatch, clean, goal):
     """The local AI turned "stay in control" into a goal and then typed/clicked at random for 8 steps."""
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     ai_calls = []
     monkeypatch.setattr(app, "_ask_ai_for_control", lambda m, t: ai_calls.append(1))
     assert app.tool_use_computer(goal) == "Sure, I'm ready."
@@ -224,7 +224,7 @@ def test_the_ai_tool_with_no_real_task_never_clicks_around(monkeypatch, clean, g
 
 def test_a_blender_command_without_take_control_still_reaches_blender(monkeypatch, clean):
     """"Create a cube" with Blender open used to go to the chat AI, which only claimed to do it."""
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     bridge = _FakeBlenderBridge()
     monkeypatch.setattr(app.blender_control, "blender_running", lambda: True)
     monkeypatch.setattr(app.blender_control, "ensure_bridge", lambda session, confirm: bridge)
@@ -255,7 +255,7 @@ def test_a_video_outro_is_not_a_skip_request():
 
 
 def test_a_completed_task_keeps_the_session_open_and_reports_listening(monkeypatch, clean):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     monkeypatch.setattr(app, "_ask_ai_for_control", ai(("click", {"element": 2}), ("done", {"summary": "Searched."})))
     app.handle_direct_command("take control of my computer and click the Search button")
     for _ in range(200):
@@ -268,7 +268,7 @@ def test_a_completed_task_keeps_the_session_open_and_reports_listening(monkeypat
 
 
 def test_a_follow_up_goal_does_not_need_take_control_again_or_reask(monkeypatch, clean):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "ask")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "ask")
     monkeypatch.setattr(app, "_ask_ai_for_control", ai(("click", {"element": 2}), ("done", {"summary": "Searched."})))
     app.handle_direct_command("take control of my computer and click the Search button")
     assert "Move the mouse" in app.handle_control_voice("yes")
@@ -283,7 +283,7 @@ def test_a_follow_up_goal_does_not_need_take_control_again_or_reask(monkeypatch,
 
 
 def test_new_stop_phrase_ends_an_open_session(monkeypatch, clean):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     app.handle_direct_command("take control of my computer")
     for _ in range(200):
         if app.session_active():
@@ -296,7 +296,7 @@ def test_new_stop_phrase_ends_an_open_session(monkeypatch, clean):
 def test_a_one_off_step_does_not_leave_a_lingering_session(monkeypatch, clean):
     """"click Save" out of the blue (no "take control") must keep asking every time, exactly as before — it must
     not silently open a persistent session that then skips permission for whatever comes next."""
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "ask")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "ask")
     monkeypatch.setattr(app, "_ask_ai_for_control", ai(("click", {"element": 2}), ("done", {"summary": "ok"})))
     app.handle_direct_command("click the Search button")
     app.handle_control_voice("yes")
@@ -310,7 +310,7 @@ def test_a_one_off_step_does_not_leave_a_lingering_session(monkeypatch, clean):
 def test_a_follow_up_said_while_still_busy_gets_the_busy_message(monkeypatch, clean):
     """A free-text follow-up during an active session must still reach start_computer_task (and its "Still working
     on that" reply) even while a task is running — not silently fall through to the general chat AI."""
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     gate = threading.Event()
     monkeypatch.setattr(app, "_ask_ai_for_control", lambda m, t: (gate.wait(5), ai()(m, t))[1])
     app.handle_direct_command("take control of my computer and click the Search button")
@@ -325,7 +325,7 @@ def test_a_follow_up_said_while_still_busy_gets_the_busy_message(monkeypatch, cl
 # ---------- routing a Blender goal to BlenderComputerTask (see computer_use.BlenderComputerTask) ----------
 
 def test_a_blender_goal_uses_blender_computer_task(monkeypatch, clean):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     fake_bridge = object()
     monkeypatch.setattr(app.blender_control, "ensure_bridge", lambda session, confirm: fake_bridge)
     captured = {}
@@ -357,7 +357,7 @@ def test_a_blender_goal_uses_blender_computer_task(monkeypatch, clean):
 
 
 def test_blender_goal_falls_back_to_plain_task_when_the_bridge_is_unavailable(monkeypatch, clean):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     monkeypatch.setattr(app.blender_control, "ensure_bridge", lambda session, confirm: None)
     monkeypatch.setattr(app, "_ask_ai_for_control", ai(("done", {"summary": "ok"})))
     app.handle_direct_command("take control of my computer and create a cube in blender")
@@ -387,7 +387,7 @@ class _FakeBlenderBridge:
 
 def test_a_common_blender_command_is_handled_deterministically_without_the_ai(monkeypatch, clean):
     """"create a cube" must never reach the AI at all — see blender_commands.py."""
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     bridge = _FakeBlenderBridge()
     monkeypatch.setattr(app.blender_control, "ensure_bridge", lambda session, confirm: bridge)
     ai_calls = []
@@ -404,7 +404,7 @@ def test_a_common_blender_command_is_handled_deterministically_without_the_ai(mo
 
 def test_a_vague_blender_remark_asks_for_clarification_without_the_ai(monkeypatch, clean):
     """"it's sticky" must never be handed to the AI to invent a technical fix for — see blender_commands.looks_concrete."""
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     bridge = _FakeBlenderBridge()
     monkeypatch.setattr(app.blender_control, "ensure_bridge", lambda session, confirm: bridge)
     # FakeScreen (installed by the `clean` fixture) always reports "FakeApp" in front, not Blender; force the
@@ -433,7 +433,7 @@ def test_blender_context_survives_a_momentary_focus_steal(monkeypatch, clean):
     "move it right" must still be treated as a Blender command (and handled deterministically) because a bridge
     is already attached to this session, not redirected into whatever briefly grabbed focus. Regression test for
     the real-world failure where this happened and a generic ComputerTask started clicking around Discord."""
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     bridge = _FakeBlenderBridge()
 
     def fake_ensure_bridge(session, confirm):
@@ -464,7 +464,7 @@ def test_blender_context_survives_a_momentary_focus_steal(monkeypatch, clean):
 def test_an_exception_while_setting_up_the_task_never_strands_the_session(monkeypatch, clean):
     """A Blender launch failure, a Windows file-sharing hiccup, anything unexpected before the task even starts
     running: must be reported in plain words, not crash the background thread and leave the session stuck."""
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
 
     def boom(session, confirm):
         raise OSError("device gone")

@@ -9,9 +9,9 @@ from fractions import Fraction
 
 import functions
 
-_LEAD = re.compile(r"^\s*(?:hey\s+)?(?:jervis\s+)?(?:please\s+)?(?:(?:the\s+)?x|y)\s+(?:in|is|for|of)\b\s*:?\s*")
+_LEAD = re.compile(r"^\s*(?:hey\s+)?(?:jarvis\s+)?(?:please\s+)?(?:(?:the\s+)?x|y)\s+(?:in|is|for|of)\b\s*:?\s*")
 _KEYWORD = re.compile(r"\b(?:solve|solution|solutions|roots?|zeros?|find\s+(?:the\s+)?(?:value\s+of\s+)?x|value\s+of\s+x|what\s+is\s+x|whats\s+x|calculate\s+x|for\s+x)\b")
-_NOISE = re.compile(r"\b(?:solve|find|calculate|compute|work|out|what|are|what's|whats|tell|me|give|the|value|values|of|for|solutions?|roots?|zeros?|answers?|to|in|is|please|hey|jervis|equation|if|can|you|this|that|help|with|a|an|it|and|then|now)\b")
+_NOISE = re.compile(r"\b(?:solve|find|calculate|compute|work|out|what|are|what's|whats|tell|me|give|the|value|values|of|for|solutions?|roots?|zeros?|answers?|to|in|is|please|hey|jarvis|equation|if|can|you|this|that|help|with|a|an|it|and|then|now)\b")
 
 
 def _fraction(v: float) -> Fraction:
@@ -92,7 +92,7 @@ def _exact_roots(a: Fraction, b: Fraction, disc: Fraction):
 
 
 def parse_request(text: str):
-    """(left tree, right tree or None) for an equation Jervis should solve, else None."""
+    """(left tree, right tree or None) for an equation Jarvis should solve, else None."""
     raw = text or ""
     colon = False
     if ":" in raw:                                   # "what is the x: x^2 + 3x - 4": what follows the colon is the problem

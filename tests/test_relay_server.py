@@ -1,6 +1,6 @@
 """relay/server.py in isolation: the routing protocol between a "computer" connection and any number of "phone"
-connections, and the plain-HTTP /decide endpoint a service worker's fetch() reaches it through. No Jervis app code
-is involved — this is the one piece of Jervis infrastructure that runs somewhere other than the user's computer
+connections, and the plain-HTTP /decide endpoint a service worker's fetch() reaches it through. No Jarvis app code
+is involved — this is the one piece of Jarvis infrastructure that runs somewhere other than the user's computer
 (see relay/README.md), so it's tested as its own small protocol, the same way phone_control.py is tested without
 a real websocket in test_phone_control.py and with one in test_phone_app.py.
 """

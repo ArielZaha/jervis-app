@@ -1,4 +1,4 @@
-"""A tiny client for Jervis's window connection, used by the end-to-end tests (and handy for poking a running backend).
+"""A tiny client for Jarvis's window connection, used by the end-to-end tests (and handy for poking a running backend).
 
     python tests/ws_client.py PORT TOKEN "set a timer for 2 minutes" ...
 """
@@ -30,7 +30,7 @@ async def converse(port: int, token: str, lines, wait: float = 20.0, origin=None
                     break
                 received.append(message)
                 # a reply to a typed line, or the answer to a settings request, ends this step
-                if (message.get("sender") in ("ai", "jervis") and not isinstance(line, dict)) or \
+                if (message.get("sender") in ("ai", "jarvis") and not isinstance(line, dict)) or \
                         (isinstance(line, dict) and message.get("type") in ("settings", "settings_saved", "settings_error",
                                                                            "setup")):
                     break

@@ -3,7 +3,7 @@
 Classroom is read the way a person would: its "Missing" and "Assigned" to-do pages are opened in the school Chrome profile
 and the assignments listed there are read from the page. (The Classroom API is not used because school accounts usually
 block third-party apps.) On macOS this needs Chrome's  View > Developer > Allow JavaScript from Apple Events  switched on
-for the school profile; without it the page is still opened and shown, and Jervis says how to turn that on.
+for the school profile; without it the page is still opened and shown, and Jarvis says how to turn that on.
 """
 import json
 import os

@@ -1,8 +1,8 @@
 {
-  "name": "jervis",
-  "productName": "Jervis",
+  "name": "jarvis",
+  "productName": "Jarvis",
   "version": "1.0.6",
-  "description": "Jervis, a voice assistant that runs on your own computer",
+  "description": "Jarvis, a voice assistant that runs on your own computer",
   "author": "Ariel and Shalev",
   "homepage": "https://arielzaha.github.io/jervis/",
   "license": "MIT",
@@ -10,7 +10,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "backend": "pyinstaller --noconfirm --distpath backend-dist --workpath build/pyinstaller jervis-backend.spec",
+    "backend": "pyinstaller --noconfirm --distpath backend-dist --workpath build/pyinstaller jarvis-backend.spec",
     "dist": "electron-builder --publish never",
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never"
@@ -21,7 +21,7 @@
   },
   "build": {
     "appId": "io.github.arielzaha.jervis",
-    "productName": "Jervis",
+    "productName": "Jarvis",
     "copyright": "© 2026 Ariel and Shalev",
     "directories": {
       "output": "release",
@@ -49,7 +49,7 @@
     ],
     "extraResources": [
       {
-        "from": "backend-dist/jervis-backend",
+        "from": "backend-dist/jarvis-backend",
         "to": "backend",
         "filter": [
           "**/*"
@@ -71,7 +71,7 @@
         }
       ],
       "icon": "assets/icon.png",
-      "executableName": "Jervis"
+      "executableName": "Jarvis"
     },
     "nsis": {
       "oneClick": true,
@@ -80,10 +80,10 @@
       "include": "build-resources/installer.nsh",
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "Jervis",
+      "shortcutName": "Jarvis",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
-      "artifactName": "Jervis Setup.${ext}"
+      "artifactName": "Jarvis Setup.${ext}"
     },
     "mac": {
       "target": [
@@ -99,15 +99,15 @@
       "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "artifactName": "Jervis-Mac-${arch}.${ext}",
+      "artifactName": "Jarvis-Mac-${arch}.${ext}",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Jervis listens for “Hey Jervis” and for what you ask him.",
-        "NSAppleEventsUsageDescription": "Jervis controls apps you ask him to use, like Spotify or your browser.",
+        "NSMicrophoneUsageDescription": "Jarvis listens for “Hey Jarvis” and for what you ask him.",
+        "NSAppleEventsUsageDescription": "Jarvis controls apps you ask him to use, like Spotify or your browser.",
         "LSApplicationCategoryType": "public.app-category.productivity"
       }
     },
     "dmg": {
-      "title": "Jervis ${version}"
+      "title": "Jarvis ${version}"
     }
   }
 }

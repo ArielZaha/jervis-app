@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Start Jervis on macOS or Windows with one command:   python run.py
+"""Start Jarvis on macOS or Windows with one command:   python run.py
 
 The first run sets everything up (a private Python environment, the Python packages, the window's Node packages) and
-creates a .env file to fill in. After that it just starts Jervis, and its window opens right away.
+creates a .env file to fill in. After that it just starts Jarvis, and its window opens right away.
 """
 import json
 import os
@@ -12,7 +12,7 @@ import subprocess
 import sys
 import zipfile
 
-VERSION = "1.0.6"  # printed at start, so it is obvious which copy of Jervis is running
+VERSION = "1.0.6"  # printed at start, so it is obvious which copy of Jarvis is running
 ROOT = os.path.dirname(os.path.abspath(__file__))
 IS_WIN = sys.platform == "win32"
 VENV = os.path.join(ROOT, "venv")
@@ -23,7 +23,7 @@ ELECTRON_OK = os.path.join(ROOT, "node_modules", "electron", "path.txt")  # writ
 
 
 def say(message: str) -> None:
-    print(f"[Jervis] {message}", flush=True)
+    print(f"[Jarvis] {message}", flush=True)
 
 
 def run(cmd: list, **kwargs) -> int:
@@ -37,13 +37,13 @@ def is_plain_path(path: str) -> bool:
 
 def move_to_plain_folder() -> None:
     """If this folder's path has non-English letters (e.g. C:\\Users\\<Hebrew name>\\...), the window's installer fails
-    silently. Copy Jervis to C:\\Jervis and continue from there."""
+    silently. Copy Jarvis to C:\\Jarvis and continue from there."""
     if not IS_WIN or is_plain_path(ROOT):
         return
-    target = os.environ.get("JERVIS_PLAIN_ROOT") or r"C:\Jervis"
-    say("This folder's path has non-English letters, which stops Jervis's window from installing.")
-    say(f"Copying Jervis to {target} and continuing from there (your files here stay untouched)...")
-    # .git is excluded: it's not needed to run Jervis, it's large, and git marks its object files
+    target = os.environ.get("JARVIS_PLAIN_ROOT") or r"C:\Jarvis"
+    say("This folder's path has non-English letters, which stops Jarvis's window from installing.")
+    say(f"Copying Jarvis to {target} and continuing from there (your files here stay untouched)...")
+    # .git is excluded: it's not needed to run Jarvis, it's large, and git marks its object files
     # read-only on Windows, which makes a second copy (overwriting a .git left by the first) fail
     # with "Permission denied" and abort the whole move.
     skip_names = ("venv", "node_modules", "__pycache__", "transcripts", "images", ".electron-cache", ".git")
@@ -62,9 +62,9 @@ def move_to_plain_folder() -> None:
                 shutil.copy2(source, destination)
     except OSError as e:
         say(f"Could not copy to {target}: {e}")
-        say("Please move the whole Jervis folder to a path with only English letters (for example C:\\Jervis) and run it again.")
+        say("Please move the whole Jarvis folder to a path with only English letters (for example C:\\Jarvis) and run it again.")
         sys.exit(1)
-    say(f"Done. From now on start Jervis from {target}  (double-click start_jervis.bat there).")
+    say(f"Done. From now on start Jarvis from {target}  (double-click start_jarvis.bat there).")
     sys.exit(subprocess.call([sys.executable, os.path.join(target, "run.py")], cwd=target))
 
 
@@ -101,8 +101,8 @@ def offer_node_install() -> None:
     """Windows 10/11 ships with winget, which can install Node.js in one step."""
     if not (IS_WIN and shutil.which("winget")):
         return
-    say("Jervis's window needs Node.js, which isn't installed on this PC.")
-    answer = input("[Jervis] Install it now? (about 1 minute)  [Y/n] ").strip().lower()
+    say("Jarvis's window needs Node.js, which isn't installed on this PC.")
+    answer = input("[Jarvis] Install it now? (about 1 minute)  [Y/n] ").strip().lower()
     if answer in ("", "y", "yes"):
         run(["winget", "install", "-e", "--id", "OpenJS.NodeJS.LTS",
              "--accept-source-agreements", "--accept-package-agreements"])
@@ -242,7 +242,7 @@ def ensure_window_packages():
     if not npm:
         return None
     if not electron_installed() and not install_electron(npm):
-        say("The window could not be installed. Jervis will still work by voice.")
+        say("The window could not be installed. Jarvis will still work by voice.")
         say("Common causes: antivirus blocking the download, a firewall/VPN, or no internet. Run this again to retry.")
     return npm
 
@@ -299,7 +299,7 @@ def setup_local_ai(model: str = "llama3.2") -> bool:
     if run([ollama, "pull", model]) != 0:
         say("The model download failed. Check your internet connection and run this again.")
         return False
-    say("Local AI is ready. Jervis will use it automatically whenever the online AI can't be reached.")
+    say("Local AI is ready. Jarvis will use it automatically whenever the online AI can't be reached.")
     return True
 
 
@@ -314,7 +314,7 @@ def setup_local_images() -> bool:
     if run([VENV_PYTHON, "-m", "pip", "install", "-r", requirements]) != 0:
         say("Installing local image generation failed. Check your internet connection and run this again.")
         return False
-    say("Local image generation is ready. Jervis will use it automatically the next time you ask him to draw "
+    say("Local image generation is ready. Jarvis will use it automatically the next time you ask him to draw "
         "something (the very first picture also downloads the model itself, a few GB more, one time only).")
     return True
 
@@ -323,13 +323,13 @@ def ensure_env_file() -> None:
     env, example = os.path.join(ROOT, ".env"), os.path.join(ROOT, ".env.example")
     if not os.path.exists(env) and os.path.exists(example):
         shutil.copy(example, env)
-        say("Created a .env file for optional settings. No key is needed: Jervis uses the AI on this computer. "
+        say("Created a .env file for optional settings. No key is needed: Jarvis uses the AI on this computer. "
             "For the faster online AI, add a free Groq key in Settings (or GROQ_API_KEY in .env).")
 
 
 def start_window(npm: str, env: dict) -> int:
-    """Start Jervis's window, which starts and looks after the backend (the same way the installed app does)."""
-    env = {**env, "JERVIS_PYTHON": VENV_PYTHON,
+    """Start Jarvis's window, which starts and looks after the backend (the same way the installed app does)."""
+    env = {**env, "JARVIS_PYTHON": VENV_PYTHON,
            "PATH": os.path.dirname(npm) + os.pathsep + env.get("PATH", "")}   # so npm finds node
     env.pop("ELECTRON_RUN_AS_NODE", None)   # set in VS Code's terminal; it would start Electron as plain Node
     process = subprocess.Popen([npm, "start"], cwd=ROOT, env=env)
@@ -343,8 +343,8 @@ def start_window(npm: str, env: dict) -> int:
             return 0
 
 
-def start_jervis(env: dict) -> int:
-    """Run app.py and wait. Ctrl+C reaches Jervis too, so just wait for it to finish instead of showing an error."""
+def start_jarvis(env: dict) -> int:
+    """Run app.py and wait. Ctrl+C reaches Jarvis too, so just wait for it to finish instead of showing an error."""
     process = subprocess.Popen([VENV_PYTHON, os.path.join(ROOT, "app.py")], cwd=ROOT, env=env)
     try:
         return process.wait()
@@ -357,7 +357,7 @@ def start_jervis(env: dict) -> int:
 
 
 if __name__ == "__main__":
-    say(f"Jervis launcher {VERSION}")
+    say(f"Jarvis launcher {VERSION}")
     move_to_plain_folder()
     ensure_env_file()
     ensure_python_environment()
@@ -367,19 +367,19 @@ if __name__ == "__main__":
     if "--local-images" in sys.argv:
         setup_local_images()
     npm = ensure_window_packages()
-    child_env = {**os.environ, "JERVIS_SHOW_WINDOW": "1"}  # open the window straight away
+    child_env = {**os.environ, "JARVIS_SHOW_WINDOW": "1"}  # open the window straight away
     if npm and electron_installed():
-        child_env["JERVIS_NPM"] = npm
+        child_env["JARVIS_NPM"] = npm
     else:
         print("\n" + "=" * 70)
-        say("Jervis's WINDOW cannot open" + (" (Node.js is not installed)" if not npm else " (its installer failed)")
-            + ". Jervis itself still works by voice.")
+        say("Jarvis's WINDOW cannot open" + (" (Node.js is not installed)" if not npm else " (its installer failed)")
+            + ". Jarvis itself still works by voice.")
         say("Fix: " + ("install Node.js (LTS) from https://nodejs.org, then run this again." if not npm
                        else "run this again; if it keeps failing, turn off antivirus for a minute while it downloads."))
         print("=" * 70 + "\n", flush=True)
-        child_env.pop("JERVIS_SHOW_WINDOW")
-        child_env["JERVIS_NO_WINDOW"] = "1"  # don't keep retrying a window that can't start
-    say("Starting Jervis. Say 'Hey Jervis' to wake him up. Press Ctrl+C here to quit.")
-    if child_env.get("JERVIS_NPM"):
+        child_env.pop("JARVIS_SHOW_WINDOW")
+        child_env["JARVIS_NO_WINDOW"] = "1"  # don't keep retrying a window that can't start
+    say("Starting Jarvis. Say 'Hey Jarvis' to wake him up. Press Ctrl+C here to quit.")
+    if child_env.get("JARVIS_NPM"):
         sys.exit(start_window(npm, child_env))   # the window starts the backend and restarts it when needed
-    sys.exit(start_jervis(child_env))            # no window possible: voice only, as before
+    sys.exit(start_jarvis(child_env))            # no window possible: voice only, as before

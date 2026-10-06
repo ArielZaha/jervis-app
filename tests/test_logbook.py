@@ -1,4 +1,4 @@
-"""The diagnostic log must never contain what the user said or what Jervis answered."""
+"""The diagnostic log must never contain what the user said or what Jarvis answered."""
 import logbook
 
 

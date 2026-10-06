@@ -1,5 +1,5 @@
-"""Jervis's side of the relay connection (see relay/server.py): one persistent outbound WebSocket, opened whenever
-phone control is on and a relay is configured (Settings, Computer control, "Relay address" — JERVIS_RELAY_URL),
+"""Jarvis's side of the relay connection (see relay/server.py): one persistent outbound WebSocket, opened whenever
+phone control is on and a relay is configured (Settings, Computer control, "Relay address" — JARVIS_RELAY_URL),
 that lets an already-paired phone reach this computer from anywhere, not just the same Wi-Fi.
 
 The actual session protocol (attach, encrypted commands, voice, disconnect) lives in phone_session.py, shared with
@@ -18,12 +18,12 @@ import phone_session
 
 IDENTITY_FILE = paths.data("relay_identity.json")
 RECONNECT_MIN = 1
-RECONNECT_MAX = 5    # kept short: while this side is reconnecting, every phone just sees "Jervis isn't reachable"
+RECONNECT_MAX = 5    # kept short: while this side is reconnecting, every phone just sees "Jarvis isn't reachable"
 PING_INTERVAL = 10   # a link that died silently (laptop sleep, Wi-Fi change) is noticed within ~20s, not ~40s
 
 
 def load_or_create_computer_id() -> str:
-    """A long random id for this Jervis install, used only for relay routing — see relay/server.py's docstring for
+    """A long random id for this Jarvis install, used only for relay routing — see relay/server.py's docstring for
     why that's safe to treat as non-secret (it isn't a credential; pairing/session checks are)."""
     try:
         with open(IDENTITY_FILE, encoding="utf-8") as f:

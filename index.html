@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Jervis</title>
+  <title>Jarvis</title>
   <link rel="stylesheet" href="vendor/katex/katex.min.css" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="weather/weather.css" />
@@ -16,7 +16,7 @@
     <div class="scanlines" aria-hidden="true"></div>
     <div class="grain" aria-hidden="true"></div>
     <div class="frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-    <div class="boot" aria-hidden="true"><div><span class="boot-mark"></span><p>Initializing Jervis</p><em><i></i></em></div></div>
+    <div class="boot" aria-hidden="true"><div><span class="boot-mark"></span><p>Initializing Jarvis</p><em><i></i></em></div></div>
 
     <header class="topbar">
       <div class="brand">
@@ -26,11 +26,15 @@
           <ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#lg)" stroke-width="1.4" transform="rotate(-25 16 16)" opacity=".85"/>
           <ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#lg)" stroke-width="1.4" transform="rotate(35 16 16)" opacity=".45"/>
         </svg>
-        <span class="wordmark">Jervis</span>
+        <span class="wordmark">Jarvis</span>
         <span class="tagline">Personal voice intelligence</span>
       </div>
       <div class="conn" id="connPill"><i></i><span id="connectionText">Connecting…</span><b class="bars" aria-hidden="true"><u></u><u></u><u></u><u></u></b></div>
       <div class="top-right">
+        <span class="phone-chip" id="phoneChip" hidden role="status" title="A paired phone is connected">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>
+          <span id="phoneChipText">Phone</span>
+        </span>
         <button type="button" class="setup-chip" id="setupChip" hidden title="Show the AI setup">AI setup</button>
         <button type="button" class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
@@ -108,14 +112,14 @@
       <!-- ============ Center: the orb ============ -->
       <section class="stage">
         <div class="orb-wrap" id="orbWrap">
-          <canvas id="orbCanvas" aria-label="Jervis voice orb" role="img"></canvas>
+          <canvas id="orbCanvas" aria-label="Jarvis voice orb" role="img"></canvas>
           <i class="reticle tl"></i><i class="reticle tr"></i><i class="reticle bl"></i><i class="reticle br"></i>
           <div class="hud hud-l"><span>Core</span><b class="hud-state"></b></div>
           <div class="hud hud-r"><span>Link</span><b class="hud-link"></b></div>
         </div>
         <div class="stage-copy">
           <h1 id="stateTitle">Ready</h1>
-          <p id="stateSub">Say “Hey Jervis” or just start talking.</p>
+          <p id="stateSub">Say “Hey Jarvis” or just start talking.</p>
         </div>
         <div class="caption" id="caption" aria-live="polite"><span class="cap-label" id="capLabel"></span><p id="capText"></p></div>
         <div class="attach-preview" id="attachPreview" hidden>
@@ -129,7 +133,7 @@
           </button>
           <input type="file" id="imageFileInput" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden />
           <span class="type-prompt" aria-hidden="true">&#x203A;</span>
-          <input id="typeInput" type="text" maxlength="500" spellcheck="false" placeholder="Type a message or a number to Jervis…" aria-label="Type to Jervis" />
+          <input id="typeInput" type="text" maxlength="500" spellcheck="false" placeholder="Type a message or a number to Jarvis…" aria-label="Type to Jarvis" />
           <button type="submit" class="type-send" id="typeSend" aria-label="Send" title="Send (Enter)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </button>
@@ -145,11 +149,11 @@
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.2"/></svg>
           </button>
           <div class="speak-vol" id="speakVol">
-            <button class="speak-vol-btn" id="speakVolBtn" type="button" aria-pressed="false" aria-label="Mute Jervis's voice">
+            <button class="speak-vol-btn" id="speakVolBtn" type="button" aria-pressed="false" aria-label="Mute Jarvis's voice">
               <svg class="ic-loud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4h3l4 4V6l-4 4H4z"/><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/></svg>
               <svg class="ic-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4h3l4 4V6l-4 4H4z"/><path d="M16 9l5 5M21 9l-5 5"/></svg>
             </button>
-            <input type="range" id="speakVolSlider" min="0" max="100" step="1" value="100" aria-label="Jervis's speaking volume" />
+            <input type="range" id="speakVolSlider" min="0" max="100" step="1" value="100" aria-label="Jarvis's speaking volume" />
           </div>
           </div>
           <p class="mic-hint"><span id="pillText">Microphone on</span> · press <kbd>M</kbd> to <span id="buttonHint">mute</span> · <kbd>/</kbd> to type</p>
@@ -226,7 +230,7 @@
   <div class="sheet-layer" id="setupLayer" hidden role="dialog" aria-modal="true" aria-labelledby="setupTitle">
     <div class="sheet-card setup-card">
       <p class="graph-kicker">First start</p>
-      <h2 id="setupTitle">Getting Jervis ready</h2>
+      <h2 id="setupTitle">Getting Jarvis ready</h2>
       <p class="sheet-sub" id="setupSummary"></p>
       <ol class="setup-steps" id="setupSteps"></ol>
       <div class="setup-error" id="setupError" hidden><strong id="setupErrorText"></strong><span id="setupHint"></span></div>
@@ -241,7 +245,7 @@
   <div class="sheet-layer" id="controlLayer" hidden role="alertdialog" aria-modal="true" aria-labelledby="controlTitle" aria-describedby="controlQuestion">
     <div class="sheet-card control-card">
       <p class="graph-kicker">Computer control</p>
-      <h2 id="controlTitle">Let Jervis use the mouse and keyboard?</h2>
+      <h2 id="controlTitle">Let Jarvis use the mouse and keyboard?</h2>
       <p class="sheet-sub" id="controlQuestion"></p>
       <ul class="control-points">
         <li>A glowing edge and a bar with <b>Pause</b> and <b>Stop</b> stay on screen the whole time.</li>
@@ -263,8 +267,9 @@
       <p class="graph-kicker">Connect your phone</p>
       <h2 id="phonePairingTitle">Scan this with your phone's camera</h2>
       <div class="phone-pairing-qr" id="phonePairingQr"></div>
-      <p class="sheet-sub">Can't scan? Open this link on your phone instead: <code id="phonePairingAddress"></code></p>
-      <p class="sheet-note">This is only needed once for this phone — expires in a few minutes.</p>
+      <p class="sheet-sub">Same Wi-Fi as this computer. The link opens Jarvis on your phone and pairs it, then you can add it to your Home Screen.</p>
+      <p class="phone-pairing-code" id="phonePairingCodeRow" hidden>Already have the Jarvis app? Enter <b id="phonePairingCode"></b></p>
+      <p class="sheet-note">Can't scan? Open <code id="phonePairingAddress"></code> on your phone. Only needed once per phone. Expires in a few minutes.</p>
       <div class="sheet-actions">
         <button type="button" class="sheet-btn" id="phonePairingClose">Close</button>
       </div>
@@ -275,18 +280,18 @@
   <div class="sheet-layer" id="welcomeLayer" hidden role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
     <div class="sheet-card welcome-card">
       <p class="graph-kicker">Welcome</p>
-      <h2 id="welcomeTitle">Let’s get Jervis set up for you</h2>
+      <h2 id="welcomeTitle">Let’s get Jarvis set up for you</h2>
       <p class="sheet-sub">A few quick things — everything here is optional, and can be changed anytime in Settings.</p>
       <div class="set-row">
-        <div class="set-text"><label for="welcomeName">Your name</label><small>So Jervis can greet you by name instead of “Sir”.</small></div>
+        <div class="set-text"><label for="welcomeName">Your name</label><small>So Jarvis can greet you by name instead of “Sir”.</small></div>
         <input id="welcomeName" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Ariel" />
       </div>
       <div class="set-row toggle">
-        <div class="set-text"><label for="welcomeWake">Wait for “Hey Jervis”</label><small>Off: Jervis listens all the time while the microphone is on.</small></div>
+        <div class="set-text"><label for="welcomeWake">Wait for “Hey Jarvis”</label><small>Off: Jarvis listens all the time while the microphone is on.</small></div>
         <input id="welcomeWake" type="checkbox" class="switch" checked />
       </div>
       <div class="set-row">
-        <div class="set-text"><label for="welcomePhone">Your phone number</label><small>For text notifications, e.g. when Jervis wants to pair with your phone. Needs Twilio set up too — add that under “optional extras” below.</small></div>
+        <div class="set-text"><label for="welcomePhone">Your phone number</label><small>For text notifications, e.g. when Jarvis wants to pair with your phone. Needs Twilio set up too — add that under “optional extras” below.</small></div>
         <input id="welcomePhone" type="text" autocomplete="off" spellcheck="false" placeholder="+15551234567" />
       </div>
       <div class="sheet-actions">
@@ -300,7 +305,7 @@
   <div class="sheet-layer" id="settingsLayer" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="sheet-card settings-card">
       <header class="graph-head">
-        <div class="graph-heading"><p class="graph-kicker">Jervis</p><h2 id="settingsTitle">Settings</h2></div>
+        <div class="graph-heading"><p class="graph-kicker">Jarvis</p><h2 id="settingsTitle">Settings</h2></div>
         <div class="head-actions"><button type="button" class="ghost" id="settingsClose" title="Close (Esc)">Close</button></div>
       </header>
       <div class="settings-body" id="settingsBody"><p class="sheet-sub">Loading…</p></div>
@@ -315,7 +320,7 @@
   <template id="emptyTpl">
     <div class="empty" id="emptyChat">
       <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12a4 4 0 0 1 4-4h24a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H22l-8 7v-7h-2a4 4 0 0 1-4-4z"/><path d="M17 17h14M17 23h9"/></svg>
-      <p>Nothing yet</p><small>Your conversation with Jervis shows up here.</small>
+      <p>Nothing yet</p><small>Your conversation with Jarvis shows up here.</small>
     </div>
   </template>
 

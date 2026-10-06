@@ -82,7 +82,7 @@ _MISHEARD = [(re.compile(r"\bbe (?:girl|gear|ger|gur|ghur)\b", re.I), "bigger"),
              (re.compile(rf"\b({_NUMBER})\s+times\s+(?:the|as|its)\s+(?:big|large|size)\w*\b.*$", re.I), r"\1 times bigger"),
              (re.compile(rf"\bsize\s+(?=(?:{_NUMBER})\s*(?:times|x)\b)", re.I), ""),
              (re.compile(r"\bthe cube's\b", re.I), "the cube")]
-_FILLER = re.compile(r"^(?:(?:okay|ok|so|now|and|alright|all right|well|hey|jervis|jarvis|blender|please|"
+_FILLER = re.compile(r"^(?:(?:okay|ok|so|now|and|alright|all right|well|hey|jarvis|jervis|blender|please|"
                      r"in blender)\b[,.!]?\s*)+", re.I)
 _CLAUSE_SPLIT = re.compile(r"\s*(?:,\s*)?\b(?:and then|and also|and|then|after that)\b\s*,?\s*", re.I)
 
@@ -115,7 +115,7 @@ def _clean_ref(ref_text: str) -> str:
 
 def _resolve_reference(ref_text: str, session, bridge=None):
     """Which object (its real Blender name) `ref_text` ("it", "the second one", "the cube") means, or None if
-    nothing matches. Objects Jervis made this session come first; otherwise the real scene is asked (Blender's
+    nothing matches. Objects Jarvis made this session come first; otherwise the real scene is asked (Blender's
     default "Cube", or whatever the user selected by hand), never guessed."""
     found = _resolve_tracked(ref_text, session)
     if found and bridge is not None and not _exists(bridge, found):
@@ -311,7 +311,7 @@ def _color_action(bridge, session, ref_text: str, color: str):
 
     def action():
         name = _target(bridge, session, ref_text, "color anything")
-        material = f"Jervis {color.lower()}"
+        material = f"Jarvis {color.lower()}"
         response = _run(bridge, f"obj = bpy.data.objects.get({name!r})\n"
                                 "before = obj.active_material.name if obj.active_material else ''\n"
                                 f"mat = bpy.data.materials.get({material!r}) or bpy.data.materials.new({material!r})\n"
@@ -449,9 +449,9 @@ def _focus_action():
 
 
 def _undo_action(bridge, session):
-    """Reverses whatever Jervis's own last deterministic action did, rather than calling Blender's native
+    """Reverses whatever Jarvis's own last deterministic action did, rather than calling Blender's native
     bpy.ops.ed.undo() — that operator's poll() rejects calls made from a script/timer context (confirmed: it fails
-    even with temp_override supplying a window/area/region), and more importantly, undoing Jervis's own last change
+    even with temp_override supplying a window/area/region), and more importantly, undoing Jarvis's own last change
     specifically is what "undo that" means here — not whatever the user may have done by hand in Blender."""
     def action():
         pending = session.last_undo
@@ -485,7 +485,7 @@ def _save_action(bridge, name: str = None):
         else:
             code = ("import os\n"
                     "if not bpy.data.filepath:\n"
-                    "    path = os.path.join(os.path.expanduser('~'), 'Documents', 'jervis_scene.blend')\n"
+                    "    path = os.path.join(os.path.expanduser('~'), 'Documents', 'jarvis_scene.blend')\n"
                     "    os.makedirs(os.path.dirname(path), exist_ok=True)\n"
                     "    bpy.ops.wm.save_as_mainfile(filepath=path)\n"
                     "else:\n"

@@ -1,7 +1,7 @@
-"""Spotify without developer keys: Jervis drives the Spotify app on this computer.
+"""Spotify without developer keys: Jarvis drives the Spotify app on this computer.
 
 Spotify's online developer interface needs keys that belong to whoever registered an app with Spotify, so an
-installed Jervis has none (and Spotify caps such apps at 25 listeners). Everything here works with just the Spotify
+installed Jarvis has none (and Spotify caps such apps at 25 listeners). Everything here works with just the Spotify
 app installed and signed in:
 
 - play something: bring Spotify to the front, open its Quick Search (Cmd+K / Ctrl+K), type the request and press
@@ -70,7 +70,7 @@ def _mac_bring_forward() -> bool:
     import AppKit
     if not running():
         subprocess.run(["open", "-a", "Spotify"], check=False)
-        for _ in range(60):   # a cold start takes a few seconds, longer on a computer Jervis's own AI is loading down
+        for _ in range(60):   # a cold start takes a few seconds, longer on a computer Jarvis's own AI is loading down
             time.sleep(0.25)
             if running():
                 break
@@ -115,7 +115,7 @@ def _mac_can_press_keys() -> bool:
 
 
 def _mac_ask_for_accessibility() -> None:
-    """Ask macOS for the Accessibility permission: that's what puts Jervis in the Accessibility list at all (an app
+    """Ask macOS for the Accessibility permission: that's what puts Jarvis in the Accessibility list at all (an app
     that only checks is never listed). The first time macOS shows its own dialog; after that the settings page opens."""
     import screen_mac
     screen_mac.MacScreen().available()
@@ -174,7 +174,7 @@ def _win_bring_forward() -> bool:
     return False
 
 
-# ---------- what Jervis uses ----------
+# ---------- what Jarvis uses ----------
 def now_playing() -> tuple:
     """(is it playing, "Song by Artist" or "")."""
     if IS_MAC:
@@ -205,7 +205,7 @@ def play(query: str) -> str:
         _mac_ask_for_accessibility()
         _mac_open_search(query)
         raise SpotifyLocalError("I opened your search in Spotify: press play on it. To let me press play myself, "
-                                "turn on Jervis in System Settings, Privacy & Security, Accessibility, then ask me "
+                                "turn on Jarvis in System Settings, Privacy & Security, Accessibility, then ask me "
                                 "again.")
     before = _mac_now()[1] if IS_MAC else _win_title()
     if not (_mac_bring_forward() if IS_MAC else _win_bring_forward()):
@@ -350,14 +350,14 @@ def clean_query(text: str) -> str:
     return " ".join(text.split()).strip(" \"'“”")
 
 
-# ---------- the visible way: when you asked Jervis to take control ----------
+# ---------- the visible way: when you asked Jarvis to take control ----------
 # The same Quick Search as play(), done so you can follow it: the pointer moves to the search box and to the result,
 # the request is typed letter by letter, and the results appear before the top one is played. Spotify's Mac app
-# doesn't let other programs see its buttons, so Jervis points at the result and plays it with Spotify's own play
+# doesn't let other programs see its buttons, so Jarvis points at the result and plays it with Spotify's own play
 # key (Shift+Enter) instead of clicking a place he can't see.
 TYPE_DELAY = 0.09   # seconds between letters
 RESULTS_WAIT = 3.5   # seconds to let Spotify's search results load before looking for one
-# how long to wait for playback to actually start before giving up: generous, since Jervis's own local AI (several
+# how long to wait for playback to actually start before giving up: generous, since Jarvis's own local AI (several
 # GB, running alongside everything else) can make the whole computer slower to respond than usual.
 PLAYBACK_WAIT_STEPS = 48
 PLAYBACK_WAIT_INTERVAL = 0.3   # -> up to 14.4s
@@ -406,8 +406,8 @@ def _type_slowly(text: str) -> None:
 def _window_bounds():
     """(x, y, width, height) of Spotify's main window, or None. This comes from the window server (what's on
     screen), not accessibility — Spotify's window doesn't expose any content to accessibility at all (confirmed:
-    even with Jervis's accessibility permission on, its window has zero readable elements beyond its menu bar), so
-    there is no real button or field for Jervis to find and click the way he can in other apps."""
+    even with Jarvis's accessibility permission on, its window has zero readable elements beyond its menu bar), so
+    there is no real button or field for Jarvis to find and click the way he can in other apps."""
     if IS_MAC:
         import Quartz
         windows = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
@@ -463,8 +463,8 @@ def visible_steps(query: str) -> list:
     """The steps of playing `query` so you can watch, as (what you see, function) for computer_use.ScriptedTask.
 
     Spotify's Mac app doesn't expose its window content to accessibility, so there is no search field or play
-    button Jervis can find and click by reading the window the way the general computer-control engine does in
-    other apps. When looking at a screenshot is available (Settings, Computer control), Jervis uses that instead —
+    button Jarvis can find and click by reading the window the way the general computer-control engine does in
+    other apps. When looking at a screenshot is available (Settings, Computer control), Jarvis uses that instead —
     a real vision model finds the real search bar and the real matching result, and both are clicked for real.
     Otherwise, the only remaining real, visible way in is Spotify's own keyboard shortcuts (Cmd+K opens its Quick
     Search, typing goes straight into it, Shift+Enter plays the selected result). Either way, nothing is ever
@@ -498,7 +498,7 @@ def _visible_steps_by_sight(query: str) -> list:
         obs = env().observe()
         if obs.screenshot is None:
             raise SpotifyLocalError("I don't have permission to see the screen, so I can't find things in Spotify. "
-                                    "Grant Screen Recording to Jervis in System Settings, Privacy & Security.")
+                                    "Grant Screen Recording to Jarvis in System Settings, Privacy & Security.")
         box = _window_bounds()
         if box is None:
             raise SpotifyLocalError("Spotify doesn't have a window open, so I stopped instead of guessing where "

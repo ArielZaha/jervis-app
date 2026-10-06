@@ -413,7 +413,7 @@ button { font: inherit; color: inherit; }
 .attach-remove { width: 22px; height: 22px; flex: none; border: 0; border-radius: 50%; background: rgb(var(--magenta) / .18); color: rgb(var(--magenta)); font-size: 15px; line-height: 1; cursor: pointer; }
 .attach-remove:hover { background: rgb(var(--magenta) / .35); }
 .app.drag-over::after {
-  content: "Drop an image for Jervis"; position: fixed; inset: 0; z-index: 60;
+  content: "Drop an image for Jarvis"; position: fixed; inset: 0; z-index: 60;
   display: grid; place-items: center;
   font-family: var(--mono); font-size: 15px; letter-spacing: .1em; text-transform: uppercase; color: #fff;
   background: rgb(3 8 18 / .78);
@@ -451,7 +451,7 @@ button { font: inherit; color: inherit; }
 @keyframes ripple { from { opacity: .8; transform: scale(1); } to { opacity: 0; transform: scale(2); } }
 .mic-hint { color: var(--faint); font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; }
 
-/* Stop-and-listen: a small cut-corner button that slides out beside the mic only while Jervis is talking.
+/* Stop-and-listen: a small cut-corner button that slides out beside the mic only while Jarvis is talking.
    It is absolutely positioned, so it never moves anything else. */
 .stop-btn {
   position: absolute; left: calc(100% + 24px); top: 50%;
@@ -473,7 +473,7 @@ button { font: inherit; color: inherit; }
 .stop-btn:active { transform: translate(0, -50%) scale(.92); }
 .stop-btn:focus-visible { outline: 2px solid rgb(var(--accent-rgb)); outline-offset: 3px; }
 
-/* Jervis's own speaking volume: mirrors stop-btn's position on the mic's other side, always visible (not tied to
+/* Jarvis's own speaking volume: mirrors stop-btn's position on the mic's other side, always visible (not tied to
    data-state) since it's useful whether or not he's currently talking. */
 .speak-vol {
   position: absolute; right: calc(100% + 24px); top: 50%; transform: translateY(-50%);
@@ -517,13 +517,13 @@ kbd { padding: 1px 6px; border: 1px solid rgb(var(--accent-rgb) / .4); border-ra
 @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.98); filter: blur(4px); } }
 .msg small { color: var(--faint); font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; padding: 0 4px; }
 .msg p, .msg .bubble { position: relative; padding: 10px 14px 10px 16px; font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; }
-.msg.jervis { align-self: flex-start; max-width: 98%; }
-.msg.jervis .bubble {
+.msg.jarvis { align-self: flex-start; max-width: 98%; }
+.msg.jarvis .bubble {
   background: linear-gradient(90deg, rgb(var(--accent-rgb) / .13), rgb(var(--accent-rgb) / .03));
   border-left: 2px solid rgb(var(--accent-rgb));
   clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
 }
-.msg.jervis small { color: rgb(var(--accent-rgb) / .8); }
+.msg.jarvis small { color: rgb(var(--accent-rgb) / .8); }
 .msg-image { margin: 2px 0 0; cursor: zoom-in; }
 .msg-image img { display: block; width: 100%; max-width: 360px; max-height: 320px; object-fit: contain; background: rgb(3 8 18 / .7); border: 1px solid rgb(var(--accent-rgb) / .3); }
 .msg.user .msg-image img { border-color: rgb(var(--magenta) / .35); margin-left: auto; }
@@ -552,7 +552,7 @@ kbd { padding: 1px 6px; border: 1px solid rgb(var(--accent-rgb) / .4); border-ra
 .md .katex { font-size: 1.05em; }
 .md-answer .katex { font-size: 1.25em; }
 .md-answer .md-math-inline { text-shadow: none; }
-.msg.jervis .md p { padding: 0; background: none; border: 0; clip-path: none; }
+.msg.jarvis .md p { padding: 0; background: none; border: 0; clip-path: none; }
 .md ul, .md ol { padding-left: 20px; }
 .md li { margin: 3px 0; padding-left: 2px; }
 .md li::marker { color: rgb(var(--accent-rgb)); font-family: var(--mono); font-weight: 600; }
@@ -826,6 +826,15 @@ kbd { padding: 1px 6px; border: 1px solid rgb(var(--accent-rgb) / .4); border-ra
   white-space: nowrap; cursor: pointer; -webkit-app-region: no-drag;
   clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
 }
+.phone-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px 5px 10px; white-space: nowrap;
+  border: 1px solid rgb(61 242 192 / .4); background: rgb(61 242 192 / .08); color: var(--ok);
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+}
+.phone-chip svg { width: 13px; height: 13px; flex-shrink: 0; }
+.phone-pairing-code { text-align: center; color: var(--muted); font-size: 14px; margin: 4px 0 10px; }
+.phone-pairing-code b { display: block; margin-top: 4px; color: var(--text); font-family: var(--mono); font-size: 26px; letter-spacing: .3em; }
 .setup-chip.bad { color: var(--danger); border-color: rgb(255 107 129 / .45); background: rgb(255 107 129 / .1); }
 
 /* ---------- Engine banner ---------- */
@@ -931,7 +940,7 @@ kbd { padding: 1px 6px; border: 1px solid rgb(var(--accent-rgb) / .4); border-ra
   .setup-step.active .step-icon { animation: none; border-top-color: rgb(var(--accent-rgb)); }
 }
 
-/* ---------- Computer control: asking before Jervis takes the mouse and keyboard ---------- */
+/* ---------- Computer control: asking before Jarvis takes the mouse and keyboard ---------- */
 .control-card { --accent-rgb: 255 176 72; width: min(560px, 94vw); }
 .control-points { margin: 0; padding: 0 0 0 18px; display: grid; gap: 6px; color: var(--muted); font-size: 13.5px; }
 .control-points b { color: var(--text); font-weight: 600; }

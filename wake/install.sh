@@ -1,37 +1,37 @@
 #!/bin/bash
-# Installs Jervis Wake: say "Hey Jervis", "Wake up Jervis" or "Hello Jervis" and Jervis opens, even when Jervis and
-# VS Code are closed.
+# Installs Jarvis Wake: say "Hey Jarvis", "Wake up Jarvis" or "Hello Jarvis" — or open the Jarvis app on your paired
+# phone — and Jarvis opens, even when Jarvis and VS Code are closed.
 #
 #     bash wake/install.sh          (run again any time: it updates everything in place)
 #
 # What it puts where (nothing inside the iCloud-synced Desktop, which can offload files and stall a start at sign-in):
-#   ~/Applications/Jervis Wake.app                       the small app that owns the microphone permission
-#   ~/Library/Application Support/JervisWake/            the listener, its own Python environment, the speech model
+#   ~/Applications/Jarvis Wake.app                       the small app that owns the microphone permission
+#   ~/Library/Application Support/JarvisWake/            the listener, its own Python environment, the speech model
 #   ~/Library/LaunchAgents/io.github.arielzaha.jervis-wake.plist   starts it at sign-in and keeps it running
-#   ~/Library/Logs/JervisWake/                           logs
-# Jervis itself is started from this project folder, exactly as usual.
+#   ~/Library/Logs/JarvisWake/                           logs
+# Jarvis itself is started from this project folder, exactly as usual.
 set -euo pipefail
 
 LABEL="io.github.arielzaha.jervis-wake"
-OLD_LABEL="com.ariel.jervis.wake-listener"
+OLD_LABEL="com.ariel.jervis.wake-listener"   # a much older listener, removed if found (its real, old name)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PROJECT="$(cd "$HERE/.." && pwd)"
-SUPPORT="$HOME/Library/Application Support/JervisWake"
-APP="$HOME/Applications/Jervis Wake.app"
+SUPPORT="$HOME/Library/Application Support/JarvisWake"
+APP="$HOME/Applications/Jarvis Wake.app"
 AGENT="$HOME/Library/LaunchAgents/$LABEL.plist"
-LOGS="$HOME/Library/Logs/JervisWake"
+LOGS="$HOME/Library/Logs/JarvisWake"
 MODEL_URL="https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
 DOMAIN="gui/$(id -u)"
 
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
-fail() { printf 'Jervis Wake was not installed: %s\n' "$*" >&2; exit 1; }
+fail() { printf 'Jarvis Wake was not installed: %s\n' "$*" >&2; exit 1; }
 
 [ "$(uname -s)" = "Darwin" ] || fail "this is for macOS."
 [ -f "$PROJECT/app.py" ] || fail "app.py isn't in $PROJECT."
 [ -x "$PROJECT/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron" ] || \
-  fail "Jervis's window isn't set up yet. Run 'npm install' in $PROJECT (or start Jervis once with run.py), then try again."
+  fail "Jarvis's window isn't set up yet. Run 'npm install' in $PROJECT (or start Jarvis once with run.py), then try again."
 [ -x "$PROJECT/venv/bin/python" ] || \
-  fail "Jervis's Python environment isn't set up yet. Start Jervis once with 'python3 run.py' in $PROJECT, then try again."
+  fail "Jarvis's Python environment isn't set up yet. Start Jarvis once with 'python3 run.py' in $PROJECT, then try again."
 
 PY=""
 for candidate in /opt/homebrew/bin/python3.14 /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3 \
@@ -51,17 +51,26 @@ if [ -f "$HOME/Library/LaunchAgents/$OLD_LABEL.plist" ]; then
   mv "$HOME/Library/LaunchAgents/$OLD_LABEL.plist" "$LOGS/old-wake-listener.plist.backup" 2>/dev/null || true
 fi
 
+# Jarvis was called Jervis: an install from before the rename is taken over (its Python environment and speech
+# model move, nothing is downloaded again) and its old app is removed.
+OLD_SUPPORT="$HOME/Library/Application Support/JervisWake"
+if [ -d "$OLD_SUPPORT" ] && [ ! -e "$SUPPORT" ]; then
+  say "Moving the existing install over from its old name…"
+  mv "$OLD_SUPPORT" "$SUPPORT"
+fi
+rm -rf "$HOME/Applications/Jervis Wake.app"
+
 say "Installing the listener in ${SUPPORT}…"
 mkdir -p "$SUPPORT" "$LOGS"
-cp "$HERE/jervis_wake.py" "$SUPPORT/jervis_wake.py"
+cp "$HERE/jarvis_wake.py" "$SUPPORT/jarvis_wake.py"
 printf '{"project": "%s"}\n' "$PROJECT" > "$SUPPORT/config.json"
 
 if [ ! -x "$SUPPORT/venv/bin/python3" ]; then
   "$PY" -m venv "$SUPPORT/venv"
 fi
-say "Installing its packages (Vosk speech recognition, sounddevice, numpy)…"
+say "Installing its packages (Vosk speech recognition, sounddevice, numpy, websockets)…"
 "$SUPPORT/venv/bin/python3" -m pip install --quiet --disable-pip-version-check --upgrade pip
-"$SUPPORT/venv/bin/python3" -m pip install --quiet --disable-pip-version-check "vosk==0.3.44" "sounddevice>=0.4.6" "numpy>=1.26"
+"$SUPPORT/venv/bin/python3" -m pip install --quiet --disable-pip-version-check "vosk==0.3.44" "sounddevice>=0.4.6" "numpy>=1.26" "websockets>=13"
 
 if [ ! -f "$SUPPORT/model/am/final.mdl" ]; then
   say "Downloading the wake-phrase model (40 MB, once)…"
@@ -69,21 +78,21 @@ if [ ! -f "$SUPPORT/model/am/final.mdl" ]; then
   curl -fL --retry 5 --retry-delay 2 -C - --progress-bar -o "$SUPPORT/model.zip" "$MODEL_URL"
   (cd "$SUPPORT" && unzip -q model.zip && mv vosk-model-small-en-us-0.15 model && rm model.zip)
 fi
-"$SUPPORT/venv/bin/python3" "$SUPPORT/jervis_wake.py" --check || fail "the listener's packages or model don't load."
+"$SUPPORT/venv/bin/python3" "$SUPPORT/jarvis_wake.py" --check || fail "the listener's packages or model don't load."
 
-say "Building Jervis Wake.app…"
+say "Building Jarvis Wake.app…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-clang -O2 -Wall -o "$APP/Contents/MacOS/jervis-wake" "$HERE/launcher.c"
+clang -O2 -Wall -o "$APP/Contents/MacOS/jarvis-wake" "$HERE/launcher.c"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key><string>$LABEL</string>
-  <key>CFBundleName</key><string>Jervis Wake</string>
-  <key>CFBundleDisplayName</key><string>Jervis Wake</string>
-  <key>CFBundleExecutable</key><string>jervis-wake</string>
+  <key>CFBundleName</key><string>Jarvis Wake</string>
+  <key>CFBundleDisplayName</key><string>Jarvis Wake</string>
+  <key>CFBundleExecutable</key><string>jarvis-wake</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
@@ -91,7 +100,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Jervis Wake listens for “Hey Jervis” so it can open Jervis. The sound is checked on this Mac and is never recorded or sent anywhere.</string>
+  <string>Jarvis Wake listens for “Hey Jarvis” so it can open Jarvis. The sound is checked on this Mac and is never recorded or sent anywhere.</string>
 </dict>
 </plist>
 EOF
@@ -105,7 +114,7 @@ if [ -f "$PROJECT/assets/icon.png" ]; then
 fi
 xattr -cr "$APP" 2>/dev/null || true
 codesign --force --sign - --identifier "$LABEL" "$APP" 2>/dev/null
-codesign --verify "$APP" || fail "Jervis Wake.app couldn't be signed."
+codesign --verify "$APP" || fail "Jarvis Wake.app couldn't be signed."
 
 say "Setting it to start when you sign in…"
 mkdir -p "$(dirname "$AGENT")"
@@ -115,7 +124,7 @@ cat > "$AGENT" <<EOF
 <plist version="1.0">
 <dict>
   <key>Label</key><string>$LABEL</string>
-  <key>ProgramArguments</key><array><string>$APP/Contents/MacOS/jervis-wake</string></array>
+  <key>ProgramArguments</key><array><string>$APP/Contents/MacOS/jarvis-wake</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
@@ -127,23 +136,23 @@ cat > "$AGENT" <<EOF
 </plist>
 EOF
 plutil -lint "$AGENT" >/dev/null
-if [ -n "${JERVIS_WAKE_NO_START:-}" ]; then echo "Installed (not started: JERVIS_WAKE_NO_START is set)."; exit 0; fi
+if [ -n "${JARVIS_WAKE_NO_START:-}" ]; then echo "Installed (not started: JARVIS_WAKE_NO_START is set)."; exit 0; fi
 launchctl bootstrap "$DOMAIN" "$AGENT"
 launchctl enable "$DOMAIN/$LABEL"
 
 sleep 3
 if launchctl print "$DOMAIN/$LABEL" 2>/dev/null | grep -q "state = running"; then
-  say "Jervis Wake is running."
+  say "Jarvis Wake is running."
 else
-  echo "Jervis Wake didn't start. See $LOGS/agent.log and $LOGS/wake.log."
+  echo "Jarvis Wake didn't start. See $LOGS/agent.log and $LOGS/wake.log."
   exit 1
 fi
 cat <<EOF
 
 Next:
-  1. macOS asks "“Jervis Wake” would like to access the microphone": click Allow.
-     (No question? System Settings > Privacy & Security > Microphone: turn on Jervis Wake.)
-  2. Quit Jervis and VS Code, then say "Hey Jervis". Jervis opens and says "I'm awake, how can I help you?"
+  1. macOS asks "“Jarvis Wake” would like to access the microphone": click Allow.
+     (No question? System Settings > Privacy & Security > Microphone: turn on Jarvis Wake.)
+  2. Quit Jarvis and VS Code, then say "Hey Jarvis". Jarvis opens and says "I'm awake, how can I help you?"
 
 Log:        tail -f "$LOGS/wake.log"
 Status:     launchctl print $DOMAIN/$LABEL | grep state

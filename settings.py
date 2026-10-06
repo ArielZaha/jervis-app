@@ -1,17 +1,17 @@
-"""Jervis's settings: one JSON file in the user's data folder, edited from the Settings screen.
+"""Jarvis's settings: one JSON file in the user's data folder, edited from the Settings screen.
 
-Every setting is named after the environment variable the rest of Jervis already reads (GROQ_API_KEY, LLM_BACKEND,
+Every setting is named after the environment variable the rest of Jarvis already reads (GROQ_API_KEY, LLM_BACKEND,
 ...), and load() applies the saved values to os.environ. So every existing os.getenv() keeps working unchanged, and
 a developer's .env file keeps working too.
 
 Precedence, highest first:
-  1. variables already set in the real environment when Jervis starts (a developer's shell, tests)
+  1. variables already set in the real environment when Jarvis starts (a developer's shell, tests)
   2. settings.json (what the user chose in the Settings screen)
-  3. .env (the old way of configuring Jervis; still read, and imported into settings.json the first time)
+  3. .env (the old way of configuring Jarvis; still read, and imported into settings.json the first time)
   4. the defaults below
 
 The file is versioned so later releases can migrate it, and a damaged file is set aside (never silently lost) and
-replaced by defaults, so Jervis always starts.
+replaced by defaults, so Jarvis always starts.
 """
 import json
 import os
@@ -40,7 +40,7 @@ SCHEMA = [
     {"key": "OLLAMA_MODEL", "section": "AI", "label": "Local AI model", "type": "text", "default": "llama3.2",
      "help": "On a slower computer, llama3.2:1b answers faster. With 16 GB of memory, qwen2.5:7b is smarter, "
              "especially at using the computer (a 4.7 GB download).", "restart": True, "advanced": True},
-    {"key": "JERVIS_LOCAL_VISION", "section": "AI", "label": "Let the local AI see pictures and the screen",
+    {"key": "JARVIS_LOCAL_VISION", "section": "AI", "label": "Let the local AI see pictures and the screen",
      "type": "choice", "default": "auto",
      "choices": [["auto", "Automatic (computers with 16 GB of memory or more)"], ["on", "On"], ["off", "Off"]],
      "help": "Needs a 3 GB download and plenty of free memory.", "restart": True, "advanced": True},
@@ -48,47 +48,47 @@ SCHEMA = [
      "default": "qwen2.5vl:3b", "help": "Lets the local AI see pictures and the screen.", "restart": True,
      "advanced": True},
     # --- Voice ---
-    {"key": "JERVIS_MIC", "section": "Voice", "label": "Microphone", "type": "device", "default": "",
-     "help": "Leave on System default unless Jervis can't hear you."},
-    {"key": "JERVIS_VOICE", "section": "Voice", "label": "Jervis's voice", "type": "voice", "default": ""},
-    {"key": "JERVIS_WAKE_WORD", "section": "Voice", "label": "Wait for “Hey Jervis”", "type": "toggle",
-     "default": "on", "help": "Off: Jervis listens all the time while the microphone is on."},
-    {"key": "JERVIS_SPEAK_VOLUME", "section": "Voice", "label": "Speaking volume", "type": "text", "default": "100",
+    {"key": "JARVIS_MIC", "section": "Voice", "label": "Microphone", "type": "device", "default": "",
+     "help": "Leave on System default unless Jarvis can't hear you."},
+    {"key": "JARVIS_VOICE", "section": "Voice", "label": "Jarvis's voice", "type": "voice", "default": ""},
+    {"key": "JARVIS_WAKE_WORD", "section": "Voice", "label": "Wait for “Hey Jarvis”", "type": "toggle",
+     "default": "on", "help": "Off: Jarvis listens all the time while the microphone is on."},
+    {"key": "JARVIS_SPEAK_VOLUME", "section": "Voice", "label": "Speaking volume", "type": "text", "default": "100",
      "help": "0-100. Set from the speaker control next to the microphone button.", "advanced": True},
-    {"key": "JERVIS_SPEAK_MUTED", "section": "Voice", "label": "Mute Jervis's voice", "type": "toggle",
+    {"key": "JARVIS_SPEAK_MUTED", "section": "Voice", "label": "Mute Jarvis's voice", "type": "toggle",
      "default": "off", "advanced": True},
     # --- Computer control ---
-    {"key": "JERVIS_COMPUTER_CONTROL", "section": "Computer control", "label": "Let Jervis use the mouse and keyboard",
+    {"key": "JARVIS_COMPUTER_CONTROL", "section": "Computer control", "label": "Let Jarvis use the mouse and keyboard",
      "type": "choice", "default": "ask",
      "choices": [["ask", "Ask me before each task"], ["on", "Allowed (still asks before risky steps)"],
                  ["off", "Never"]]},
-    {"key": "JERVIS_SCREEN_VISION", "section": "Computer control", "label": "Look at the screen with",
+    {"key": "JARVIS_SCREEN_VISION", "section": "Computer control", "label": "Look at the screen with",
      "type": "choice", "default": "local",
      "choices": [["local", "Local AI only (private; needs 16 GB of memory)"],
                  ["online", "Online AI (Groq) too, if the local one isn't available"], ["off", "Never"]],
-     "help": "Used when Jervis can't find something on screen through accessibility alone (some apps, like "
+     "help": "Used when Jarvis can't find something on screen through accessibility alone (some apps, like "
              "Spotify, don't expose their buttons at all). A screenshot of your whole screen, not just one app, "
              "so “Online” means that leaves this computer.", "advanced": True},
-    {"key": "JERVIS_PHONE_CONTROL", "section": "Computer control", "label": "Let your phone control this computer",
+    {"key": "JARVIS_PHONE_CONTROL", "section": "Computer control", "label": "Let your phone control this computer",
      "type": "toggle", "default": "off",
-     "help": "A paired phone can ask Jervis to open apps, play music, or search, and — with a relay address set "
-             "below — talk to Jervis by voice from anywhere, not just this Wi-Fi. The first phone ever pairs "
+     "help": "A paired phone can ask Jarvis to open apps, play music, or search, and — with a relay address set "
+             "below — talk to Jarvis by voice from anywhere, not just this Wi-Fi. The first phone ever pairs "
              "locally (a code to type); after that, each “connect my phone” sends a notification to tap "
              "Confirmed/Not Confirmed on. Off by default.", "restart": True},
-    {"key": "JERVIS_RELAY_URL", "section": "Computer control", "label": "Relay address", "type": "text",
+    {"key": "JARVIS_RELAY_URL", "section": "Computer control", "label": "Relay address", "type": "text",
      "default": "wss://jervis-relay.onrender.com/", "advanced": True, "restart": True,
-     "help": "Lets an already-paired phone reach Jervis away from this Wi-Fi too. Points at a shared relay Jervis "
+     "help": "Lets an already-paired phone reach Jarvis away from this Wi-Fi too. Points at a shared relay Jarvis "
              "runs by default — it never sees anything meaningful (every message through it is end-to-end "
              "encrypted with a key only your phone and this computer have; see phone_crypto.py). Clear this field "
              "to keep phone control same-Wi-Fi only, or point it at your own relay instead (see relay/README.md)."},
     # --- General ---
-    {"key": "JERVIS_USER_NAME", "section": "General", "label": "Your name", "type": "text", "default": "",
-     "help": "So Jervis can greet you by name instead of “Sir”."},
+    {"key": "JARVIS_USER_NAME", "section": "General", "label": "Your name", "type": "text", "default": "",
+     "help": "So Jarvis can greet you by name instead of “Sir”."},
     {"key": "WEATHER_CITY", "section": "General", "label": "Weather city", "type": "text", "default": "",
      "help": "For the weather panel, e.g. Tel Aviv or London."},
-    {"key": "JERVIS_KEEP_TRANSCRIPTS", "section": "Privacy", "label": "Keep conversation logs on this computer",
+    {"key": "JARVIS_KEEP_TRANSCRIPTS", "section": "Privacy", "label": "Keep conversation logs on this computer",
      "type": "toggle", "default": "on"},
-    {"key": "WHATSAPP_READING", "section": "Privacy", "label": "Let Jervis read WhatsApp (macOS)", "type": "toggle",
+    {"key": "WHATSAPP_READING", "section": "Privacy", "label": "Let Jarvis read WhatsApp (macOS)", "type": "toggle",
      "default": "on", "restart": True},
     # --- Optional services ---
     {"key": "OPENAI_API_KEY", "section": "Optional services", "label": "OpenAI API key", "type": "secret",
@@ -111,7 +111,7 @@ SCHEMA = [
      "type": "secret", "default": "", "restart": True, "advanced": True},
     {"key": "TWILIO_ACCOUNT_SID", "section": "Optional services", "label": "Twilio account SID", "type": "secret",
      "default": "", "advanced": True,
-     "help": "Lets Jervis text your phone (e.g. when it wants to pair) with no page or app needed. Free trial "
+     "help": "Lets Jarvis text your phone (e.g. when it wants to pair) with no page or app needed. Free trial "
              "account at twilio.com; all four Twilio fields are required together."},
     {"key": "TWILIO_AUTH_TOKEN", "section": "Optional services", "label": "Twilio auth token", "type": "secret",
      "default": "", "advanced": True},
@@ -129,8 +129,8 @@ _first_run = False    # true only until the first save (the welcome screen, or S
 
 
 def is_first_run() -> bool:
-    """Whether settings.json didn't exist when Jervis started (an old .env still counts as "not set up through
-    this yet") — the window uses this to offer the welcome screen once, the first time Jervis ever starts."""
+    """Whether settings.json didn't exist when Jarvis started (an old .env still counts as "not set up through
+    this yet") — the window uses this to offer the welcome screen once, the first time Jarvis ever starts."""
     return _first_run
 
 
@@ -203,18 +203,46 @@ def _write_file(values: dict) -> None:
         raise
 
 
+OLD_PREFIX, PREFIX = "JE" + "RVIS_", "JARVIS_"   # Jarvis was called Jervis: its settings were JERVIS_... keys
+
+
+def _renamed_keys(values: dict) -> dict:
+    """The same settings with any old-name key (JERVIS_PHONE_CONTROL) under its new name (JARVIS_PHONE_CONTROL).
+    A value already saved under the new name wins."""
+    out = {k: v for k, v in values.items() if not k.startswith(OLD_PREFIX)}
+    for k, v in values.items():
+        if k.startswith(OLD_PREFIX):
+            out.setdefault(PREFIX + k[len(OLD_PREFIX):], v)
+    return out
+
+
+def _adopt_old_environment() -> None:
+    """JERVIS_* variables set outside Jarvis (a shell profile, an old launcher) still count, as JARVIS_*."""
+    for k, v in list(os.environ.items()):
+        if k.startswith(OLD_PREFIX):
+            os.environ.setdefault(PREFIX + k[len(OLD_PREFIX):], v)
+
+
 def load() -> None:
-    """Read everything and apply it to os.environ. Call once, before the rest of Jervis reads its configuration."""
+    """Read everything and apply it to os.environ. Call once, before the rest of Jarvis reads its configuration."""
     global _values, _from_env_file, _process_env, _first_run
     with _lock:
+        _adopt_old_environment()
         _process_env = {k for k in os.environ}
         env_files = [os.path.join(paths.RESOURCE_DIR, ".env"), os.path.join(paths.DATA_DIR, ".env")]
         _from_env_file = {}
         for file_path in dict.fromkeys(env_files):   # the same folder when running from source
             _from_env_file.update(_parse_env_file(file_path))
+        _from_env_file = _renamed_keys(_from_env_file)
         first_run = not os.path.exists(path())
         _first_run = first_run   # no settings.json yet — whether or not there's an old .env to import from below
         _values = _read_file()
+        if any(k.startswith(OLD_PREFIX) for k in _values):
+            _values = _renamed_keys(_values)   # settings saved under the old name: kept, under the new keys
+            try:
+                _write_file(_values)
+            except OSError as e:
+                print(f"Could not save the settings file: {e}", flush=True)
         if first_run and _from_env_file:
             # First start with this settings system: keep what the user already configured in .env.
             imported = {k: v for k, v in _from_env_file.items() if k in BY_KEY and v}
@@ -269,7 +297,7 @@ def validate(key: str, value) -> str:
         raise ValueError(f"{item['label']}: choose one of the listed options")
     if item["type"] == "toggle" and value not in ("on", "off"):
         raise ValueError(f"{item['label']} must be on or off")
-    if key == "JERVIS_SPEAK_VOLUME":
+    if key == "JARVIS_SPEAK_VOLUME":
         if not value.isdigit() or not 0 <= int(value) <= 100:
             raise ValueError(f"{item['label']} must be a number from 0 to 100")
     if any(ch in value for ch in "\r\n\0"):

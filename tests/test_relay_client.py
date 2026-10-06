@@ -96,9 +96,10 @@ def test_a_frame_attaches_through_the_shared_router_with_a_relay_prefixed_connid
 
     _run(scenario())
     assert "relay:abc123" in router._conns
-    [frame] = sent
+    frame, info_frame = sent   # session_ready, then session_info (history, names) right behind it
     assert frame["type"] == "frame" and frame["connId"] == "abc123"
     assert phone_crypto.decrypt(key, frame["payload"]) == {"type": "session_ready"}
+    assert phone_crypto.decrypt(key, info_frame["payload"])["type"] == "session_info"
 
 
 def test_phone_disconnected_forgets_only_that_relay_connection(router):

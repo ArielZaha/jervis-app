@@ -1,4 +1,4 @@
-// Jervis graph window: draws y = ax^2 + bx + c (or a line) as a glowing curve on a fine grid, with the vertex, the roots,
+// Jarvis graph window: draws y = ax^2 + bx + c (or a line) as a glowing curve on a fine grid, with the vertex, the roots,
 // the y-intercept and the axis of symmetry marked, a crosshair that follows the mouse, and "Save image".
 // The picture is drawn by one function (render) that is used for the live canvas and for the exported PNG.
 (function () {
@@ -304,7 +304,7 @@
       ctx.font = '700 26px "Orbitron", "Inter", system-ui, sans-serif'; ctx.fillStyle = '#fff'; ctx.shadowColor = rgba(CYAN, 0.8); ctx.shadowBlur = 14;
       ctx.fillText(d.plain, 26, 16); ctx.shadowBlur = 0;
       ctx.font = '11px "JetBrains Mono", monospace'; ctx.fillStyle = 'rgba(160,190,230,.6)'; ctx.textAlign = 'right';
-      ctx.fillText('JERVIS · GRAPH', w - 24, h - 16);
+      ctx.fillText('JARVIS · GRAPH', w - 24, h - 16);
     }
   }
 
@@ -463,7 +463,7 @@
         if (!blob) return;
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `jervis-graph-${Date.now()}.png`;
+        link.download = `jarvis-graph-${Date.now()}.png`;
         document.body.append(link); link.click(); link.remove();
         setTimeout(() => URL.revokeObjectURL(link.href), 4000);
         $('graphSave').textContent = 'Saved ✓';

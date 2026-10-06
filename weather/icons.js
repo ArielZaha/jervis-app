@@ -1,4 +1,4 @@
-// Jervis weather icons: one small, consistent set (sun, moon, cloud, rain, snow, storm, fog) drawn as inline SVG, so
+// Jarvis weather icons: one small, consistent set (sun, moon, cloud, rain, snow, storm, fog) drawn as inline SVG, so
 // they're crisp at any size and tinted to match the window. `animated` adds slow, quiet motion (turning rays, falling
 // drops) for the one big icon in the weather window; every other icon is still.
 (function () {

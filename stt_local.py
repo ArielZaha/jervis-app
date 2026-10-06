@@ -1,6 +1,6 @@
 """Speech recognition on this computer (faster-whisper): no account, no key, and it works without internet.
 
-The online recognizers (Whisper on Groq, Google's free one) stay available: with a Groq key Jervis still prefers
+The online recognizers (Whisper on Groq, Google's free one) stay available: with a Groq key Jarvis still prefers
 Groq's larger, faster Whisper, and Google's recognizer is the backup when this model isn't downloaded yet.
 The model (about 150 MB) is downloaded once during first-run setup, into the data folder.
 """
@@ -9,12 +9,12 @@ import threading
 
 import paths
 
-# The model comes from Hugging Face; keep its download quiet in Jervis's log (no progress bars, no account nagging).
+# The model comes from Hugging Face; keep its download quiet in Jarvis's log (no progress bars, no account nagging).
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("HF_HUB_VERBOSITY", "error")
 
-MODEL = os.getenv("JERVIS_STT_MODEL", "base.en")   # English, like the rest of Jervis's speech handling
+MODEL = os.getenv("JARVIS_STT_MODEL", "base.en")   # English, like the rest of Jarvis's speech handling
 REPO = {"tiny.en": "Systran/faster-whisper-tiny.en", "base.en": "Systran/faster-whisper-base.en",
         "small.en": "Systran/faster-whisper-small.en"}
 _model = None
@@ -65,7 +65,7 @@ def _load():
 
 
 def transcribe(wav_bytes: bytes) -> str:
-    """Text of a short WAV recording (16 kHz mono, as Jervis records it)."""
+    """Text of a short WAV recording (16 kHz mono, as Jarvis records it)."""
     import io
     import wave
 

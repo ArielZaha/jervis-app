@@ -24,10 +24,10 @@ def _free_port() -> int:
 def backend(tmp_path_factory):
     port = _free_port()
     data = tmp_path_factory.mktemp("data")
-    env = {**os.environ, "JERVIS_SUPERVISED": "1", "JERVIS_WS_PORT": str(port), "JERVIS_WS_TOKEN": TOKEN,
-           "JERVIS_DATA_DIR": str(data), "JERVIS_AUDIO": "off", "JERVIS_NO_AI_SETUP": "1", "GROQ_API_KEY": "",
+    env = {**os.environ, "JARVIS_SUPERVISED": "1", "JARVIS_WS_PORT": str(port), "JARVIS_WS_TOKEN": TOKEN,
+           "JARVIS_DATA_DIR": str(data), "JARVIS_AUDIO": "off", "JARVIS_NO_AI_SETUP": "1", "GROQ_API_KEY": "",
            "PYTHONUNBUFFERED": "1"}
-    env.pop("JERVIS_ALLOW_ORIGINS", None)
+    env.pop("JARVIS_ALLOW_ORIGINS", None)
     process = subprocess.Popen([sys.executable, os.path.join(ROOT, "app.py")], cwd=ROOT, env=env,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     deadline = time.time() + 60
@@ -93,10 +93,10 @@ def test_settings_round_trip_and_validation(backend):
     port, data = backend
     view = run(_talk(port, TOKEN, [{"type": "get_settings"}], lambda m: m.get("type") == "settings"))
     assert view and any(item["key"] == "LLM_BACKEND" for item in view["schema"])
-    saved = run(_talk(port, TOKEN, [{"type": "set_settings", "values": {"JERVIS_KEEP_TRANSCRIPTS": "off"}}],
+    saved = run(_talk(port, TOKEN, [{"type": "set_settings", "values": {"JARVIS_KEEP_TRANSCRIPTS": "off"}}],
                       lambda m: m.get("type") in ("settings_saved", "settings_error")))
-    assert saved == {"type": "settings_saved", "saved": ["JERVIS_KEEP_TRANSCRIPTS"], "restart": False}
-    bad = run(_talk(port, TOKEN, [{"type": "set_settings", "values": {"JERVIS_COMPUTER_CONTROL": "always"}}],
+    assert saved == {"type": "settings_saved", "saved": ["JARVIS_KEEP_TRANSCRIPTS"], "restart": False}
+    bad = run(_talk(port, TOKEN, [{"type": "set_settings", "values": {"JARVIS_COMPUTER_CONTROL": "always"}}],
                     lambda m: m.get("type") in ("settings_saved", "settings_error")))
     assert bad["type"] == "settings_error"
 
@@ -115,9 +115,9 @@ def test_the_engine_stops_when_its_window_is_gone(tmp_path):
     keep running and listening with nothing on screen."""
     window = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])   # stands in for the window
     port = _free_port()
-    env = {**os.environ, "JERVIS_SUPERVISED": "1", "JERVIS_WS_PORT": str(port), "JERVIS_WS_TOKEN": TOKEN,
-           "JERVIS_DATA_DIR": str(tmp_path), "JERVIS_AUDIO": "off", "JERVIS_NO_AI_SETUP": "1", "GROQ_API_KEY": "",
-           "JERVIS_PARENT_PID": str(window.pid)}
+    env = {**os.environ, "JARVIS_SUPERVISED": "1", "JARVIS_WS_PORT": str(port), "JARVIS_WS_TOKEN": TOKEN,
+           "JARVIS_DATA_DIR": str(tmp_path), "JARVIS_AUDIO": "off", "JARVIS_NO_AI_SETUP": "1", "GROQ_API_KEY": "",
+           "JARVIS_PARENT_PID": str(window.pid)}
     engine = subprocess.Popen([sys.executable, os.path.join(ROOT, "app.py")], cwd=ROOT, env=env,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -141,10 +141,10 @@ def test_a_genuinely_new_install_is_offered_the_welcome_screen(tmp_path):
     """A fresh data folder (no settings.json, no .env): the window should be told to offer the welcome screen the
     moment it connects, without having to ask for it."""
     port = _free_port()
-    env = {**os.environ, "JERVIS_SUPERVISED": "1", "JERVIS_WS_PORT": str(port), "JERVIS_WS_TOKEN": TOKEN,
-           "JERVIS_DATA_DIR": str(tmp_path), "JERVIS_AUDIO": "off", "JERVIS_NO_AI_SETUP": "1", "GROQ_API_KEY": "",
+    env = {**os.environ, "JARVIS_SUPERVISED": "1", "JARVIS_WS_PORT": str(port), "JARVIS_WS_TOKEN": TOKEN,
+           "JARVIS_DATA_DIR": str(tmp_path), "JARVIS_AUDIO": "off", "JARVIS_NO_AI_SETUP": "1", "GROQ_API_KEY": "",
            "PYTHONUNBUFFERED": "1"}
-    env.pop("JERVIS_ALLOW_ORIGINS", None)
+    env.pop("JARVIS_ALLOW_ORIGINS", None)
     process = subprocess.Popen([sys.executable, os.path.join(ROOT, "app.py")], cwd=ROOT, env=env,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:

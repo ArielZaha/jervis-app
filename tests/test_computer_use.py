@@ -184,7 +184,7 @@ def test_stop_ends_the_task_before_the_next_action():
 
 
 def test_moving_the_mouse_pauses_and_resume_continues():
-    """After Jervis's step the pointer is somewhere else: the user took over, so Jervis pauses until told to go on."""
+    """After Jarvis's step the pointer is somewhere else: the user took over, so Jarvis pauses until told to go on."""
     screen = FakeScreen()
     states = []
     task = ComputerTask("x", screen, ai(("click", {"element": 2}), ("done", {"summary": "done"})),
@@ -192,7 +192,7 @@ def test_moving_the_mouse_pauses_and_resume_continues():
     settle = task._settle
 
     def settle_then_user_moves_mouse(before):
-        after = settle(before)          # Jervis notes where the pointer is after his step...
+        after = settle(before)          # Jarvis notes where the pointer is after his step...
         screen.cursor_at = (1200, 900)  # ...and then the user grabs the mouse
         return after
     task._settle = settle_then_user_moves_mouse
@@ -347,8 +347,8 @@ def test_json_text_instead_of_a_tool_call_is_understood():
 def test_unavailable_platform_explains_itself():
     class NoScreen(Environment):
         def available(self):
-            return False, "Jervis needs permission to use this Mac."
-    assert ComputerTask("x", NoScreen(), ai()).run() == "Jervis needs permission to use this Mac."
+            return False, "Jarvis needs permission to use this Mac."
+    assert ComputerTask("x", NoScreen(), ai()).run() == "Jarvis needs permission to use this Mac."
 
 
 def test_screenshots_go_local_when_the_local_model_is_available(monkeypatch):
@@ -378,7 +378,7 @@ def test_screenshots_never_go_online_by_default(monkeypatch):
     from PIL import Image
     monkeypatch.setattr(screen_vision, "_local_available", lambda: False)
     monkeypatch.setattr(images, "_groq_vision_call", lambda *a, **k: pytest.fail("a screenshot went to the online AI"))
-    monkeypatch.delenv("JERVIS_SCREEN_VISION", raising=False)   # default: "local"
+    monkeypatch.delenv("JARVIS_SCREEN_VISION", raising=False)   # default: "local"
     with pytest.raises(images.ImageError):
         screen_vision.ScreenVision().locate(Image.new("RGB", (100, 100)), "the logo", (100, 100))
 
@@ -396,7 +396,7 @@ def test_screenshots_go_online_when_explicitly_turned_on(monkeypatch):
         return '{"bbox_2d": [0, 0, 20, 10]}'
     monkeypatch.setattr(screen_vision, "_local_available", lambda: False)
     monkeypatch.setattr(images, "_groq_vision_call", online)
-    monkeypatch.setenv("JERVIS_SCREEN_VISION", "online")
+    monkeypatch.setenv("JARVIS_SCREEN_VISION", "online")
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
     point = screen_vision.ScreenVision().locate(Image.new("RGB", (100, 100)), "the logo", (100, 100))
     assert sent.get("called") and point is not None
@@ -420,7 +420,7 @@ def test_stop_ends_a_scripted_task_before_the_next_step():
 
 
 def test_moving_the_mouse_pauses_a_scripted_task():
-    """Between two steps the pointer is somewhere else: the user took over, so Jervis pauses."""
+    """Between two steps the pointer is somewhere else: the user took over, so Jarvis pauses."""
     positions = iter([(100, 100), (100, 100), (900, 700)])   # before step 1, after step 1, before step 2
     states, done = [], []
     task = computer_use.ScriptedTask("x", [("first", lambda: None), ("second", lambda: done.append("second"))],

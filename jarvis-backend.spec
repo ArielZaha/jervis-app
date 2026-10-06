@@ -1,8 +1,8 @@
-# PyInstaller recipe for Jervis's engine (the Python backend), bundled inside the installer.
+# PyInstaller recipe for Jarvis's engine (the Python backend), bundled inside the installer.
 #
-#     pip install -r requirements.txt pyinstaller && pyinstaller jervis-backend.spec
+#     pip install -r requirements.txt pyinstaller && pyinstaller jarvis-backend.spec
 #
-# Output: dist/jervis-backend/ (a folder, which starts much faster than a one-file build). electron-builder copies it
+# Output: dist/jarvis-backend/ (a folder, which starts much faster than a one-file build). electron-builder copies it
 # into the app's resources as backend/ (see package.json), where backend.js starts it. Build it in a clean environment
 # with only requirements.txt installed: whatever else is installed may be pulled in.
 import sys
@@ -29,6 +29,9 @@ datas += collect_data_files("certifi")
 datas += collect_data_files("googleapiclient")
 datas += collect_data_files("tzdata")   # zoneinfo's time zones (forecast.py)
 hiddenimports += ["tzdata", "forecast", "web_search"]
+# The phone app the backend serves to a paired phone (phone_control.serve_static reads these via paths.resource)
+datas += [(f, ".") for f in ("phone_client.html", "phone_sw.js", "confirm.html", "phone_manifest.webmanifest")]
+datas += [("phone_icons", "phone_icons")]
 
 if sys.platform == "win32":
     for package in ("uiautomation", "comtypes", "pycaw"):
@@ -37,12 +40,12 @@ if sys.platform == "win32":
 elif sys.platform == "darwin":
     hiddenimports += ["screen_mac", "Quartz", "AppKit", "ApplicationServices"]
 
-# Jervis's own modules that are only imported when needed
+# Jarvis's own modules that are only imported when needed
 hiddenimports += ["selftest", "screen_vision", "computer_use", "stt_local", "local_ai"]
 
 excludes = [
     # Local image generation (optional, installed separately with requirements-local-images.txt) and other large
-    # packages that may be present on a developer's machine but are not part of Jervis
+    # packages that may be present on a developer's machine but are not part of Jarvis
     "torch", "torchvision", "torchaudio", "diffusers", "transformers", "accelerate", "safetensors",
     "livekit", "playwright", "tkinter", "matplotlib", "IPython", "pytest", "sympy",
 ]
@@ -56,7 +59,7 @@ a = Analysis(
     excludes=excludes,
     noarchive=False,
 )
-# Leave out what Jervis never uses: PocketSphinx's offline models, other systems' FLAC encoders, and the
+# Leave out what Jarvis never uses: PocketSphinx's offline models, other systems' FLAC encoders, and the
 # descriptions of hundreds of Google APIs (only Calendar is used).
 FLAC = {"win32": "flac-win32.exe", "darwin": "flac-mac"}.get(sys.platform, "flac-linux-x86_64")
 
@@ -79,7 +82,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="jervis-backend",
+    name="jarvis-backend",
     console=True,           # the window starts it hidden (windowsHide) and reads its output into the log
     disable_windowed_traceback=False,
     upx=False,
@@ -87,4 +90,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="jervis-backend")
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="jarvis-backend")

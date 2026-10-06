@@ -1,12 +1,12 @@
-# Jervis relay — deploy steps
+# Jarvis relay — deploy steps
 
-This is the small always-on router that lets a paired phone reach Jervis when it isn't on the same Wi-Fi as the
+This is the small always-on router that lets a paired phone reach Jarvis when it isn't on the same Wi-Fi as the
 computer (see `server.py`'s docstring for what it does and, just as importantly, what it deliberately doesn't see).
-It's a separate deployable service from the Jervis app itself, built from the **repo root** `Dockerfile` (not a
+It's a separate deployable service from the Jarvis app itself, built from the **repo root** `Dockerfile` (not a
 file in this folder — see that Dockerfile's own comment for why) — every command below assumes you're in the repo
 root, not `relay/`.
 
-**Most people don't need to deploy this.** Jervis ships with `JERVIS_RELAY_URL` already pointed at a shared relay
+**Most people don't need to deploy this.** Jarvis ships with `JARVIS_RELAY_URL` already pointed at a shared relay
 that every install uses by default, same as any other bundled service. It's safe to share: the relay never sees a
 device token, a pairing code, or an encryption key, and every message it routes is end-to-end encrypted per phone
 (phone_crypto.py) — it only ever sees which computerId a connection belongs to, a value with no meaning on its
@@ -24,15 +24,15 @@ own. Deploy your own only if you want to run that piece yourself instead of rely
    ```
    (Render finds `Dockerfile` at the repo root automatically for a Docker-runtime service — nothing further to
    point at it.) If the name's taken, pick another; it becomes part of the URL.
-3. Your relay's address is `wss://<service-name>.onrender.com/`. Set that as `JERVIS_RELAY_URL` in Jervis's
-   Settings (Computer control, advanced), replacing the shared default — or as the `JERVIS_RELAY_URL` environment
+3. Your relay's address is `wss://<service-name>.onrender.com/`. Set that as `JARVIS_RELAY_URL` in Jarvis's
+   Settings (Computer control, advanced), replacing the shared default — or as the `JARVIS_RELAY_URL` environment
    variable if you're running from source.
 
 Later updates: `render deploys create <service-id>`, or just push to the connected branch — auto-deploy is on by
 default.
 
 **The free tier's one real tradeoff:** a Render free service spins down after 15 minutes with no inbound traffic
-(HTTP requests *or* WebSocket messages). Jervis's own keepalive ping (`relay/server.py`'s `_keepalive`, every 25s)
+(HTTP requests *or* WebSocket messages). Jarvis's own keepalive ping (`relay/server.py`'s `_keepalive`, every 25s)
 keeps it awake the whole time your computer is running and connected, so in normal use this never matters. If the
 relay *has* gone fully to sleep (computer was off a while), the next request wakes it in 30-60 seconds — your phone
 might see a brief delay on the very first reconnect, nothing more; `relay_client.py` already retries with backoff.
@@ -51,7 +51,7 @@ might see a brief delay on the very first reconnect, nothing more; `relay_client
    flyctl deploy --config relay/fly.toml --dockerfile Dockerfile
    ```
 4. Your relay's address is `wss://<app-name>.fly.dev/` (the `http_service` block in `fly.toml` already forces
-   HTTPS/WSS). Set that as `JERVIS_RELAY_URL`, same as above.
+   HTTPS/WSS). Set that as `JARVIS_RELAY_URL`, same as above.
 
 Fly's free trial ends after a while, and keeping the app running after that needs a card on file (pay-as-you-go —
 see Fly's own pricing, not repeated here since it changes). Render's free tier has no such expiry, which is why

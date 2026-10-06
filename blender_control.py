@@ -1,4 +1,4 @@
-"""Jervis's side of the Blender bridge (see blender_bridge.py, which runs *inside* Blender): finding Blender's real
+"""Jarvis's side of the Blender bridge (see blender_bridge.py, which runs *inside* Blender): finding Blender's real
 exe, launching it with the bridge script so it can run Python from the moment it opens, and sending it code to run.
 """
 import json
@@ -18,7 +18,7 @@ _next_id = [0]
 
 
 class BlenderBridge:
-    """A Blender process that was launched with blender_bridge.py, so it executes Python Jervis sends it and
+    """A Blender process that was launched with blender_bridge.py, so it executes Python Jarvis sends it and
     answers back through the same two files blender_bridge.py reads and writes."""
 
     def run(self, code: str, timeout: float = RUN_TIMEOUT) -> dict:
@@ -54,7 +54,7 @@ class BlenderBridge:
             return None
 
 
-STARTUP_SCRIPT_NAME = "jervis_bridge.py"
+STARTUP_SCRIPT_NAME = "jarvis_bridge.py"
 
 
 def _blender_config_root() -> str:
@@ -67,7 +67,7 @@ def _blender_config_root() -> str:
 
 def install_startup_script(root: str = None, versions=()) -> int:
     """Put the bridge in each Blender version's startup scripts folder, so Blender runs it every time it opens —
-    from the Start menu, a .blend file, anywhere — and Jervis never has to restart Blender to reach it. Returns how
+    from the Start menu, a .blend file, anywhere — and Jarvis never has to restart Blender to reach it. Returns how
     many versions have it now."""
     root = root or _blender_config_root()
     found = set(versions)

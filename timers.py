@@ -145,7 +145,7 @@ def parse_timer_command(text: str, have_timers: bool = False):
              or re.search(r"\b(?:for|to)\s+(?:the\s+|my\s+|a\s+)?(.+)$", rest))
         label = m.group(1) if m else ""
     if not remind:
-        label = re.sub(r"\b(set|start|put|make|create|begin|please|a|an|the|timer|countdown|alarm|remind me|me|in|for|of|from now|and|on|jervis)\b", " ", label)
+        label = re.sub(r"\b(set|start|put|make|create|begin|please|a|an|the|timer|countdown|alarm|remind me|me|in|for|of|from now|and|on|jarvis)\b", " ", label)
     label = " ".join(label.split())
     label = re.sub(r"^(?:in|for|after|within|at)\s+|\s+(?:in|for|after|within|at)$", "", label).strip()
     return {"action": "set", "seconds": seconds, "label": label, "kind": kind}
@@ -222,7 +222,7 @@ class TimerManager:
         return [dict(t) for t in victims]
 
     def load(self) -> None:
-        """Restore timers saved before Jervis was closed. Ones that ended meanwhile fire right away."""
+        """Restore timers saved before Jarvis was closed. Ones that ended meanwhile fire right away."""
         try:
             with open(_FILE, encoding="utf-8") as f:
                 data = json.load(f)

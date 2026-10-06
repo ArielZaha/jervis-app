@@ -82,9 +82,9 @@ def open_in_profile(url: str, directory: str) -> bool:
         return False
 
 
-# ---------- reusing the tab Jervis opened, per profile (macOS) ----------
+# ---------- reusing the tab Jarvis opened, per profile (macOS) ----------
 # Chrome's AppleScript can't say which profile a window belongs to, so a plain "find the YouTube tab" could pick the other
-# account's tab. Instead Jervis remembers the id of the tab it opened itself in each profile, and reuses exactly that one.
+# account's tab. Instead Jarvis remembers the id of the tab it opened itself in each profile, and reuses exactly that one.
 _SNAPSHOT = """tell application "Google Chrome"
     set out to ""
     repeat with w in windows
@@ -187,7 +187,7 @@ def tab_snapshot():
 
 
 def reuse_tab(profile: str, host: str, url: str) -> bool:
-    """Send the tab Jervis opened earlier for this site in this profile to a new address. False if there is none."""
+    """Send the tab Jarvis opened earlier for this site in this profile to a new address. False if there is none."""
     ids = _owned_tabs.get((profile, site_key(host)))
     if not ids or SYSTEM != "Darwin":
         return False
@@ -226,7 +226,7 @@ def reveal(ids) -> bool:
 
 
 def bring_browser_forward() -> None:
-    """Fallback when the new tab can't be identified: at least put the browser in front of Jervis's own window."""
+    """Fallback when the new tab can't be identified: at least put the browser in front of Jarvis's own window."""
     try:
         if SYSTEM == "Darwin":
             _osascript('tell application "Google Chrome" to activate')

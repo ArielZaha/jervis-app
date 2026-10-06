@@ -3,6 +3,21 @@ const fs = require('fs');
 const path = require('path');
 const { Backend } = require('./backend');
 
+// Jarvis was called Jervis before: an installed copy takes over its old data folder (settings, phone pairings,
+// logs, downloaded models) before anything uses it — a rename on the same disk, nothing copied. If that can't be
+// done, the old folder simply stays in use. (Only the installed app: the development copy keeps its data in the
+// project folder and must never move the installed app's.)
+if (app.isPackaged) {
+  try {
+    const current = app.getPath('userData');
+    const old = path.join(path.dirname(current), 'Jervis');
+    if (old !== current && fs.existsSync(old)) {
+      if (!fs.existsSync(current)) fs.renameSync(old, current);
+    }
+    if (!fs.existsSync(current) && fs.existsSync(old)) app.setPath('userData', old);
+  } catch (_) { /* keep going with whatever folder is there */ }
+}
+
 let win = null;
 let tray = null;
 let quitting = false;
@@ -21,8 +36,8 @@ function log(message) {
   try { fs.appendFileSync(logFile(), line); } catch (_) { /* never let logging break the app */ }
 }
 
-// ---------- One Jervis at a time ----------
-// "Jervis --quit" closes the running copy properly (engine included): used by the install tests and scripts.
+// ---------- One Jarvis at a time ----------
+// "Jarvis --quit" closes the running copy properly (engine included): used by the install tests and scripts.
 const quitRequested = process.argv.includes('--quit');
 if (!app.requestSingleInstanceLock() || quitRequested) {
   app.quit();   // a second copy would fight the first over the microphone: show the running one instead
@@ -37,7 +52,7 @@ function showWindow() {
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show();
-  // Started in the background (at sign-in, or by "Hey Jervis"), Jervis isn't the active app: take the front.
+  // Started in the background (at sign-in, or by "Hey Jarvis"), Jarvis isn't the active app: take the front.
   if (process.platform === 'darwin') app.focus({ steal: true });
   win.focus();
 }
@@ -45,7 +60,7 @@ function showWindow() {
 function setBackendState(state, detail = '') {
   backendState = { state, detail };
   if (state !== 'running' && controlActive()) {   // the engine went away mid-task: so did the task
-    setControlState({ ...controlState, state: 'stopped', detail: 'Jervis’s engine stopped, so computer control stopped.' });
+    setControlState({ ...controlState, state: 'stopped', detail: 'Jarvis’s engine stopped, so computer control stopped.' });
   }
   if (state === 'port-changed' && win) { loadPage(); return; }
   if (win && !win.isDestroyed()) win.webContents.send('backend-state', backendState);
@@ -62,7 +77,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 560,
     backgroundColor: '#05070d',
-    title: 'Jervis',
+    title: 'Jarvis',
     show: !process.argv.includes('--hidden'),   // started at sign-in: no window flashing up
     icon: path.join(__dirname, 'assets', 'icon.png'),
     // On macOS the title bar melts into the app; the top bar of the page is the drag handle.
@@ -71,11 +86,11 @@ function createWindow() {
   });
   loadPage();
 
-  // The window only ever shows Jervis's own page: no navigating away, no pop-up windows.
+  // The window only ever shows Jarvis's own page: no navigating away, no pop-up windows.
   win.webContents.on('will-navigate', (event) => event.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
-  // Closing the window hides it: Jervis keeps listening for "Hey Jervis" (quit from the tray or the menu).
+  // Closing the window hides it: Jarvis keeps listening for "Hey Jarvis" (quit from the tray or the menu).
   win.on('close', (event) => {
     if (quitting) return;
     event.preventDefault();
@@ -101,7 +116,7 @@ function createWindow() {
   });
 }
 
-// Full screen: on wake-up Jervis asks for it; the F key toggles it, Esc leaves it.
+// Full screen: on wake-up Jarvis asks for it; the F key toggles it, Esc leaves it.
 ipcMain.on('window-fullscreen', (_event, on) => {
   if (!win) return;
   showWindow();
@@ -136,7 +151,7 @@ ipcMain.handle('set-open-at-login', (_event, on) => {
   return setStartAtLogin(Boolean(on));
 });
 
-// ---------- Starting at sign-in: hidden, listening for "Hey Jervis" ----------
+// ---------- Starting at sign-in: hidden, listening for "Hey Jarvis" ----------
 // On by default for the installed app, so the wake phrase works right after signing in with nothing open. Windows
 // gets a normal login item with --hidden. macOS login items can't pass --hidden any more (the window would pop up at
 // every sign-in), so there it's a per-user LaunchAgent, which can; it's rewritten at every start in case the app moved.
@@ -146,7 +161,7 @@ const START_CHOICE = path.join(app.getPath('userData'), 'start-at-login-chosen')
 function startsAtLogin() {
   if (!app.isPackaged) return false;
   if (process.platform === 'darwin') return fs.existsSync(LAUNCH_AGENT);
-  return app.getLoginItemSettings({ args: ['--hidden'], name: 'Jervis' }).openAtLogin;
+  return app.getLoginItemSettings({ args: ['--hidden'], name: 'Jarvis' }).openAtLogin;
 }
 
 function setStartAtLogin(on) {
@@ -173,7 +188,8 @@ function setStartAtLogin(on) {
       }
       app.setLoginItemSettings({ openAtLogin: false });   // the older kind of login item, from earlier versions
     } else {
-      app.setLoginItemSettings({ openAtLogin: on, args: ['--hidden'], name: 'Jervis' });   // (the uninstaller removes "Jervis")
+      app.setLoginItemSettings({ openAtLogin: on, args: ['--hidden'], name: 'Jarvis' });   // (the uninstaller removes "Jarvis")
+      app.setLoginItemSettings({ openAtLogin: false, args: ['--hidden'], name: 'Jervis' });   // the old name's entry, if any
     }
   } catch (error) {
     log(`Could not change starting at sign-in: ${error}`);
@@ -198,7 +214,7 @@ function applyStartAtLogin() {
 ipcMain.on('restart-backend', () => backend && backend.restart());
 
 // ---------- Computer control: the overlay, the emergency shortcut, and getting the window out of the way ----------
-// While Jervis uses the mouse and keyboard, a glowing edge and a bar with Pause and Stop sit on top of everything.
+// While Jarvis uses the mouse and keyboard, a glowing edge and a bar with Pause and Stop sit on top of everything.
 // The overlay never takes focus and lets clicks through (except on its bar), is left out of screenshots, and goes
 // away a few seconds after the task ends. The backend decides everything; this only shows it and relays buttons.
 const CONTROL_ACTIVE = new Set(['starting', 'observing', 'thinking', 'acting', 'waiting', 'paused', 'listening']);
@@ -214,7 +230,7 @@ let windowSteppedAside = false;
 function controlActive() { return Boolean(controlState && CONTROL_ACTIVE.has(controlState.state)); }
 
 function createOverlay() {
-  const area = screen.getPrimaryDisplay().workArea;   // the screen Jervis works on
+  const area = screen.getPrimaryDisplay().workArea;   // the screen Jarvis works on
   overlay = new BrowserWindow({
     ...area,
     transparent: true, frame: false, hasShadow: false, resizable: false, movable: false, minimizable: false,
@@ -225,7 +241,7 @@ function createOverlay() {
   overlay.setAlwaysOnTop(true, 'screen-saver');
   overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlay.setIgnoreMouseEvents(true, { forward: true });
-  overlay.setContentProtection(true);   // not in screenshots, so Jervis's own vision never sees it
+  overlay.setContentProtection(true);   // not in screenshots, so Jarvis's own vision never sees it
   overlay.webContents.on('will-navigate', (event) => event.preventDefault());
   overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   overlay.webContents.on('did-finish-load', () => {
@@ -242,7 +258,7 @@ function toOverlay(message) {
 }
 
 function stepAside() {
-  // The window would cover the app Jervis is working in, and catch his clicks.
+  // The window would cover the app Jarvis is working in, and catch his clicks.
   if (!win || windowSteppedAside || !win.isVisible()) return;
   windowSteppedAside = true;
   if (win.isFullScreen()) {
@@ -313,18 +329,18 @@ ipcMain.on('control-overlay-hover', (_event, over) => {
   if (over) overlay.setIgnoreMouseEvents(false); else overlay.setIgnoreMouseEvents(true, { forward: true });
 });
 
-// ---------- Tray: Jervis keeps running (and listening) with the window closed ----------
+// ---------- Tray: Jarvis keeps running (and listening) with the window closed ----------
 function createTray() {
   const file = process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png';
   const image = nativeImage.createFromPath(path.join(__dirname, 'assets', file));
   if (image.isEmpty()) return;
   tray = new Tray(image);
-  tray.setToolTip('Jervis: say “Hey Jervis”');
+  tray.setToolTip('Jarvis: say “Hey Jarvis”');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Show Jervis', click: showWindow },
-    { label: 'Restart Jervis’s engine', click: () => backend && backend.restart() },
+    { label: 'Show Jarvis', click: showWindow },
+    { label: 'Restart Jarvis’s engine', click: () => backend && backend.restart() },
     { type: 'separator' },
-    { label: 'Quit Jervis (stops listening for “Hey Jervis”)', click: () => { quitting = true; app.quit(); } },
+    { label: 'Quit Jarvis (stops listening for “Hey Jarvis”)', click: () => { quitting = true; app.quit(); } },
   ]));
   tray.on('click', showWindow);
 }
@@ -344,12 +360,12 @@ app.whenReady().then(async () => {
     await backend.start();
   } catch (error) {
     log(`Could not start the backend: ${error.stack || error}`);
-    dialog.showErrorBox('Jervis could not start', `Jervis’s engine could not be started.\n\n${error.message}`);
+    dialog.showErrorBox('Jarvis could not start', `Jarvis’s engine could not be started.\n\n${error.message}`);
   }
   createWindow();
   createTray();
   applyStartAtLogin();
-  // (started with --hidden, at sign-in: the window stays hidden and Jervis listens quietly until "Hey Jervis")
+  // (started with --hidden, at sign-in: the window stays hidden and Jarvis listens quietly until "Hey Jarvis")
 });
 
 app.on('activate', showWindow);   // macOS: clicking the Dock icon brings the window back

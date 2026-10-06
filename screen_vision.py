@@ -18,7 +18,7 @@ GROUNDING_MAX = images.LOCAL_VISION_MAX_DIMENSION
 
 
 def _mode() -> str:
-    return (os.getenv("JERVIS_SCREEN_VISION") or "local").strip().lower()
+    return (os.getenv("JARVIS_SCREEN_VISION") or "local").strip().lower()
 
 
 def _local_available() -> bool:

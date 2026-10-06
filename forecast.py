@@ -24,7 +24,7 @@ FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 MET_URL = "https://api.met.no/weatherapi/locationforecast/2.0/complete"
 IP_LOCATION_URL = "https://get.geojs.io/v1/ip/geo.json"
 RADAR_URL = "https://api.rainviewer.com/public/weather-maps.json"
-USER_AGENT = "Jervis/1.0 (+https://github.com/ArielZaha/jervis-app)"   # MET Norway's terms: say who is asking
+USER_AGENT = "Jarvis/1.0 (+https://github.com/ArielZaha/jervis-app)"   # MET Norway's terms: say who is asking
 SOURCES = {
     "open-meteo": {"name": "Open-Meteo.com", "license": "CC BY 4.0"},
     "met": {"name": "MET Norway", "license": "CC BY 4.0"},

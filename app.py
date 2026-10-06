@@ -9,14 +9,14 @@ try:  # running app.py by hand skips the first-run setup; say what to do instead
     import dotenv, groq, psutil, requests, speech_recognition, spotipy, websockets  # noqa: F401
 except ImportError as _missing:
     raise SystemExit(
-        f"\nJervis is missing a Python package ({_missing.name}). Don't run app.py directly.\n"
-        "  Windows: double-click start_jervis.bat (or run:  py -3 run.py)\n"
+        f"\nJarvis is missing a Python package ({_missing.name}). Don't run app.py directly.\n"
+        "  Windows: double-click start_jarvis.bat (or run:  py -3 run.py)\n"
         "  Mac:     python3 run.py\n"
-        "The first run installs everything Jervis needs.\n")
-import paths  # noqa: E402  where Jervis reads his files and where he writes (see paths.py)
+        "The first run installs everything Jarvis needs.\n")
+import paths  # noqa: E402  where Jarvis reads his files and where he writes (see paths.py)
 import logbook  # noqa: E402
 import settings  # noqa: E402
-logbook.install()   # before anything prints, so startup problems end up in logs/jervis.log too
+logbook.install()   # before anything prints, so startup problems end up in logs/jarvis.log too
 settings.load()     # before any module reads its configuration from the environment
 import platform
 import re
@@ -30,6 +30,7 @@ import webbrowser
 from datetime import datetime, timedelta
 from urllib.parse import quote
 import hmac
+import random
 import signal
 import sys
 import urllib.parse
@@ -87,7 +88,7 @@ from speech_fixes import fix_names
 import timeparse
 from timeparse import format_time, parse_start_time
 
-APP_DIR = paths.RESOURCE_DIR  # Jervis's own files; everything he writes goes to paths.DATA_DIR instead
+APP_DIR = paths.RESOURCE_DIR  # Jarvis's own files; everything he writes goes to paths.DATA_DIR instead
 load_dotenv(os.path.join(APP_DIR, ".env"))  # settings.load() already applied .env; this only keeps old setups identical
 
 GROQ_MODEL = "openai/gpt-oss-20b"
@@ -104,37 +105,37 @@ if not GROQ_KEY and LLM_BACKEND in ("auto", "groq"):
 
 # How this backend was started. The installed app (and `npm start`) runs it as a child of the window, which picks a
 # free port and a secret for the window connection, and restarts the backend when it exits with RESTART_EXIT_CODE.
-SUPERVISED = os.getenv("JERVIS_SUPERVISED") == "1"
+SUPERVISED = os.getenv("JARVIS_SUPERVISED") == "1"
 WS_HOST = "127.0.0.1"
-WS_PORT = int(os.getenv("JERVIS_WS_PORT") or 8765)
-WS_TOKEN = os.getenv("JERVIS_WS_TOKEN") or ""
+WS_PORT = int(os.getenv("JARVIS_WS_PORT") or 8765)
+WS_TOKEN = os.getenv("JARVIS_WS_TOKEN") or ""
 # A phone, once paired: a separate server, LAN-bound on purpose (see phone_control.py for why this is never the
-# same channel the Electron window uses). JERVIS_RELAY_URL (Settings, Computer control, advanced) defaults to a
-# shared relay Jervis ships with, so a paired phone can reach Jervis away from this Wi-Fi with nothing to set up —
+# same channel the Electron window uses). JARVIS_RELAY_URL (Settings, Computer control, advanced) defaults to a
+# shared relay Jarvis ships with, so a paired phone can reach Jarvis away from this Wi-Fi with nothing to set up —
 # clear it to go back to same-Wi-Fi only, or point it at a different relay (relay/README.md). See relay_client.py.
-PHONE_WS_PORT = int(os.getenv("JERVIS_PHONE_PORT") or 8766)
-RELAY_URL = (os.getenv("JERVIS_RELAY_URL") or "").strip()
+PHONE_WS_PORT = int(os.getenv("JARVIS_PHONE_PORT") or 8766)
+RELAY_URL = (os.getenv("JARVIS_RELAY_URL") or "").strip()
 RESTART_EXIT_CODE = 75
 PORT_BUSY_EXIT_CODE = 76
-AUDIO_OFF = os.getenv("JERVIS_AUDIO", "on").strip().lower() == "off"   # tests: typed input only, replies printed
+AUDIO_OFF = os.getenv("JARVIS_AUDIO", "on").strip().lower() == "off"   # tests: typed input only, replies printed
 
 
 def speak_volume() -> int:
-    """Jervis's own speaking volume (0-100), set from the speaker control next to the mic button."""
+    """Jarvis's own speaking volume (0-100), set from the speaker control next to the mic button."""
     try:
-        return max(0, min(100, int(os.getenv("JERVIS_SPEAK_VOLUME", "100"))))
+        return max(0, min(100, int(os.getenv("JARVIS_SPEAK_VOLUME", "100"))))
     except ValueError:
         return 100
 
 
 def speak_muted() -> bool:
-    return (os.getenv("JERVIS_SPEAK_MUTED") or "off").strip().lower() == "on"
+    return (os.getenv("JARVIS_SPEAK_MUTED") or "off").strip().lower() == "on"
 
 
 def set_speak_volume(volume: int, muted: bool) -> None:
     """Applied instantly (settings.update writes .env/settings.json and re-syncs os.environ) and echoed back to
     every window, including ones that connect later (send_ui_update), so the slider reflects reality on load."""
-    settings.update({"JERVIS_SPEAK_VOLUME": str(volume), "JERVIS_SPEAK_MUTED": "on" if muted else "off"})
+    settings.update({"JARVIS_SPEAK_VOLUME": str(volume), "JARVIS_SPEAK_MUTED": "on" if muted else "off"})
     send_ui_update("speak_volume", {"volume": volume, "muted": muted})
 
 sp = None
@@ -156,7 +157,7 @@ except Exception as e:
 # The noise floor is calibrated once at startup (and recalibrated every few minutes while asleep, see listen()).
 # Dynamic re-adjustment is OFF: it recalculates the threshold on every recognizer.listen() call, and listening in
 # short slices (see listen_or_typed) so that typing is noticed quickly means many calls a second, which used to make
-# the threshold decay toward zero within seconds in a quiet room, and then Jervis genuinely couldn't hear anyone.
+# the threshold decay toward zero within seconds in a quiet room, and then Jarvis genuinely couldn't hear anyone.
 recognizer = sr.Recognizer()
 recognizer.energy_threshold = 300
 recognizer.dynamic_energy_threshold = False
@@ -166,10 +167,10 @@ recognizer.non_speaking_duration = 0.5
 MIN_ENERGY_THRESHOLD = 30   # a floor just to guard against a bad (near-zero) calibration; well below a normal room's own reading
 RECALIBRATE_EVERY = 180     # seconds; keeps up with a room that slowly gets noisier or quieter without the decay bug
 MIN_PHRASE_SECONDS = 0.4
-POST_SPEECH_PAUSE = 0.4  # Lets the speaker's tail fade so Jervis doesn't hear itself.
+POST_SPEECH_PAUSE = 0.4  # Lets the speaker's tail fade so Jarvis doesn't hear itself.
 mic_calibrated = False
 last_calibrated_at = 0.0
-# The window's "stop and listen" button (or Space) sets this to cut Jervis off mid-sentence.
+# The window's "stop and listen" button (or Space) sets this to cut Jarvis off mid-sentence.
 interrupt_speech = threading.Event()
 
 tts_engine = None  # created on first use, and only when the operating system has no better voice
@@ -191,12 +192,12 @@ ws_loop = None
 ws_loop_ready = threading.Event()
 mic_muted = threading.Event()
 
-# Wake-word state: Jervis stays passively listening (only checking for the
+# Wake-word state: Jarvis stays passively listening (only checking for the
 # wake phrase) until woken, then behaves exactly as before until a shutdown
 # phrase puts it back to sleep instead of exiting the process.
 # Only his name wakes him: a bare "hi" or "hello" said in the room would open his window at random, now that he keeps
 # listening with the window closed. Speech recognition often writes "Jarvis", so both spellings count.
-WAKE_PHRASES = [f"{greeting} {name}" for name in ("jervis", "jarvis")
+WAKE_PHRASES = [f"{greeting} {name}" for name in ("jarvis", "jervis")
                 for greeting in ("wake up", "hey", "hello", "hi", "ok", "okay")]
 
 
@@ -212,14 +213,14 @@ def time_greeting() -> str:
         part = "afternoon"
     else:
         part = "evening"
-    who = (os.getenv("JERVIS_USER_NAME") or "").strip() or "Sir"
+    who = (os.getenv("JARVIS_USER_NAME") or "").strip() or "Sir"
     return f"Good {part}, {who}. How can I help you today?"
 
 
 window_visible = True   # the window tells us when it's closed (hidden) or shown again
 awake = False
 ui_launched = False
-youtube_active = False  # True once Jervis started a YouTube video; routes pause/resume there.
+youtube_active = False  # True once Jarvis started a YouTube video; routes pause/resume there.
 netflix_active = False  # Same for a Netflix show.
 DEFAULT_MEDIA_APP = "stremio"  # Where "play the show X" goes before any media app has been used.
 stremio_active = False  # Same for a Stremio title (controlled with key presses).
@@ -232,22 +233,22 @@ def is_wake_command(text: str) -> bool:
     return any(re.search(rf"\b{re.escape(phrase)}\b", normalized) for phrase in WAKE_PHRASES)
 
 
-_EXPLICIT_WAKE = re.compile(r"(?:(?:hey|hi|hello|ok|okay|wake up|wake)\s+)?(?:jervis|jarvis)(?:\s+(?:wake up|are you there|you there))?|wake up|are you there")
+_EXPLICIT_WAKE = re.compile(r"(?:(?:hey|hi|hello|ok|okay|wake up|wake)\s+)?(?:jarvis|jervis)(?:\s+(?:wake up|are you there|you there))?|wake up|are you there")
 
 
 def is_explicit_wake(text: str) -> bool:
-    """Just "Hey Jervis" / "Wake up Jervis" said on its own (also while he is already awake): the window goes full screen."""
+    """Just "Hey Jarvis" / "Wake up Jarvis" said on its own (also while he is already awake): the window goes full screen."""
     normalized = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
     return bool(_EXPLICIT_WAKE.fullmatch(normalized))
 
 
 ui_process = None
-ui_failures = 0  # times the window died right after starting; after two Jervis stops retrying until restarted
+ui_failures = 0  # times the window died right after starting; after two Jarvis stops retrying until restarted
 
 
 def find_npm():
     """Where npm lives. run.py passes the path it found (a freshly installed Node.js is not on PATH yet)."""
-    found = os.getenv("JERVIS_NPM") or shutil.which("npm.cmd" if platform.system() == "Windows" else "npm") or shutil.which("npm")
+    found = os.getenv("JARVIS_NPM") or shutil.which("npm.cmd" if platform.system() == "Windows" else "npm") or shutil.which("npm")
     if found:
         return found
     for folder in ("/opt/homebrew/bin", "/usr/local/bin"):  # where Homebrew puts it, which a background launch does not have on PATH
@@ -264,18 +265,18 @@ def _watch_window_start(process) -> None:
     code = process.poll()
     if code not in (None, 0):
         ui_failures += 1
-        print(f"\nThe Jervis window closed right after starting (code {code}).\n"
+        print(f"\nThe Jarvis window closed right after starting (code {code}).\n"
               "  - Is Node.js installed?  Open a new terminal and run:  node --version\n"
-              "  - Try once by hand in the Jervis folder:  npm install   then   npm start\n", flush=True)
+              "  - Try once by hand in the Jarvis folder:  npm install   then   npm start\n", flush=True)
 
 
 fullscreen_pending = False  # a wake-up asked for a full-screen window that has not connected yet
 
 
 def show_fullscreen():
-    """Open the window (if needed) and make it full screen. Used when Jervis is woken up."""
+    """Open the window (if needed) and make it full screen. Used when Jarvis is woken up."""
     global fullscreen_pending
-    if control_active():   # the window would cover the app Jervis is working in (and catch his clicks)
+    if control_active():   # the window would cover the app Jarvis is working in (and catch his clicks)
         return
     if connected_clients:
         send_ui_update_once({"type": "fullscreen"})
@@ -295,23 +296,23 @@ def launch_ui():
         return
     if connected_clients or (ui_process is not None and ui_process.poll() is None):
         return
-    if ui_failures >= 2 or os.getenv("JERVIS_NO_WINDOW") == "1":
+    if ui_failures >= 2 or os.getenv("JARVIS_NO_WINDOW") == "1":
         return
     npm = find_npm()
     if not npm:
-        print("\nThe Jervis window can't open because Node.js is not installed.\n"
-              "  Install it from https://nodejs.org (the LTS version), then start Jervis again.\n", flush=True)
+        print("\nThe Jarvis window can't open because Node.js is not installed.\n"
+              "  Install it from https://nodejs.org (the LTS version), then start Jarvis again.\n", flush=True)
         return
     try:
         env = {**os.environ, "PATH": os.path.dirname(npm) + os.pathsep + os.environ.get("PATH", ""),  # so npm finds node
-               "JERVIS_ATTACH_PORT": str(WS_PORT), "JERVIS_WS_TOKEN": WS_TOKEN}
+               "JARVIS_ATTACH_PORT": str(WS_PORT), "JARVIS_WS_TOKEN": WS_TOKEN}
         env.pop("ELECTRON_RUN_AS_NODE", None)   # set in VS Code's terminal; it would start Electron as plain Node
-        print("Opening the Jervis window...", flush=True)
+        print("Opening the Jarvis window...", flush=True)
         ui_process = subprocess.Popen([npm, "start"], cwd=APP_DIR, env=env)
         ui_launched = True
         threading.Thread(target=_watch_window_start, args=(ui_process,), daemon=True).start()
     except Exception as e:
-        print(f"Could not launch the Jervis window: {e}", flush=True)
+        print(f"Could not launch the Jarvis window: {e}", flush=True)
 
 
 async def _send_payload_async(payload_dict):
@@ -345,26 +346,27 @@ class PhoneVoiceInput(str):
     other command text to the main loop, but carries the phone session it came from, so the reply can be sent back
     to that phone (relay_client.deliver_reply) in addition to being spoken here as usual."""
 
-    def __new__(cls, text: str, session_id: str):
+    def __new__(cls, text: str, session_id: str, request_id: str = ""):
         obj = str.__new__(cls, text)
         obj.session_id = session_id
+        obj.request_id = request_id   # the phone app's id for this request (its run_on_computer tool), if any
         return obj
 
 
 PRIVATE_PLACEHOLDER = "[private WhatsApp messages: shown and read aloud only]"
 
 
-def broadcast(sender, text="", image=None, image_kind=None):
+def broadcast(sender, text="", image=None, image_kind=None, to_phone=True):
     """Show (and, unless private, log) a chat message. `image` is a data: URL, for a picture the user attached or
-    Jervis made/edited; `text` may be empty when a message is only a picture."""
+    Jarvis made/edited; `text` may be empty when a message is only a picture."""
     private = isinstance(text, PrivateReply)
     text = str(text).strip() if text else ""
     if not text and not image:
         return
-    if os.getenv("JERVIS_KEEP_TRANSCRIPTS", "on") != "off":   # the user can switch conversation logs off in Settings
+    if os.getenv("JARVIS_KEEP_TRANSCRIPTS", "on") != "off":   # the user can switch conversation logs off in Settings
         try:
             with open(session_file, "a", encoding="utf-8") as f:
-                label = "You" if sender == "user" else "Jervis"
+                label = "You" if sender == "user" else "Jarvis"
                 f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {label}: {PRIVATE_PLACEHOLDER if private else (text or '[image]')}\n")
         except OSError as e:
             print(f"Could not write the conversation log: {e}", flush=True)
@@ -375,12 +377,14 @@ def broadcast(sender, text="", image=None, image_kind=None):
             if image_kind:
                 payload["imageKind"] = image_kind
         asyncio.run_coroutine_threadsafe(_send_payload_async(payload), ws_loop)
-    chat_message = {"type": "chat", "sender": "user" if sender == "user" else "ai", "text": text}
+    chat_message = {"type": "chat", "sender": "user" if sender == "user" else "ai", "text": text,
+                    "ts": int(time.time() * 1000)}
     if image:
         # The relay caps a message at 512 KB (relay/server.py), and encryption grows it by about a third again.
         chat_message["image"] = image if len(image) <= PHONE_IMAGE_MAX_CHARS else ""
     phone_chat_history.append(chat_message)
-    mirror_to_phone(chat_message)
+    if to_phone:
+        mirror_to_phone(chat_message)
 
 
 # ---------- the phone's chat: a live mirror of this window's conversation (see phone_client.html) ----------
@@ -446,12 +450,12 @@ alerts_open = 0  # how many alert cards the window is showing
 
 
 def _connection_allowed(websocket) -> bool:
-    """Only Jervis's own window may connect. A web page open in a browser can also reach 127.0.0.1, so browser origins
-    are refused, and when the window gave this backend a secret (JERVIS_WS_TOKEN) the connection must present it."""
+    """Only Jarvis's own window may connect. A web page open in a browser can also reach 127.0.0.1, so browser origins
+    are refused, and when the window gave this backend a secret (JARVIS_WS_TOKEN) the connection must present it."""
     request = getattr(websocket, "request", None)
     headers = getattr(request, "headers", None) or {}
     origin = (headers.get("Origin") or "").lower()
-    allowed = [o.strip().lower() for o in os.getenv("JERVIS_ALLOW_ORIGINS", "").split(",") if o.strip()]  # UI tests only
+    allowed = [o.strip().lower() for o in os.getenv("JARVIS_ALLOW_ORIGINS", "").split(",") if o.strip()]  # UI tests only
     if origin.startswith(("http://", "https://")) and origin not in allowed:
         return False
     if WS_TOKEN:
@@ -528,7 +532,7 @@ local_ai_manager = local_ai.LocalAI(report=lambda state: send_ui_update("setup",
 async def handle_client(websocket):
     global alerts_open, fullscreen_pending
     if not _connection_allowed(websocket):
-        print("Refused a connection that did not come from Jervis's window.", flush=True)
+        print("Refused a connection that did not come from Jarvis's window.", flush=True)
         await websocket.close(1008, "not allowed")
         return
     connected_clients.add(websocket)
@@ -569,7 +573,7 @@ async def handle_client(websocket):
                 typed = " ".join(str(data.get("text", "")).split())[:500]
                 if typed:
                     typed_inputs.put(typed)
-                    interrupt_speech.set()  # if Jervis is talking, stop so he can answer this
+                    interrupt_speech.set()  # if Jarvis is talking, stop so he can answer this
             elif data.get("type") == "image":  # a picture attached in the window, with an optional caption/instruction
                 name = str(data.get("name", ""))[:120]
                 caption = " ".join(str(data.get("text", "")).split())[:500]
@@ -622,7 +626,7 @@ async def handle_client(websocket):
                                                      "message": f"The settings file couldn't be saved: {e}"}))
                 else:
                     global mic_calibrated
-                    if "JERVIS_MIC" in result["saved"]:
+                    if "JARVIS_MIC" in result["saved"]:
                         mic_calibrated = False   # a different microphone has a different noise level
                     settings_changed.set()
                     await websocket.send(json.dumps({"type": "settings_saved", **result}))
@@ -658,9 +662,9 @@ def run_ws_server():
             if SUPERVISED:
                 print(f"Port {WS_PORT} is taken; the window will pick another one.", flush=True)
                 os._exit(PORT_BUSY_EXIT_CODE)
-            print(f"\nJervis is already running (his window's connection, port {WS_PORT}, is taken).\n"
-                  "  Use the copy that is running, or stop it first:  pkill -f app.py   (Windows: close the other Jervis console)\n"
-                  "  then start Jervis again.\n", flush=True)
+            print(f"\nJarvis is already running (his window's connection, port {WS_PORT}, is taken).\n"
+                  "  Use the copy that is running, or stop it first:  pkill -f app.py   (Windows: close the other Jarvis console)\n"
+                  "  then start Jarvis again.\n", flush=True)
             os._exit(1)
         raise
 
@@ -671,7 +675,7 @@ def run_ws_server():
 
 
 def phone_control_mode() -> str:
-    return (os.getenv("JERVIS_PHONE_CONTROL") or "off").strip().lower()
+    return (os.getenv("JARVIS_PHONE_CONTROL") or "off").strip().lower()
 
 
 def session_transport_url() -> str:
@@ -746,8 +750,12 @@ async def handle_phone_client(websocket) -> None:
             elif kind == "pair":
                 if not phone_server.pairing_open():
                     await websocket.send(json.dumps({"type": "pair_error",
-                        "message": "No pairing is open right now. Ask Jervis to connect your phone again."}))
-                elif (paired := phone_server.try_pair(str(data.get("code", "")), str(data.get("deviceName", "")))) is None:
+                        "message": "No pairing is open right now. Ask Jarvis to connect your phone again."}))
+                elif (paired := phone_server.try_pair(
+                        str(data.get("code", "")), str(data.get("deviceName", "")),
+                        # this same phone's previous pairing, if it still has one: replaced, not duplicated
+                        replaces=(str(data.get("previousDeviceId") or ""), str(data.get("previousToken") or ""))
+                        )) is None:
                     await websocket.send(json.dumps({"type": "pair_error",
                         "message": "That code is wrong or has expired."}))
                 else:
@@ -835,10 +843,17 @@ def run_phone_server() -> None:
                                     max_size=phone_session.VOICE_MAX_BYTES + 4096):
             await asyncio.Future()
 
-    try:
-        loop.run_until_complete(main())
-    except OSError as e:
-        print(f"Could not start the phone-control server on port {PHONE_WS_PORT}: {e}", flush=True)
+    # Jarvis Wake (wake/jarvis_wake.py) holds this same port while Jarvis is closed, so opening the phone app can
+    # start him; it lets go the moment it does, but give it a few seconds rather than lose the phone for good.
+    for attempt in range(30):
+        try:
+            loop.run_until_complete(main())
+            return
+        except OSError as e:
+            if attempt == 29:
+                print(f"Could not start the phone-control server on port {PHONE_WS_PORT}: {e}", flush=True)
+                return
+            time.sleep(1)
 
 
 _PHONE_PAIR_COMMAND = re.compile(
@@ -853,9 +868,11 @@ def is_phone_pair_command(text: str) -> bool:
 
 def start_phone_pairing() -> str:
     """"Connect my phone": straight to a QR code on screen — a fresh pairing code inside this computer's local
-    address. Scanning it opens phone_client.html on a Confirmed/Not Confirmed tap (its pairCard); that tap, on the
-    phone in hand, is the approval, and Confirmed lands straight in the phone's chat. Works the same for a brand-new
-    phone and one paired before (which re-pairs, replacing its old record — see handle_phone_client's "pair").
+    address. Scanning it opens phone_client.html, which pairs straight away: the single-use code inside the scanned
+    link — only visible on this screen, valid for minutes, same Wi-Fi only — is the approval, so there's no extra
+    tap (a phone opening the bare address without the code still gets an explicit Pair button). It then lands in
+    the phone's chat and offers to install the app to the Home Screen. Works the same for a brand-new phone and one
+    paired before (which re-pairs, replacing its old record — see handle_phone_client's "pair").
     Needs the phone on the same Wi-Fi: pairing is local-only on purpose, see phone_control.py's module docstring."""
     if phone_control_mode() == "off":
         return ("Phone control is turned off. Turn on “Let your phone control this computer” in Settings, "
@@ -868,7 +885,7 @@ def start_phone_pairing() -> str:
     # reopened a minute later. Cleared on "paired" (handle_phone_client), so a later window never sees a stale QR.
     send_ui_update("phone_pairing", {"address": address, "pairUrl": pair_url, "code": code,
                                      "expiresAt": time.time() + phone_control.PAIR_CODE_TTL})
-    return "Scan the QR code on your screen with your phone, on the same Wi-Fi, and tap Confirmed."
+    return "Scan the QR code on your screen with your phone's camera, on the same Wi-Fi."
 
 
 def start_phone_session() -> str:
@@ -876,7 +893,7 @@ def start_phone_session() -> str:
     with Confirmed/Not Confirmed buttons (see phone_sw.js), opening confirm.html — a small, self-contained page
     that decides the session (phone_server.decide_session) using nothing but the session id and secret already in
     its own link, whether or not this phone has ever synced anything with wherever that page happens to be served
-    from. From there, "Open Jervis" optionally goes on to attach a live session with the phone's own device
+    from. From there, "Open Jarvis" optionally goes on to attach a live session with the phone's own device
     credentials (phone_server.attach_session) for voice/commands — that part does still need this phone's data to
     already be on that same origin (see phone_client.html's syncToOtherOrigin), but confirming or rejecting the
     request itself never does. Without a relay configured (Settings, "Relay address"), this still works for a
@@ -889,8 +906,8 @@ def start_phone_session() -> str:
     # anything about this computer (see confirm.html and phone_sw.js).
     push_data = {"computerId": relay.computer_id, "sessionId": session.id, "secret": session.secret}
     actions = [{"action": "confirm", "title": "Confirmed"}, {"action": "reject", "title": "Not Confirmed"}]
-    sent = push.send_to_all(push_store, "Jervis", "Jervis wants to connect to this computer.",
-                            tag="jervis-session", actions=actions, data=push_data)
+    sent = push.send_to_all(push_store, "Jarvis", "Jarvis wants to connect to this computer.",
+                            tag="jarvis-session", actions=actions, data=push_data)
     if not sent:
         url = notification_setup_url()
         # Same QR panel as first-ever pairing (phonePairingLayer in index.html/panels.js) — no reason to make the
@@ -928,7 +945,9 @@ def list_paired_phones() -> str:
     if not devices:
         return "No phones are paired."
     names = ", ".join(d["name"] for d in devices)
-    return f"{len(devices)} phone{'s' if len(devices) != 1 else ''} paired: {names}."
+    connected = session_router.connected_device_names()
+    now = f" Connected right now: {', '.join(connected)}." if connected else " None is connected right now."
+    return f"{len(devices)} phone{'s' if len(devices) != 1 else ''} paired: {names}.{now}"
 
 
 def forget_paired_phones() -> str:
@@ -998,7 +1017,7 @@ def parse_weather_request(text: str):
     """{"action": "show", "city": "" | "Paris"} / {"action": "close"} for a weather request, else None. Talking
     about the weather ("I was talking about the weather yesterday") is not a request."""
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower().replace("’", "'")).split())
-    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jervis|jarvis) ", "", n)
+    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jarvis|jervis) ", "", n)
     if _WEATHER_CLOSE.match(n):
         return {"action": "close"}
     if _WEATHER_TALK.match(n) or not _WEATHER_ASK.search(n):
@@ -1058,6 +1077,8 @@ def tool_get_weather(city: str = "", **_ignored) -> str:
 
 
 def get_device_id():
+    """The Spotify device to control: the one playing right now, else this computer's Spotify app (a phone or
+    speaker listed first may be asleep, and commands sent to it fail), else whatever is listed."""
     if not sp:
         return None
     try:
@@ -1067,9 +1088,33 @@ def get_device_id():
         for d in devices:
             if d["is_active"]:
                 return d["id"]
-        return devices[0]["id"]
+        computers = [d for d in devices if (d.get("type") or "").lower() == "computer" and not d.get("is_restricted")]
+        return (computers or devices)[0]["id"]
     except Exception:
         return None
+
+
+class SpotifyNotReady(Exception):
+    """No Spotify device could be reached, even after opening the app."""
+
+
+def spotify_player_call(call):
+    """Runs call(device_id) against Spotify's player. Spotify answers 404 ("Not found") to a player command sent
+    to a device that is open but not the active one (idle for a while, or just restarted): in that case playback is
+    handed to the device first and the command tried once more, instead of failing with the raw API error."""
+    device_id = ensure_spotify_device()
+    if not device_id:
+        raise SpotifyNotReady()
+    try:
+        return call(device_id)
+    except spotipy.SpotifyException as e:
+        if e.http_status != 404:
+            raise
+        print(f"Spotify player command failed on {device_id} ({e}); activating the device and retrying", flush=True)
+    device_id = get_device_id() or device_id   # the device list may have changed (the app restarted)
+    sp.transfer_playback(device_id=device_id, force_play=False)
+    time.sleep(0.7)   # the transfer takes a moment before the device accepts commands
+    return call(device_id)
 
 
 def ensure_spotify_device(timeout: float = 20.0):
@@ -1225,13 +1270,13 @@ def parse_service_request(text: str, service: str, allow_open: bool = False):
     service = service or "(?!)"  # no service named: the optional service words can never match
     # "open Stremio and play House": the launch part is done, keep only the request.
     q = re.sub(
-        r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you) )*"
+        r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you) )*"
         rf"(?:open|launch|start)\s+(?:the\s+)?{service}(?:\s+(?:app|application))?\s+(?:and|then)\s+",
         "", q,
     )
     q = re.sub(r"\s+(?:in|on)\s+(?:a\s+|another\s+)?(?:new|another|separate|second)\s+(?:tab|window)\b", "", q)
     verbs = r"play|start|watch|put on|show me|search(?: for)?|find" + ("|open" if allow_open else "")
-    filler = (r"(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?"
+    filler = (r"(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?"
               r"(?:(?:please|can you|could you|would you|i want to|i wanna|i would like to|i'd like to|i need to|"
               r"let's|lets|go ahead and|just) )*")
     m = re.match(
@@ -1288,7 +1333,7 @@ def parse_episode_request(text: str):
     if season is None and episode is None:
         return None
     rest = re.sub(
-        r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
+        r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
         r"(?:(?:play|watch|start|put on|show me|open|find)\s+)?(?:the\s+(?=(?:show|series|tv show)\b))?(?:(?:show|series|tv show)\s+)?", "", rest)
     rest = re.sub(r"^(?:(?:the|a)\s+)?(?:(?:of|from|in)\s+)+|(?:\s+(?:of|from|in|on|the|a))+$", "", rest).strip()
     rest = re.sub(r"^(?:the\s+)?(?:show|series)\s+", "", rest)
@@ -1355,9 +1400,9 @@ def play_youtube_video(query: str, new_tab: bool = False, **kwargs) -> str:
 
 
 # ---------- Trailers: "show me the trailer of this series" ----------
-suggested_titles = {"titles": [], "at": 0.0}  # titles from the last recommendation Jervis gave, in order
-last_played = {"title": None, "at": 0.0}       # the last show or movie Jervis started
-last_trailer = {"title": None, "at": 0.0}      # the last trailer Jervis showed, so "show me it on Netflix" knows what "it" is
+suggested_titles = {"titles": [], "at": 0.0}  # titles from the last recommendation Jarvis gave, in order
+last_played = {"title": None, "at": 0.0}       # the last show or movie Jarvis started
+last_trailer = {"title": None, "at": 0.0}      # the last trailer Jarvis showed, so "show me it on Netflix" knows what "it" is
 _ORDINALS = {"first": 0, "1st": 0, "second": 1, "2nd": 1, "third": 2, "3rd": 2, "fourth": 3, "4th": 3, "last": -1}
 
 
@@ -1397,7 +1442,7 @@ def parse_trailer_request(text: str):
     on_netflix = bool(re.search(r"\b(?:on|in|from|at|through|with)\s+netflix\b", n))
     # "Show me it on Netflix" right after a trailer: the same show's page on Netflix, where its trailer plays
     if on_netflix and not re.search(r"\btrailers?\b", n) and time.time() - last_trailer["at"] < 15 * 60 and last_trailer["title"] \
-            and (follow := re.fullmatch(rf"(?:(?:hey |ok )?(?:jervis|jarvis) )?(?:(?:please|can you|could you) )*(?P<verb>{_TRAILER_VERBS}|put)\s+(?:me\s+)?"
+            and (follow := re.fullmatch(rf"(?:(?:hey |ok )?(?:jarvis|jervis) )?(?:(?:please|can you|could you) )*(?P<verb>{_TRAILER_VERBS}|put)\s+(?:me\s+)?"
                                         r"(?:it|that|this|the (?:trailer|series|show|movie|one))\s+(?:on|in|from|at|through|with)\s+netflix(?: please)?", n)):
         # after a trailer: "play/watch/put it on Netflix" starts the show, "open it" opens its page, "show me it" = its trailer
         verb = follow.group("verb").strip()
@@ -1409,7 +1454,7 @@ def parse_trailer_request(text: str):
     # "show me on Netflix the trailer for X", "X trailer please".
     n = re.sub(r"^(?:(?:no|nope|yes|yeah|yep|okay|ok|well|so|and|but|hmm|uh|um|oh|now|then|hey|alright|right)\s+)+", "", n)
     n = " ".join(re.sub(r"\b(?:on|in|from|at|through|with|via)\s+(?:netflix|youtube)\b", " ", n).split())  # where: see on_netflix
-    n = re.sub(r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|would you|will you|i want to|i wanna|let's|lets) )*", "", n)
+    n = re.sub(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|would you|will you|i want to|i wanna|let's|lets) )*", "", n)
     n = re.sub(rf"^{_TRAILER_VERBS}\s+(?:me\s+)?", "", n)
     n = re.sub(r"^(?:the |a |an )?(?:official |new |latest )*", "", n)
     later = re.search(r"\btrailers?\s+(?:of|for|to|from)\s+(.+)$", n)
@@ -1432,7 +1477,7 @@ def parse_trailer_request(text: str):
 
 
 def resolve_trailer_title(ordinal=None):
-    """"this series" means what Jervis just recommended, or else what he just played (whichever is more recent)."""
+    """"this series" means what Jarvis just recommended, or else what he just played (whichever is more recent)."""
     now = time.time()
     fresh_suggestion = suggested_titles["titles"] and now - suggested_titles["at"] < 30 * 60
     fresh_played = last_played["title"] and now - last_played["at"] < 30 * 60
@@ -1517,7 +1562,7 @@ def is_youtube_command(text: str) -> bool:
 def extract_youtube_query(text: str) -> str:
     """Pull the video topic out of phrasings like "Start Pink Floyd the video"."""
     q = " ".join(re.sub(r"[^\w' ]", " ", (text or "").lower()).split())
-    q = re.sub(r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:please |can you |could you )*", "", q)
+    q = re.sub(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:please |can you |could you )*", "", q)
     q = re.sub(r"^(?:change|switch)\s+(?:the\s+|this\s+)?(?:song|video|track|music)?\s*(?:to\s+)?", "", q)
     q = re.sub(rf"^(?:{_VIDEO_VERBS}|youtube)\s+", "", q)
     q = re.sub(r"^(?:youtube\s+)?(?:play\s+)?", "", q)
@@ -1546,7 +1591,7 @@ def youtube_playback_action(text: str):
         return None
     if mentions_youtube:
         return action
-    # A bare "stop the song" means YouTube if Jervis started a video this session
+    # A bare "stop the song" means YouTube if Jarvis started a video this session
     # or a video is playing in Chrome; otherwise it is left for Spotify.
     if is_spotify_mention(normalized):
         return None
@@ -1585,7 +1630,7 @@ def parse_spotify_request(text: str):
     if not re.search(r"\bspotify\b", n, re.I):
         return None
     m = re.match(
-        r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
+        r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
         r"(?:play|put on|start|listen to|open)\s+(.+)$", n, re.I)
     if not m:
         return None
@@ -1615,10 +1660,39 @@ def parse_track_skip(text: str):
     if re.search(r"\b(previous|prior|last|back)\b.{0,20}\b(song|track|one|music)\b|\bgo back\b(?!\s+to\b)|"
                  r"\bsong before\b|\bplay (?:the )?(?:previous|last) (?:song|track|one)\b|\bprevious\b", n):
         return "previous"
+    if parse_another_by_artist(text) is not None:
+        return None   # "another song by Radiohead" means a different Radiohead song, not just the next in the queue
     if re.search(r"\bskip\b(?! to\b)|\bnext\b.{0,12}\b(song|track|one|music|video)\b|\b(?:play )?(?:the )?next (?:song|track|one)\b|"
                  r"^next$|\banother (?:song|track)\b|\bdifferent (?:song|track)\b", n):
         return "next"
     return None
+
+
+_SAME_ARTIST = {"them", "theirs", "him", "his", "her", "hers", "this artist", "that artist", "the same artist",
+                "this band", "that band", "the same band", "this singer", "that singer", "the same singer",
+                "this guy", "the artist", "the band", "the singer"}
+_ANOTHER_BY_ARTIST = re.compile(
+    r"\b(?:another|a different|different|some other|other|one more|a new)\s+(?:song|track|tune|one)s?\s+"
+    r"(?:of|by|from)\s+(?P<a>.+)$"
+    r"|\b(?:play|put on)\s+(?:another|a different|some other|one more)\s+(?P<b>.+?)\s+(?:song|track|tune)s?$"
+    r"|\b(?:play|put on)\s+something\s+(?:else|different)\s+(?:of|by|from)\s+(?P<c>.+)$")
+
+
+def parse_another_by_artist(text: str):
+    """"Play another song of Radiohead", "a different track by Adele", "play another Radiohead song",
+    "something else by them" -> the artist ("" when it's the one playing now: "them", "this band"), else None."""
+    n = " ".join(re.sub(r"[^a-z0-9'& ]", " ", (text or "").lower()).split())
+    for _ in range(2):   # "... on spotify please" / "... please on spotify"
+        n = re.sub(r"\s+(?:on|in|from|using)\s+spotify$|\s+please$|\s+for me$|\s+now$", "", n)
+    m = _ANOTHER_BY_ARTIST.search(n)
+    if not m:
+        return None
+    artist = (m.group("a") or m.group("b") or m.group("c") or "").strip()
+    if not artist or artist in ("song", "track", "one") or re.match(
+            r"(?:the|this|that|my|this same)\s+(?:album|playlist|queue|record|ep|list|mix|radio)\b", artist):
+        return None   # "another song from the album" is just the next one
+    artist = re.sub(r"^the\s+band\s+(?=\w)", "", artist)
+    return "" if artist in _SAME_ARTIST else artist
 
 
 def parse_read_document(text: str) -> bool:
@@ -1631,7 +1705,7 @@ def parse_read_document(text: str) -> bool:
 def is_restart_command(text: str) -> bool:
     """"Start the episode from the beginning", "restart the video", "start over", "play it again"."""
     n = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
-    if re.search(r"\b(computer|mac|laptop|pc|jervis|jarvis|app|application|system)\b", n):
+    if re.search(r"\b(computer|mac|laptop|pc|jarvis|jervis|app|application|system)\b", n):
         return False
     return bool(re.search(
         r"\bfrom (?:the )?(?:beginning|start|top)\b|\bstart over\b|\bbegin again\b|\b(?:restart|replay)\b|"
@@ -1664,7 +1738,7 @@ def parse_close_command(text: str):
     m = re.search(r"\bclose\b\s+(.*)$", n)
     if not m:
         return None
-    rest = re.sub(r"\b(please|now|for me|jervis|jarvis|right now|thanks|thank you)\b", " ", m.group(1))
+    rest = re.sub(r"\b(please|now|for me|jarvis|jervis|right now|thanks|thank you)\b", " ", m.group(1))
     rest = re.sub(r"\b(?:on|in|from)\s+(?:google|chrome|google chrome|the browser|browser|my browser)\b", " ", rest)  # "YouTube tab on Google"
     has_tab_word = bool(re.search(rf"\b{_TAB_WORDS}\b", rest))
     plural = bool(re.search(r"\b(tabs|tubes|pages)\b", rest))
@@ -1737,7 +1811,7 @@ def parse_whatsapp_request(text: str):
     if mentioned and re.search(r"\b(?:send|write|text|message|reply|answer|respond|tell)\b.{0,30}\b(?:to|back)\b|\b(?:send|reply)\b", n) \
             and not re.search(r"\b(?:unread|read|check|did|have|any|from|new|missed)\b", n):
         return {"action": "send", "name": ""}
-    if re.fullmatch(r"(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you) )*(?:read|play|tell)(?: me)?(?: them| it| those| these| the messages?| my messages?"
+    if re.fullmatch(r"(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you) )*(?:read|play|tell)(?: me)?(?: them| it| those| these| the messages?| my messages?"
                     r"| the unread(?: messages?)?| my unread(?: messages?)?| what (?:they|it) says?)(?: (?:out loud|aloud|please))?", n) and fresh:
         return {"action": "read_unread", "name": ""}
     name = None
@@ -1763,7 +1837,7 @@ _OTHER_INBOX = re.compile(r"\b(?:e ?mails?|mail|gmail|inbox|sms|imessage|telegra
 
 def _implicit_whatsapp_request(n: str):
     """"There are new messages that I didn't read", "any new messages?", "did Dana text me?": messages meant WhatsApp,
-    the only messaging Jervis can read. Other inboxes are left alone, and reading a person's messages needs a
+    the only messaging Jarvis can read. Other inboxes are left alone, and reading a person's messages needs a
     message-like verb ("write", "text") and a chat that really has that name."""
     if _OTHER_INBOX.search(n) or not whatsapp.enabled() or not whatsapp.database_path():
         return None
@@ -1860,7 +1934,7 @@ _ASK_STEPS = re.compile(
     r"|\bwhy\b.*\b(?:answer|solution)\b")
 _FOLLOWUP_WORDS = set("""what whats what's is are the way to solution solutions answer answers steps step show me give tell explain how did do you i we get got solve
 find work out calculate that it this its why please can could method process working of for roots root zeros zero vertex minimum maximum lowest
-highest intercept intercepts y where does cross touch hit jervis hey and a an function parabola graph equation curve problem one more detail
+highest intercept intercepts y where does cross touch hit jarvis hey and a an function parabola graph equation curve problem one more detail
 details again solved by from came come up with was were so then x point points turning""".split())
 _ASK_ROOTS = re.compile(r"\b(?:roots?|zeros?|solutions?|x\s*intercepts?|solve)\b|\bwhere\s+does\s+it\s+(?:cross|touch|hit)\b")
 _ASK_VERTEX = re.compile(r"\b(?:vertex|minimum|maximum|lowest|highest|turning\s+point|extrema)\b")
@@ -2137,7 +2211,7 @@ _SERVICE_WORDS = {"netflix": "netflix", "stremio": "stremio", "youtube": "youtub
 _BROWSERS = {"chrome", "google chrome", "browser", "the browser", "my browser", "edge", "microsoft edge", "firefox",
              "brave", "the internet", "internet"}
 _COMPOUND = re.compile(
-    r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
+    r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
     r"(?:open|launch|start)\s+(?:up\s+)?(?:the\s+)?(.+?)(?:\s+(?:app|application))?\s+(?:and\s+then|and|then)\s+"
     r"((?:play|watch|put on|write|type|draft|compose|search|find|set|remind|pause|stop|resume|go|skip|jump|turn|make|create|show|listen)\b.*)$")
 
@@ -2197,7 +2271,7 @@ def split_tasks(text: str) -> list:
 
 def handle_multi_task(text: str):
     """Do each task in order and answer them together. Returns None unless the message really holds several tasks and at least
-    one of them is a command Jervis can do himself (otherwise the AI answers the whole message at once)."""
+    one of them is a command Jarvis can do himself (otherwise the AI answers the whole message at once)."""
     global _multi_active
     if _multi_active or pending_confirmation or pending_dictation:
         return None
@@ -2216,12 +2290,12 @@ def handle_multi_task(text: str):
             results.append(reply)
         if not handled:
             return None
-        for i, part in enumerate(parts):          # the parts Jervis can't do himself go to the AI, one by one
+        for i, part in enumerate(parts):          # the parts Jarvis can't do himself go to the AI, one by one
             if results[i]:
                 continue
             asked = (chat_history or []) + [{"role": "user", "content": part}]
             try:
-                results[i] = tidy_math(ask_jervis(asked, part))
+                results[i] = tidy_math(ask_jarvis(asked, part))
             except Exception:
                 traceback.print_exc()
                 results[i] = f"I couldn't do this part: {part}"
@@ -2248,14 +2322,14 @@ class _SettingUp:
     def resume(self): pass
 
 
-# ---------- Computer control: Jervis using the mouse and keyboard (see computer_use.py) ----------
+# ---------- Computer control: Jarvis using the mouse and keyboard (see computer_use.py) ----------
 computer_task = None            # the ComputerTask (or ScriptedTask/BlenderComputerTask) currently mid-run, if any
 control_session = None          # the persistent computer_use.ControlSession, once "take control" has been granted
 _control_questions = {}         # question id -> (threading.Event, {"answer": bool | None})
 pending_control_question = None  # {"id", "at"}: the next "yes"/"no" said answers it
 
-# The wake name as speech recognition actually hears it: "Jervis", "Jarvis", or a mangled "Jargvie," before a comma.
-_WAKE_NAME = r"(?:(?:hey |ok |okay )?(?:(?:jervis|jarvis)[, ]+|j[a-z]{3,8}, ?))?"
+# The wake name as speech recognition actually hears it: "Jarvis", "Jervis", or a mangled "Jargvie," before a comma.
+_WAKE_NAME = r"(?:(?:hey |ok |okay )?(?:(?:jarvis|jervis)[, ]+|j[a-z]{3,8}, ?))?"
 _TAKE_CONTROL = (r"(?:use|control|take control(?: (?:of|over|on))?|(?:stay|be|keep|remain) in control(?: (?:of|over|on))?"
                  r"|take (?:over|on)(?: all(?: of)?)?)")
 _CONTROL_EXPLICIT = re.compile(
@@ -2272,7 +2346,7 @@ _CONTROL_BARE = re.compile(
 # that can't be ordinary conversation: "tap water", "type 2 diabetes in children", "check the box office" don't match.
 _UI_NOUN = r"(?:box|field|bar|search|input|form|chat|message|document|window|tab|terminal|editor|cell|text ?box)"
 _CONTROL_STEP = re.compile(
-    r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis)[, ]+)?(?:please |can you |could you |would you |go ahead and )*"
+    r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis)[, ]+)?(?:please |can you |could you |would you |go ahead and )*"
     r"(?P<goal>(?:(?:in|on) (?:the )?[\w .'-]{2,40}?,? )?(?:(?:double[- ]?|right[- ]?)?click (?:on )?|tap on )\S.*"
     r"|scroll (?:up|down|to the (?:top|bottom|end))\b.*"
     r"|press (?:the )?(?:[\w-]+ )?(?:button|key|enter|return|escape|esc|tab|space ?bar|backspace)\b.*"
@@ -2309,7 +2383,7 @@ _NO = re.compile(r"(?:no|nope|don't|do not|don't do it|cancel|stop|not now|never
 
 
 def parse_computer_task(text: str):
-    """The goal, if this asks Jervis to use the computer (and no other command handled it already)."""
+    """The goal, if this asks Jarvis to use the computer (and no other command handled it already)."""
     n = " ".join(re.sub(r"[^\w'+ ,.-]", " ", (text or "").replace("\u2019", "'")).split())   # keeps "TextEdit" as said
     match = _CONTROL_EXPLICIT.match(n) or _CONTROL_STEP.match(n)
     if not match:
@@ -2475,7 +2549,7 @@ def scripted_steps_for(goal: str):
 
         def scroll_step():
             env = computer_environment()
-            env.observe()                     # finds the window being worked in (never Jervis's own)
+            env.observe()                     # finds the window being worked in (never Jarvis's own)
             problem = env.scroll(notches)
             return problem or f"Scrolled {word}."
         return [(f"Scrolling {word}", scroll_step)]
@@ -2536,7 +2610,7 @@ def start_computer_task(goal: str, scripted=None, after=None, persistent: bool =
     exactly as one-shot as it is today. Once a session is already open, permission is skipped regardless of this
     flag — whatever is already granted covers anything said next."""
     global computer_task, control_session
-    mode = (os.getenv("JERVIS_COMPUTER_CONTROL") or "ask").strip().lower()
+    mode = (os.getenv("JARVIS_COMPUTER_CONTROL") or "ask").strip().lower()
     if mode == "off":
         return "Using the mouse and keyboard is turned off. You can allow it in Settings, under Computer control."
     if not _make_room_for_new_task():
@@ -2695,10 +2769,10 @@ def start_computer_task(goal: str, scripted=None, after=None, persistent: bool =
 
 
 def handle_control_voice(text: str):
-    """While Jervis is using the computer (or asking about it): stop, pause, continue, and yes/no answers."""
+    """While Jarvis is using the computer (or asking about it): stop, pause, continue, and yes/no answers."""
     global pending_control_question
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower().replace("\u2019", "'")).split())
-    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jervis|jarvis) ", "", n)   # "Hey Jervis, stop"
+    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jarvis|jervis) ", "", n)   # "Hey Jarvis, stop"
     if pending_control_question and time.time() - pending_control_question["at"] < 120:
         if _YES.fullmatch(n) and answer_control_question(pending_control_question["id"], True):
             pending_control_question = None
@@ -2769,7 +2843,7 @@ def handle_direct_command(text: str):
     if re.search(r"\b(quit|close|exit)\s+(my\s+)?spotify\b", normalized):
         return quit_application("Spotify")
     if alerts_open and re.fullmatch(
-            r"(?:jervis )?(?:ok|okay|stop|dismiss|thanks|thank you|got it|i got it|silence|quiet|enough|alright)"
+            r"(?:jarvis )?(?:ok|okay|stop|dismiss|thanks|thank you|got it|i got it|silence|quiet|enough|alright)"
             r"(?: (?:it|that|the alarm|the timer|the alert|the sound))?", " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())):
         send_ui_update_once({"type": "dismiss_alert"})
         return "Okay."
@@ -2862,7 +2936,7 @@ def handle_direct_command(text: str):
     calendar_reply = handle_calendar_command(text)   # "check my calendar" / "create a calendar event" out of the blue
     if calendar_reply:
         return calendar_reply
-    if re.fullmatch(r"(?:jervis )?(?:open|show|bring up) (?:the |your |my )?(?:jervis )?(?:window|interface|screen|ui)",
+    if re.fullmatch(r"(?:jarvis )?(?:open|show|bring up) (?:the |your |my )?(?:jarvis )?(?:window|interface|screen|ui)",
                     " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())):
         launch_ui()
         return "Opening my window." if ui_failures < 2 else "My window can't start on this computer. The console explains why."
@@ -2914,6 +2988,9 @@ def handle_direct_command(text: str):
         return ReadAloud(f"{doc['title']}\n\n{doc['body']}".strip())
     if current_document() and documents.is_edit_request(text):
         return edit_document(text)
+    another_by = parse_another_by_artist(text)
+    if another_by is not None and not (youtube_active and not re.search(r"\bspotify\b", text.lower())):
+        return play_another_by_artist(another_by)
     direction = parse_track_skip(text)
     if direction:
         if (netflix_active or stremio_active) and not youtube_active and not re.search(r"\b(song|track|music|spotify)\b", text.lower()):
@@ -2983,7 +3060,7 @@ def handle_direct_command(text: str):
         return "Which app should I open?"
     if app_name:
         remember_media_app(app_name)
-        # Blender always opens with Jervis's scripting bridge running, so a later "create a chair" (in this
+        # Blender always opens with Jarvis's scripting bridge running, so a later "create a chair" (in this
         # session or a future one) never has to restart it and ask first — see blender_control.ensure_bridge.
         blender_status, blender_value = resolve_app(app_name)
         if blender_status == "ok" and "blender" in blender_value.lower():
@@ -3037,7 +3114,7 @@ def handle_direct_command(text: str):
 
 
 _ACKNOWLEDGEMENT = re.compile(r"(?:(?:ok(?:ay)?|thanks?|thank you(?: so much)?|cool|great|nice|got it|alright|"
-                              r"all right|good|perfect|jervis)[ ,.!]*)+", re.I)
+                              r"all right|good|perfect|jarvis)[ ,.!]*)+", re.I)
 _BLENDER_THING = re.compile(r"\b(?:blender|cube|sphere|cylinder|cone|torus|donut|monkey|suzanne|mesh|object|"
                             r"vertex|vertices|modifier|material)\b", re.I)
 blender_session = None     # tracks Blender objects for commands run without a "take control" session
@@ -3131,7 +3208,7 @@ pending_app_choice = None  # {"options": [names], "at"}
 
 
 def handle_app_followup(text: str):
-    """The answer to Jervis's own "which app?" questions, or None (then the sentence is handled as usual)."""
+    """The answer to Jarvis's own "which app?" questions, or None (then the sentence is handled as usual)."""
     global pending_open_app, pending_app_choice
     cleaned = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
     cancel = re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|none|stop|neither)(?: of them)?", cleaned)
@@ -3187,7 +3264,7 @@ def _mark_spotify_playing() -> None:
 
 
 def play_song_locally(request: str, start_seconds=None) -> str:
-    """No Spotify keys: Jervis uses the Spotify app's own search (see spotify_local.py)."""
+    """No Spotify keys: Jarvis uses the Spotify app's own search (see spotify_local.py)."""
     global youtube_active, netflix_active, stremio_active, spotify_active
     try:
         playing = spotify_local.play(spotify_local.clean_query(request))
@@ -3256,6 +3333,76 @@ def seek_music(seconds: int) -> str:
         return f"Could not jump: {e}"
 
 
+_recent_artist_picks = collections.deque(maxlen=10)   # tracks "another song by X" chose lately, so it doesn't repeat
+
+
+def _artist_now_playing() -> str:
+    try:
+        if sp:
+            item = (sp.current_playback() or {}).get("item") or {}
+            return ((item.get("artists") or [{}])[0].get("name") or "").strip()
+        playing = spotify_local.now_playing()[1]
+        return playing.rpartition(" by ")[2].strip() if " by " in playing else ""
+    except Exception:
+        return ""
+
+
+def play_another_by_artist(artist: str) -> str:
+    """A different song by `artist` (or, when empty, by whoever is playing now) than the one playing."""
+    global youtube_active, netflix_active, stremio_active, spotify_active
+    artist = artist or _artist_now_playing()
+    if not artist:
+        return "Which artist would you like another song by?"
+    if not sp:
+        # The Spotify app on its own: playing the artist plays their top songs; if that's the one already on,
+        # move on to the next of them.
+        try:
+            before = spotify_local.now_playing()[1]
+            playing = spotify_local.play(spotify_local.clean_query(artist))
+            if playing and before and playing == before:
+                playing = spotify_local.skip("next") or playing
+        except spotify_local.SpotifyLocalError as e:
+            return str(e)
+        except Exception as e:
+            print(f"Spotify (app) failed: {e!r}", flush=True)
+            return "Something went wrong while starting Spotify. Try again, or press play in Spotify."
+        youtube_active = netflix_active = stremio_active = False
+        spotify_active = True
+        return f"Playing {playing} on Spotify." if playing else f"Playing {artist} on Spotify."
+    try:
+        found = (sp.search(q=artist, type="artist", limit=1).get("artists") or {}).get("items") or []
+        if not found:
+            return f"I couldn't find {artist} on Spotify."
+        artist_info = found[0]
+        tracks = []
+        try:
+            tracks = sp.artist_top_tracks(artist_info["id"]).get("tracks") or []
+        except Exception:
+            pass   # not every Spotify app may call this; a search for the artist's songs works too
+        if len(tracks) < 5:
+            more = sp.search(q=f'artist:"{artist_info["name"]}"', type="track", limit=20)
+            seen = {t["id"] for t in tracks}
+            tracks += [t for t in (more.get("tracks") or {}).get("items") or [] if t["id"] not in seen
+                       and any(a.get("id") == artist_info["id"] for a in t.get("artists") or [])]
+        current_id = ((sp.current_playback() or {}).get("item") or {}).get("id")
+        choices = ([t for t in tracks if t["id"] != current_id and t["id"] not in _recent_artist_picks]
+                   or [t for t in tracks if t["id"] != current_id] or tracks)
+        if not choices:
+            return f"I couldn't find songs by {artist_info['name']} on Spotify."
+        pick = random.choice(choices)
+        _recent_artist_picks.append(pick["id"])
+        spotify_player_call(lambda device_id: sp.start_playback(
+            device_id=device_id, context_uri=pick["album"]["uri"], offset={"uri": pick["uri"]}))
+    except SpotifyNotReady:
+        return "Spotify needs to be open on a device first."
+    except Exception as e:
+        print(f"Playing another song by {artist} failed: {e!r}", flush=True)
+        return "Spotify didn't respond to that. Make sure Spotify is open, then ask me again."
+    youtube_active = netflix_active = stremio_active = False
+    spotify_active = True
+    return f"Playing {pick['name']} by {artist_info['name']}."
+
+
 def skip_track(direction: str) -> str:
     """Spotify: jump to the next or previous song and say what is playing now."""
     if not sp:
@@ -3267,29 +3414,29 @@ def skip_track(direction: str) -> str:
             return f"Now playing {now}."
         return "Skipped to the next song." if direction == "next" else "Went back to the previous song."
     try:
-        device_id = get_device_id()
-        if not device_id:
-            return "No active Spotify device found. Play something on Spotify first."
         if direction == "next":
-            sp.next_track(device_id=device_id)
+            spotify_player_call(lambda device_id: sp.next_track(device_id=device_id))
         else:
             # Spotify's "previous" only restarts the song when it is more than a few seconds in.
             state = sp.current_playback() or {}
-            sp.previous_track(device_id=device_id)
+            spotify_player_call(lambda device_id: sp.previous_track(device_id=device_id))
             if (state.get("progress_ms") or 0) > 3000:
                 time.sleep(0.4)
-                sp.previous_track(device_id=device_id)
+                spotify_player_call(lambda device_id: sp.previous_track(device_id=device_id))
         time.sleep(0.8)  # let Spotify switch before asking what is playing
         item = (sp.current_playback() or {}).get("item") or {}
         if item.get("name"):
             artist = (item.get("artists") or [{}])[0].get("name", "")
             return f"Now playing {item['name']}" + (f" by {artist}." if artist else ".")
         return "Skipped to the next song." if direction == "next" else "Went back to the previous song."
+    except SpotifyNotReady:
+        return "Spotify isn't open on any device. Open Spotify, then ask me again."
     except Exception as e:
-        return f"I couldn't change the song: {e}"
+        print(f"Changing the Spotify track failed: {e!r}", flush=True)
+        return "Spotify isn't playing anything I can skip right now. Ask me to play a song first."
 
 
-spotify_active = False  # True once Jervis started a song on Spotify; "stop" / "pause" / "resume" then go there directly
+spotify_active = False  # True once Jarvis started a song on Spotify; "stop" / "pause" / "resume" then go there directly
 
 
 def resume_music() -> str:
@@ -3406,7 +3553,7 @@ def _dispatch_phone_command(command_type: str, payload: dict) -> str:
     PHONE_COMMANDS — handle_phone_client refuses anything else before this is even reached."""
     entry = PHONE_COMMANDS.get(command_type)
     if not entry:
-        raise ValueError(f"“{command_type}” isn't something a phone can ask Jervis to do.")
+        raise ValueError(f"“{command_type}” isn't something a phone can ask Jarvis to do.")
     func, key = entry
     if key is None:
         return str(func())
@@ -3435,16 +3582,16 @@ def _transcribe_phone_audio(pcm16_bytes: bytes, sample_rate: int) -> str:
     return transcribe(sr.AudioData(pcm16_bytes, sample_rate, 2))
 
 
-def _deliver_phone_voice_text(text: str, session_id: str) -> None:
+def _deliver_phone_voice_text(text: str, session_id: str, request_id: str = "") -> None:
     """session_router's callback for a finished transcription: queued like any typed/spoken command (see
     PhoneVoiceInput) so it goes through the exact same main-loop pipeline — must return immediately, not block
     whichever asyncio loop is currently running the transport (relay_client.py, or handle_phone_client below)."""
-    typed_inputs.put(PhoneVoiceInput(text, session_id))
+    typed_inputs.put(PhoneVoiceInput(text, session_id, request_id))
 
 
 def _vapid_key_b64() -> str:
     """relay_client's answer to the relay's get_page_context — see relay/server.py's docstring on why the relay
-    asks for this live instead of any key being baked into it: every Jervis install generates its own (push.py)."""
+    asks for this live instead of any key being baked into it: every Jarvis install generates its own (push.py)."""
     return push.public_key_b64() if push.available() else ""
 
 
@@ -3457,9 +3604,46 @@ def _local_address() -> str:
 
 # Shared between the local LAN phone server (handle_phone_client, right below) and relay_client.py: a "connect my
 # phone" session behaves identically either way — see phone_session.py for why that's one router, not two.
+PHONE_AI_MODEL = os.getenv("JARVIS_PHONE_AI_MODEL") or "openai/gpt-oss-120b"   # the phone agent picks tools AND devices
+
+
+def _phone_ai_config() -> dict:
+    """What the phone app's own Jarvis agent needs (see mobile/src/core/agent.ts): the same Groq account this
+    computer uses, so Phone Mode keeps working with the computer off. Sent only over an encrypted session."""
+    if not GROQ_KEY:
+        return {"error": "This computer has no Groq API key (Settings, AI)."}
+    return {"provider": "groq", "apiKey": GROQ_KEY, "model": PHONE_AI_MODEL, "fallbackModel": GROQ_MODEL,
+            "transcribeModel": "whisper-large-v3-turbo",
+            "userName": os.getenv("JARVIS_USER_NAME", "")}
+
+
+def _on_phone_turn(user: str, reply: str, device_name: str) -> None:
+    """A request the phone app handled on the phone itself (Phone Mode): shown in this window and kept in the AI's
+    own conversation, so "one Jarvis" remembers it ("open them on my computer" right after works)."""
+    if user:
+        broadcast("user", user, to_phone=False)
+    if reply:
+        broadcast("ai", reply, to_phone=False)
+    if chat_history is not None:
+        where = f" on {device_name}" if device_name else " on the phone"
+        if user:
+            chat_history.append({"role": "user", "content": f"(said{where}, handled there) {user}"})
+        if reply:
+            chat_history.append({"role": "assistant", "content": reply})
+
+
+def _on_phone_presence(names: list) -> None:
+    """session_router's callback whenever which phones are attached changes: the window's phone indicator (see
+    panels.js) shows it, and a window that connects later still sees the current state (send_ui_update)."""
+    send_ui_update("phone_connection", {"connected": bool(names), "devices": names})
+
+
 session_router = phone_session.PhoneSessionRouter(phone_server, _transcribe_phone_audio, _deliver_phone_voice_text,
                                                    on_push_subscribe=_on_push_subscribe,
-                                                   on_push_unsubscribe=push_store.remove)
+                                                   on_push_unsubscribe=push_store.remove,
+                                                   get_history=phone_history, on_presence=_on_phone_presence,
+                                                   get_vapid_key=_vapid_key_b64, get_ai_config=_phone_ai_config,
+                                                   on_phone_turn=_on_phone_turn)
 relay = relay_client.RelayClient(RELAY_URL, session_router,
                                  is_enabled=lambda: bool(RELAY_URL) and phone_control_mode() != "off",
                                  get_vapid_key=_vapid_key_b64, get_local_address=_local_address)
@@ -3471,7 +3655,7 @@ def reply_to_phone_if_needed(typed, message: str) -> None:
     gets the answer, over whichever transport (LAN or relay) it's actually attached on — session_router already
     knows which."""
     if isinstance(typed, PhoneVoiceInput):
-        session_router.deliver_reply(typed.session_id, message)
+        session_router.deliver_reply(typed.session_id, message, getattr(typed, "request_id", ""))
 
 
 TOOL_FUNCTIONS = {
@@ -3561,7 +3745,7 @@ TOOLS = [
             "description": (
                 "Look at the most recently attached, generated or edited image and answer a question about it, or "
                 "describe it if no question is given. ONLY call when the user is clearly asking about an image that "
-                "is part of this conversation (an attached photo, screenshot, diagram, chart, or a picture Jervis "
+                "is part of this conversation (an attached photo, screenshot, diagram, chart, or a picture Jarvis "
                 "just made or edited) — including a vague follow-up like 'what's wrong with it' right after an "
                 "image was shared. You cannot see images yourself; this is the only way to know what is in one."
             ),
@@ -3649,7 +3833,7 @@ TOOLS = [
     },
 ]
 
-SYSTEM_PROMPT = """You are Jervis, an AI desktop assistant.
+SYSTEM_PROMPT = """You are Jarvis, an AI desktop assistant.
 - NEVER execute tools unless the user explicitly commands an action (e.g., 'open application', 'play music').
 - If the user asks general questions or makes conversational statements like 'can you hear me' or 'hello', DO NOT call tools. Respond naturally in 1-2 sentences.
 - A statement that only mentions an app, website or topic in passing (e.g. "I installed Chrome yesterday") is not a request: reply to what the user actually said, and never bring up, offer, or describe an unrelated action, setting, or example from your own instructions.
@@ -3694,7 +3878,7 @@ SYSTEM_PROMPT = """You are Jervis, an AI desktop assistant.
 
 # ---------- Timers ----------
 typed_inputs = queue.Queue()  # lines typed into the window, handled by the main loop like spoken commands
-announcements = queue.Queue()  # spoken by the main loop, so Jervis never talks over his own microphone
+announcements = queue.Queue()  # spoken by the main loop, so Jarvis never talks over his own microphone
 
 
 def notify(title: str, message: str) -> None:
@@ -3733,7 +3917,7 @@ def on_timer_fired(timer: dict) -> None:
         "id": timer["id"], "label": timer["label"], "kind": timer["kind"], "total": timer["total"], "message": message}})
     if not shown:  # nobody to play the chime yet, so use the system sound until the window opens
         threading.Thread(target=ring, daemon=True).start()
-    notify("Jervis", message)
+    notify("Jarvis", message)
     announcements.put(spoken)
 
 
@@ -3778,8 +3962,8 @@ def handle_timer_command(text: str):
 
 
 last_llm_reply = None  # {"text", "at"}: the last answer the AI wrote, for "put this list in a document"
-pending_dictation = None  # {"app", "at"}: Jervis asked what to write, and the next thing you say is the content
-pending_spotify_request = None  # {"at"}: Jervis asked what to listen to, and the next thing you say is a song/artist
+pending_dictation = None  # {"app", "at"}: Jarvis asked what to write, and the next thing you say is the content
+pending_spotify_request = None  # {"at"}: Jarvis asked what to listen to, and the next thing you say is a song/artist
 pending_spotify_play = None     # {"query", "at"}: Spotify is showing a search, and "play it" plays it
 
 # Words people mistype when giving orders ("take contorl"), matched loosely so a typo doesn't send a command to the AI.
@@ -3797,9 +3981,9 @@ def fix_typos(text: str) -> str:
     return re.sub(r"[A-Za-z]+", fix, text or "")
 
 
-# "Take control (of my computer) and …", said before something Jervis can do directly: the preamble adds nothing.
+# "Take control (of my computer) and …", said before something Jarvis can do directly: the preamble adds nothing.
 _CONTROL_PREAMBLE = re.compile(
-    r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis)[, ]+)?(?:please |can you |could you )*(?:take (?:the )?control"
+    r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis)[, ]+)?(?:please |can you |could you )*(?:take (?:the )?control"
     r"(?: (?:over|of|on))?(?: (?:my|the) (?:computer|mac|pc|laptop|screen))?|use my (?:computer|mac|pc)|control my "
     r"(?:computer|mac|pc))(?:,? (?:and|to|then))?\s+", re.I)
 _SPOTIFY_SEARCH = re.compile(
@@ -3844,10 +4028,10 @@ def handle_spotify_search(text: str):
         return "Spotify isn't installed on this computer. Get it from spotify.com, then ask me again."
     pending_spotify_play = {"query": query, "at": time.time()}
     return f"Here's {query} in Spotify. Say “play it” and I'll start it."
-pending_google_search = None  # {"at"}: Jervis asked what to search, and the next thing you say is the search itself
-pending_netflix_request = None  # {"at"}: Jervis asked what to watch, and the next thing you say is a show/movie title
+pending_google_search = None  # {"at"}: Jarvis asked what to search, and the next thing you say is the search itself
+pending_netflix_request = None  # {"at"}: Jarvis asked what to watch, and the next thing you say is a show/movie title
 pending_stremio_request = None  # {"at"}: same, for Stremio
-pending_calendar_choice = None  # {"at"}: Jervis asked "hear the next events, or make a new one?"
+pending_calendar_choice = None  # {"at"}: Jarvis asked "hear the next events, or make a new one?"
 pending_calendar_event = None  # {"step", "fields", "at"}: building a new event one answer at a time (see calendar_time)
 DEFAULT_DOC_APP = "gdocs"
 
@@ -3855,7 +4039,7 @@ DEFAULT_DOC_APP = "gdocs"
 def title_from_question(question: str) -> str:
     """"What is a healthy breakfast?" -> "Healthy Breakfast"."""
     t = " ".join(re.sub(r"[^\w' ]", " ", (question or "").lower()).split())
-    t = re.sub(r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:please )?(?:(?:can|could|would) you )?"
+    t = re.sub(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:please )?(?:(?:can|could|would) you )?"
                r"(?:(?:give|tell|show|get) me |i (?:need|want) |what(?:'s| is| are) |list |suggest |recommend |write )?"
                r"(?:(?:a|an|the|some|me|few) )*", "", t)
     return " ".join(t.split()[:6]).title()
@@ -3907,7 +4091,7 @@ DOC_EDIT_PROMPT = (
     "revised document: the first line is the title, then a blank line, then the body. Keep everything the request "
     "does not touch. No commentary, no introduction, no markdown symbols such as # or **."
 )
-DOC_CONTEXT_SECONDS = 45 * 60  # how long "make it shorter" still refers to the document Jervis just wrote
+DOC_CONTEXT_SECONDS = 45 * 60  # how long "make it shorter" still refers to the document Jarvis just wrote
 last_document = None  # {"app", "ref", "title", "body", "at"}
 
 
@@ -3918,7 +4102,7 @@ def current_document():
 
 
 def edit_document(request: str) -> str:
-    """Apply a spoken change ("make it shorter", "add a paragraph about X") to the document Jervis wrote."""
+    """Apply a spoken change ("make it shorter", "add a paragraph about X") to the document Jarvis wrote."""
     global last_document
     doc = current_document()
     app_key, app_name = doc["app"], documents.APP_NAMES[doc["app"]]
@@ -4046,7 +4230,7 @@ def local_ai_summary() -> str:
 
 
 def check_ai_connection() -> None:
-    """At startup, say clearly which AI Jervis will use, so a missing key or a blocked network is not a mystery later."""
+    """At startup, say clearly which AI Jarvis will use, so a missing key or a blocked network is not a mystery later."""
     global groq_down_until
     local_model, local_reason = local_llm.status()
     problem = None
@@ -4068,11 +4252,11 @@ def check_ai_connection() -> None:
                            f" (technical detail: {type(e.__cause__ or e).__name__}: {e.__cause__ or e})")
     groq_down_until = time.time() + 3600
     if LLM_BACKEND == "auto":
-        print(f"\n*** {problem}\n    Jervis will use the local AI instead"
+        print(f"\n*** {problem}\n    Jarvis will use the local AI instead"
               + (f" (Ollama, model {local_model})." if local_model else " as soon as its setup finishes.") + " ***\n",
               flush=True)
     else:
-        print(f"\n*** {problem}\n    (Jervis still understands commands like opening apps and timers without any AI.)\n",
+        print(f"\n*** {problem}\n    (Jarvis still understands commands like opening apps and timers without any AI.)\n",
               flush=True)
 
 
@@ -4086,7 +4270,7 @@ def local_ai_status_reply() -> str:
                 "so ask me those any time, and ask me this again in a little while.")
     if state.get("error"):
         return f"My AI couldn't be set up: {state['error']} {state.get('hint') or ''}".strip()
-    if os.getenv("JERVIS_NO_AI_SETUP") != "1":
+    if os.getenv("JARVIS_NO_AI_SETUP") != "1":
         local_ai_manager.start_background()   # it was ready before and stopped: bring it back
     return "My AI isn't running right now, so I'm starting it again. Ask me again in a moment."
 
@@ -4162,7 +4346,7 @@ def trim_for_ai(messages: list) -> list:
     """What actually gets sent: the system prompt and the recent turns, with any big document text shortened.
 
     The free online AI allows only 8,000 tokens a minute, and everything sent counts, so a long history (or the full
-    text of a story Jervis wrote) would use it up in a few questions.
+    text of a story Jarvis wrote) would use it up in a few questions.
     """
     if not messages:
         return messages
@@ -4272,7 +4456,7 @@ _CLAIMS_ACTION = re.compile(
     r"(?:^|[.!] )(?:scaling|resizing|creating|adding|moving|rotating|colou?ring|deleting) (?:the|a|an|it|your)\b)", re.I)
 
 
-def ask_jervis(messages, user_text=""):
+def ask_jarvis(messages, user_text=""):
     tools, tool_choice = select_tools(user_text)
     try:
         kwargs = {"model": GROQ_MODEL, "messages": trim_for_ai(messages)}
@@ -4471,16 +4655,16 @@ def _spoken_version(text: str) -> str:
 
 
 _FAREWELL = re.compile(
-    r"(?:(?:hey|ok|okay|alright|all right|well|so|right|thanks|thank you|cool|great|jervis|jarvis)\s+)*"
+    r"(?:(?:hey|ok|okay|alright|all right|well|so|right|thanks|thank you|cool|great|jarvis|jervis)\s+)*"
     r"(?P<phrase>goodbye|good bye|bye(?: bye)?|goodnight|good night|see you(?: later| soon| tomorrow| around)?|see ya|"
     r"take care|talk to you later|catch you later|have a (?:good|great|nice|lovely|wonderful|pleasant) "
     r"(?:day|night|evening|one|afternoon|weekend)|sleep well|i(?:'m| am) (?:going|off) to (?:bed|sleep))"
-    r"(?:\s+(?:jervis|jarvis|buddy|friend|mate|man|thanks|thank you|now|for now|you too))*"
+    r"(?:\s+(?:jarvis|jervis|buddy|friend|mate|man|thanks|thank you|now|for now|you too))*"
 )
 
 
 def is_shutdown_command(text):
-    """Goodbyes in any of the usual forms ("Goodbye.", "Have a good day, Jervis", "bye bye") put Jervis to sleep."""
+    """Goodbyes in any of the usual forms ("Goodbye.", "Have a good day, Jarvis", "bye bye") put Jarvis to sleep."""
     if not text:
         return False
     normalized = " ".join(re.sub(r"[^a-z' ]", " ", text.lower()).split())
@@ -4489,7 +4673,7 @@ def is_shutdown_command(text):
 
 def farewell_reply(text: str) -> str:
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower()).split())
-    sleep = "Going to sleep. Say Hey Jervis when you want me."
+    sleep = "Going to sleep. Say Hey Jarvis when you want me."
     if re.search(r"good ?night|\bnight\b|\bevening\b|sleep well|\bbed\b|\bsleep\b", n):
         return f"Goodnight! {sleep}"
     if re.search(r"have a", n):
@@ -4583,7 +4767,7 @@ _MIC_RETRY_SECONDS = 3
 
 def open_microphone():
     """The microphone chosen in Settings (by name), or the system default if none is chosen or it's unplugged."""
-    wanted = os.getenv("JERVIS_MIC", "").strip()
+    wanted = os.getenv("JARVIS_MIC", "").strip()
     if wanted:
         try:
             import pyaudio
@@ -4604,7 +4788,7 @@ def open_microphone():
 
 def report_mic_problem(message: str, blocking: bool = True) -> None:
     """Tell the window (once per distinct problem) and, for a problem that stops listening, wait before retrying so
-    a missing microphone doesn't make Jervis spin at full speed."""
+    a missing microphone doesn't make Jarvis spin at full speed."""
     global mic_problem
     if message != mic_problem:
         mic_problem = message
@@ -4638,7 +4822,7 @@ def listen(passive=False):
             clear_mic_problem() if not mic_problem.startswith("The microphone \u201c") else None
             # Recalibrated once at startup, and again every few minutes while asleep (never mid-conversation, so it
             # can't clip the start of something you're saying), so a room that's gotten noisier or quieter is still
-            # tracked, without the fast per-slice decay that used to make Jervis go deaf (see the note by MIN_ENERGY_THRESHOLD).
+            # tracked, without the fast per-slice decay that used to make Jarvis go deaf (see the note by MIN_ENERGY_THRESHOLD).
             if not mic_calibrated or (passive and time.time() - last_calibrated_at > RECALIBRATE_EVERY):
                 print("Calibrating microphone...")
                 recognizer.adjust_for_ambient_noise(source, duration=1.0)
@@ -4707,7 +4891,7 @@ def speak(text):
     print(f"Speaking: {text}")
     interrupt_speech.clear()
     volume = speak_volume()
-    if AUDIO_OFF or speak_muted() or volume == 0:   # test mode, or the user muted/zeroed Jervis's voice
+    if AUDIO_OFF or speak_muted() or volume == 0:   # test mode, or the user muted/zeroed Jarvis's voice
         send_status("idle")
         return
 
@@ -4726,20 +4910,20 @@ def speak(text):
     finally:
         if interrupt_speech.is_set():
             interrupt_speech.clear()
-            send_status("listening")  # cut off on purpose: the next thing said is for Jervis, so no pause
+            send_status("listening")  # cut off on purpose: the next thing said is for Jarvis, so no pause
         else:
             time.sleep(POST_SPEECH_PAUSE)
             send_status("idle")
 
 
 def remember_turn(messages: list, user_text: str, reply: str, turn_started: float, private: bool = False) -> None:
-    """Put a command Jervis handled himself into the AI's memory, so "read the story" or "shorten it" makes sense later."""
+    """Put a command Jarvis handled himself into the AI's memory, so "read the story" or "shorten it" makes sense later."""
     messages.append({"role": "user", "content": user_text})
     messages.append({"role": "assistant", "content": PRIVATE_PLACEHOLDER if private else reply})
     doc = last_document
     if doc and doc.get("body") and doc["at"] >= turn_started:
         messages.append({"role": "system", "content": (
-            f"Context: Jervis just wrote or changed a document in {documents.APP_NAMES[doc['app']]}. "
+            f"Context: Jarvis just wrote or changed a document in {documents.APP_NAMES[doc['app']]}. "
             f"Title: {doc['title']}\nFull text:\n{doc['body']}")})
     if len(messages) > 42:  # keep the system prompt and the most recent exchanges
         del messages[1:len(messages) - 40]
@@ -4751,7 +4935,7 @@ def main_loop():
     global chat_history
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     chat_history = messages
-    print("Jervis background listener is ready. Say 'Wake Up Jervis'.")
+    print("Jarvis background listener is ready. Say 'Wake Up Jarvis'.")
 
     while True:
         while not announcements.empty():  # timers that finished: say so, awake or asleep
@@ -4764,7 +4948,7 @@ def main_loop():
         except queue.Empty:
             typed = None
         if typed:
-            awake = True  # typing to Jervis wakes him, and works while the microphone is muted
+            awake = True  # typing to Jarvis wakes him, and works while the microphone is muted
             text = typed
             send_status("thinking")
             print(f"Typed: {text}")
@@ -4774,8 +4958,8 @@ def main_loop():
                 time.sleep(0.3)
                 continue
 
-            if not awake and os.getenv("JERVIS_WAKE_WORD", "on") == "off":
-                awake = True   # Settings: no wake phrase needed, Jervis is always listening while the mic is on
+            if not awake and os.getenv("JARVIS_WAKE_WORD", "on") == "off":
+                awake = True   # Settings: no wake phrase needed, Jarvis is always listening while the mic is on
             if not awake:
                 send_status("sleeping")
                 text = listen(passive=True)
@@ -4795,7 +4979,7 @@ def main_loop():
             broadcast("user", text)
         if not typed:
             text = fix_names(text) or text  # "Streamio", "Stream here" -> "stremio", etc.
-            if is_explicit_wake(text):  # "Hey Jervis" while already awake: bring the window up, full screen
+            if is_explicit_wake(text):  # "Hey Jarvis" while already awake: bring the window up, full screen
                 reopened = not window_visible
                 show_fullscreen()
                 here = time_greeting() if reopened else "I'm here."
@@ -4831,7 +5015,7 @@ def main_loop():
         if image_note:
             messages.append({"role": "system", "content": image_note})
         try:
-            reply = tidy_math(ask_jervis(messages, text))
+            reply = tidy_math(ask_jarvis(messages, text))
             if len(reply) > 40:
                 last_llm_reply = {"text": reply, "at": time.time(), "question": text}
                 note_suggestions(reply)
@@ -4845,7 +5029,7 @@ def main_loop():
 
 
 def greet_after_voice_launch() -> None:
-    """Jervis was opened by saying "Hey Jervis" while he was closed (see wake/jervis_wake.py): once his window is up,
+    """Jarvis was opened by saying "Hey Jarvis" while he was closed (see wake/jarvis_wake.py): once his window is up,
     show it and answer, then listen for the command right away."""
     global awake
     awake = True
@@ -4874,7 +5058,7 @@ def greet_on_startup() -> None:
 
 
 def set_window_visible(visible: bool) -> None:
-    """Closing the window puts Jervis back to sleep: he keeps listening, and the wake phrase opens him again. (Not
+    """Closing the window puts Jarvis back to sleep: he keeps listening, and the wake phrase opens him again. (Not
     while he's using the computer: then his window only steps aside.)"""
     global window_visible, awake
     window_visible = visible
@@ -4886,18 +5070,18 @@ def watch_parent_window() -> None:
     """The engine never outlives its window. If the window is ended without being able to stop the engine (Task
     Manager, a crash, an installer ending it), the engine would otherwise keep listening with nothing on screen."""
     try:
-        window = psutil.Process(int(os.getenv("JERVIS_PARENT_PID") or 0))
+        window = psutil.Process(int(os.getenv("JARVIS_PARENT_PID") or 0))
     except (ValueError, psutil.Error):
         return
     while True:
         time.sleep(2)
         if not window.is_running():   # (also false if the id now belongs to another program)
-            print("Jervis's window is gone, so the engine is stopping too.", flush=True)
+            print("Jarvis's window is gone, so the engine is stopping too.", flush=True)
             shutdown_now()
 
 
 def shutdown_now() -> None:
-    """Stop what Jervis started (a computer-control task, his local AI) and exit, from any thread."""
+    """Stop what Jarvis started (a computer-control task, his local AI) and exit, from any thread."""
     try:
         if computer_task is not None:
             computer_task.stop()
@@ -4915,10 +5099,10 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:   # an installed copy checking it has every part (see selftest.py)
         import selftest
         sys.exit(selftest.run())
-    # The window stops the backend with SIGTERM: turn that into a normal exit, so cleanups (the local AI engine Jervis
+    # The window stops the backend with SIGTERM: turn that into a normal exit, so cleanups (the local AI engine Jarvis
     # started) run instead of leaving it behind.
     signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
-    if SUPERVISED and os.getenv("JERVIS_PARENT_PID"):
+    if SUPERVISED and os.getenv("JARVIS_PARENT_PID"):
         threading.Thread(target=watch_parent_window, daemon=True, name="parent-watch").start()
     ws_thread = threading.Thread(target=run_ws_server, daemon=True)
     ws_thread.start()
@@ -4932,16 +5116,16 @@ if __name__ == "__main__":
 
     threading.Thread(target=check_ai_connection, daemon=True).start()
     threading.Thread(target=refresh_devices, daemon=True).start()   # so Settings has them ready
-    if LLM_BACKEND in ("ollama", "auto") and os.getenv("JERVIS_NO_AI_SETUP") != "1":   # (that switch: tests only)
+    if LLM_BACKEND in ("ollama", "auto") and os.getenv("JARVIS_NO_AI_SETUP") != "1":   # (that switch: tests only)
         local_ai_manager.start_background()   # the local AI is the AI, or the backup: make sure it's there
-    timer_manager.load()  # timers that were running when Jervis was last closed
+    timer_manager.load()  # timers that were running when Jarvis was last closed
     threading.Thread(target=telemetry_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()
     threading.Thread(target=_install_blender_bridge, daemon=True, name="blender-startup-script").start()
-    if os.getenv("JERVIS_SHOW_WINDOW") == "1":  # started with run.py: show the window right away, not only after "Hey Jervis"
+    if os.getenv("JARVIS_SHOW_WINDOW") == "1":  # started with run.py: show the window right away, not only after "Hey Jarvis"
         launch_ui()
 
-    if os.environ.pop("JERVIS_WOKEN_BY_VOICE", "") == "1":   # opened by Jervis Wake (wake/): greet right away
+    if os.environ.pop("JARVIS_WOKEN_BY_VOICE", "") == "1":   # opened by Jarvis Wake (wake/): greet right away
         greet_after_voice_launch()
     else:
         greet_on_startup()   # opened normally: greet once the window connects, and start awake right away

@@ -1,24 +1,24 @@
-# Jervis Computer Control Skill
+# Jarvis Computer Control Skill
 
 ## Purpose
 
-You are an implementation agent working on **Jervis**, a personal AI voice/chat assistant.
+You are an implementation agent working on **Jarvis**, a personal AI voice/chat assistant.
 
-This skill defines a computer-control capability where the user can tell Jervis:
+This skill defines a computer-control capability where the user can tell Jarvis:
 
 > "Take control of my computer and [command]."
 
-Jervis should then visibly control the user's computer using the mouse and keyboard, while the user watches everything happen on screen.
+Jarvis should then visibly control the user's computer using the mouse and keyboard, while the user watches everything happen on screen.
 
 The defining product requirement is:
 
-**Jervis must actually operate the computer, not merely describe what it would do.**
+**Jarvis must actually operate the computer, not merely describe what it would do.**
 
 For example, if the user says:
 
 > "Take control of my computer and play Bohemian Rhapsody on Spotify."
 
-Jervis should visibly:
+Jarvis should visibly:
 
 1. Take control of the mouse/keyboard.
 2. Move the cursor to Spotify.
@@ -40,24 +40,24 @@ The user should be able to watch the entire process.
 
 # Core Product Principle
 
-Jervis is not simply an API assistant in this mode.
+Jarvis is not simply an API assistant in this mode.
 
 It is a **visible computer-use agent**.
 
 The user should be able to see:
 
 ```text
-Jervis decides what to do
+Jarvis decides what to do
         ↓
-Jervis moves the mouse
+Jarvis moves the mouse
         ↓
-Jervis interacts with the visible UI
+Jarvis interacts with the visible UI
         ↓
-Jervis waits for the UI
+Jarvis waits for the UI
         ↓
-Jervis continues
+Jarvis continues
         ↓
-Jervis verifies the result
+Jarvis verifies the result
 ```
 
 Do not hide the important actions from the user.
@@ -68,7 +68,7 @@ If the user says:
 
 > "Take control of my computer and open Spotify."
 
-the expected behavior is that the user sees Jervis open Spotify.
+the expected behavior is that the user sees Jarvis open Spotify.
 
 If the user says:
 
@@ -107,14 +107,14 @@ Take control of my computer and open VS Code.
 Equivalent natural wording can also be supported:
 
 ```text
-Jervis, control my computer and...
+Jarvis, control my computer and...
 Take over my computer and...
 Use my computer and...
 Control the mouse and...
 Operate my computer and...
 ```
 
-However, normal Jervis commands should not automatically enter full computer-control mode unless the user has explicitly enabled or requested that capability.
+However, normal Jarvis commands should not automatically enter full computer-control mode unless the user has explicitly enabled or requested that capability.
 
 ---
 
@@ -146,7 +146,7 @@ Only the second should trigger computer-use automation.
 
 The most important requirement is that actions happen visibly.
 
-When Jervis performs an action, the user should be able to observe:
+When Jarvis performs an action, the user should be able to observe:
 
 - Mouse movement
 - Mouse clicks
@@ -159,7 +159,7 @@ When Jervis performs an action, the user should be able to observe:
 - Playback starting
 - Menus opening
 
-Do not make the computer appear frozen while Jervis secretly performs everything through hidden APIs.
+Do not make the computer appear frozen while Jarvis secretly performs everything through hidden APIs.
 
 ---
 
@@ -308,7 +308,7 @@ Then:
 click(search_field)
 ```
 
-This makes Jervis much more reliable across computers with different performance.
+This makes Jarvis much more reliable across computers with different performance.
 
 ---
 
@@ -426,7 +426,7 @@ Possible differences:
 - A browser has a different layout.
 - An application takes longer to load.
 
-Jervis should observe the current state and adapt.
+Jarvis should observe the current state and adapt.
 
 Do not assume fixed coordinates are always correct.
 
@@ -459,7 +459,7 @@ If coordinates are unavoidable, calculate them relative to the current window or
 
 # Browser Control
 
-When controlling a browser, Jervis should interact with the actual visible browser.
+When controlling a browser, Jarvis should interact with the actual visible browser.
 
 For example:
 
@@ -489,7 +489,7 @@ Do not silently perform the action in a separate hidden browser if the user's re
 
 # Application Control
 
-Jervis should be able to interact with desktop applications when supported by the chosen computer-control framework.
+Jarvis should be able to interact with desktop applications when supported by the chosen computer-control framework.
 
 Examples:
 
@@ -511,7 +511,7 @@ Do not claim support for an application that the implementation cannot actually 
 
 # Cross-Platform Design
 
-Jervis may eventually support:
+Jarvis may eventually support:
 
 - macOS
 - Windows
@@ -557,7 +557,7 @@ Use a dedicated computer-control service.
 Example:
 
 ```text
-Jervis
+Jarvis
 │
 ├── Voice Input
 ├── Chat Input
@@ -634,7 +634,7 @@ The actual API may differ depending on the selected implementation framework.
 
 # Observation System
 
-Jervis needs a way to understand what is currently visible.
+Jarvis needs a way to understand what is currently visible.
 
 Possible observation sources:
 
@@ -722,7 +722,7 @@ Never assume a click worked merely because the click command executed.
 
 # Recovery
 
-If an action fails, Jervis should recover when safe.
+If an action fails, Jarvis should recover when safe.
 
 Example:
 
@@ -785,7 +785,7 @@ MAX_ACTION_RETRIES = 2
 
 # User Visibility
 
-Jervis should clearly communicate that it has taken control.
+Jarvis should clearly communicate that it has taken control.
 
 Example:
 
@@ -809,13 +809,13 @@ Then immediately stop automated input.
 
 Computer control must have an immediate stop mechanism.
 
-The user should be able to interrupt Jervis using at least one reliable method.
+The user should be able to interrupt Jarvis using at least one reliable method.
 
 Examples:
 
 ```text
 "Stop"
-"Jervis stop"
+"Jarvis stop"
 "Release control"
 "Cancel"
 ```
@@ -831,7 +831,7 @@ The emergency stop should take priority over normal task execution.
 Example:
 
 ```text
-Jervis is clicking through a website
+Jarvis is clicking through a website
         ↓
 User says "STOP"
         ↓
@@ -846,14 +846,14 @@ Do not continue executing queued actions after the stop signal.
 
 At all times, the user should be able to take the computer back.
 
-If the user manually moves the mouse, types, or interacts with the computer while Jervis is acting, the implementation should detect this where practical.
+If the user manually moves the mouse, types, or interacts with the computer while Jarvis is acting, the implementation should detect this where practical.
 
 Possible policy:
 
 ```text
 User interaction detected
         ↓
-Pause Jervis
+Pause Jarvis
         ↓
 Tell user:
 "I detected manual input. Pausing."
@@ -918,13 +918,13 @@ If a login page appears:
 - If the user needs to enter a password, pause and let the user handle the sensitive field when appropriate.
 - Do not log screenshots containing credentials.
 
-If Jervis can technically access a password manager, follow the user's explicit instructions and the password manager's security model rather than scraping or exposing stored secrets.
+If Jarvis can technically access a password manager, follow the user's explicit instructions and the password manager's security model rather than scraping or exposing stored secrets.
 
 ---
 
 # Privacy
 
-Computer control gives Jervis access to whatever is visible on screen.
+Computer control gives Jarvis access to whatever is visible on screen.
 
 Treat screenshots and UI information as potentially private.
 
@@ -974,7 +974,7 @@ Conceptually:
 }
 ```
 
-The exact schema must match Jervis's existing LLM integration.
+The exact schema must match Jarvis's existing LLM integration.
 
 The LLM should provide the goal.
 
@@ -1032,7 +1032,7 @@ Never respond:
 
 > Done.
 
-if Jervis only planned the action.
+if Jarvis only planned the action.
 
 Never respond:
 
@@ -1044,7 +1044,7 @@ Never respond:
 
 > The song is playing.
 
-if Jervis only searched for the song.
+if Jarvis only searched for the song.
 
 Never respond:
 
@@ -1086,7 +1086,7 @@ Expected sequence:
 16. Return success.
 ```
 
-Jervis response:
+Jarvis response:
 
 > Done — Bohemian Rhapsody by Queen is now playing on Spotify.
 
@@ -1188,7 +1188,7 @@ Response:
 
 # Long Tasks
 
-For tasks containing multiple actions, Jervis should keep going after each successful step.
+For tasks containing multiple actions, Jarvis should keep going after each successful step.
 
 Example:
 
@@ -1213,7 +1213,7 @@ If step 5 fails, do not pretend that step 6 happened.
 
 # Progress Feedback
 
-For long operations, Jervis may provide short progress updates.
+For long operations, Jarvis may provide short progress updates.
 
 Example:
 
@@ -1287,10 +1287,10 @@ This prevents typing commands into the wrong application.
 Example dangerous failure:
 
 ```text
-Jervis thinks Chrome search is focused
+Jarvis thinks Chrome search is focused
 but VS Code is actually focused
 ↓
-Jervis types:
+Jarvis types:
 "Bohemian Rhapsody"
 ```
 
@@ -1300,7 +1300,7 @@ Avoid this through state verification.
 
 # Window Management
 
-Jervis should understand:
+Jarvis should understand:
 
 - Current active application
 - Current active window
@@ -1357,7 +1357,7 @@ Every computer-control operation should have a meaningful failure state.
 
 ## Permission issue
 
-> macOS is blocking Jervis from controlling the computer. You need to allow the required Accessibility/Automation permission.
+> macOS is blocking Jarvis from controlling the computer. You need to allow the required Accessibility/Automation permission.
 
 Do not repeatedly retry a blocked OS permission.
 
@@ -1406,7 +1406,7 @@ Do not assume X11 behavior works under Wayland.
 
 # Tool Selection
 
-Before implementing, inspect the current Jervis project and determine which computer-control technology is already available.
+Before implementing, inspect the current Jarvis project and determine which computer-control technology is already available.
 
 Possible approaches include:
 
@@ -1489,8 +1489,8 @@ A computer-control task is complete only when:
 - [ ] The user could see the interaction.
 - [ ] Each important step was observed/verified.
 - [ ] Unexpected UI states were handled safely.
-- [ ] Jervis did not blindly click based on assumptions.
-- [ ] Jervis did not claim success before verification.
+- [ ] Jarvis did not blindly click based on assumptions.
+- [ ] Jarvis did not claim success before verification.
 - [ ] The user can interrupt the task.
 - [ ] Sensitive information was protected.
 - [ ] Destructive/high-impact actions receive appropriate confirmation.
@@ -1505,7 +1505,7 @@ When asked to implement or fix computer control:
 
 ## Step 1 — Inspect
 
-Read the existing Jervis project.
+Read the existing Jarvis project.
 
 Find:
 
@@ -1652,21 +1652,21 @@ Move the mouse manually or issue:
 Stop
 ```
 
-Jervis must stop.
+Jarvis must stop.
 
 ## Missing permissions
 
-Verify that Jervis explains the permission problem.
+Verify that Jarvis explains the permission problem.
 
 ## Wrong UI
 
-Intentionally test a changed window/layout and make sure Jervis does not blindly click.
+Intentionally test a changed window/layout and make sure Jarvis does not blindly click.
 
 ---
 
 # Final Implementation Principle
 
-The computer-control feature should feel like the user has given Jervis temporary control of their mouse and keyboard.
+The computer-control feature should feel like the user has given Jarvis temporary control of their mouse and keyboard.
 
 The user should be able to sit back and watch:
 
@@ -1675,7 +1675,7 @@ The user should be able to sit back and watch:
 
              ↓
 
-Jervis takes control
+Jarvis takes control
 
              ↓
 
@@ -1687,7 +1687,7 @@ Spotify opens
 
              ↓
 
-Jervis waits
+Jarvis waits
 
              ↓
 
@@ -1715,7 +1715,7 @@ Playback is verified
 
              ↓
 
-Jervis says:
+Jarvis says:
 
 "Done — Bohemian Rhapsody by Queen is playing."
 ```
@@ -1724,4 +1724,4 @@ That visible process is the feature.
 
 Do not reduce it to an API call and a fake visual response.
 
-The user must be able to see what Jervis is doing, interrupt it when necessary, and understand why it stopped if something goes wrong.
+The user must be able to see what Jarvis is doing, interrupt it when necessary, and understand why it stopped if something goes wrong.

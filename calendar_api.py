@@ -77,7 +77,7 @@ def _authorize() -> Credentials:
         flow = InstalledAppFlow.from_client_config(_client_config(), SCOPES)
         creds = flow.run_local_server(port=0, open_browser=True,
                                        authorization_prompt_message="Sign in to Google Calendar in the browser tab that just opened.",
-                                       success_message="Signed in. You can close this tab and go back to Jervis.")
+                                       success_message="Signed in. You can close this tab and go back to Jarvis.")
     except Exception as e:
         raise CalendarUnavailable(f"I couldn't sign in to Google Calendar: {e}")
     _save_token(creds)

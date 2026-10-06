@@ -1,4 +1,4 @@
-/* ---------- Jervis weather window ----------
+/* ---------- Jarvis weather window ----------
    Built on the window's own language (style.css): cut-corner panels with a thin glowing edge, mono uppercase labels,
    the cyan accent for chrome. On top of that one extra colour, --wx-rgb, follows the weather (gold for a sunny day,
    indigo on a clear night, blue rain, violet storms) and tints the numbers, the curve and the glow. The sky behind
@@ -39,7 +39,7 @@
   animation: wxCardIn .55s var(--wx-ease);
 }
 @keyframes wxCardIn { from { opacity: 0; transform: scale(.975) translateY(10px); filter: blur(6px); } }
-.wx-card::after {   /* the glowing edge, as on every Jervis panel */
+.wx-card::after {   /* the glowing edge, as on every Jarvis panel */
   content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none; padding: 1.5px;
   background: linear-gradient(135deg, rgb(var(--accent-rgb)), rgb(var(--accent-rgb) / .1) 38%, rgb(var(--wx-rgb) / .14) 62%, rgb(var(--wx-rgb) / .9));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -408,7 +408,7 @@
 .card.weather.wx-opener:hover .card-head::after, .card.weather.wx-opener:focus-visible .card-head::after { opacity: .9; }
 
 /* ---------- smaller windows ---------- */
-@media (max-height: 900px) {   /* Jervis's usual window: everything a little tighter so the hero never clips */
+@media (max-height: 900px) {   /* Jarvis's usual window: everything a little tighter so the hero never clips */
   .wx-card { padding: 16px 20px 18px; }
   .wx-head { margin-bottom: 10px; }
   .wx-head h2 { font-size: 24px; }

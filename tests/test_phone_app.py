@@ -1,4 +1,4 @@
-"""Phone control wired into Jervis: the "connect my phone" trigger, the mandatory confirmation, the allowlisted
+"""Phone control wired into Jarvis: the "connect my phone" trigger, the mandatory confirmation, the allowlisted
 command dispatch, and the real wire protocol end to end (a genuine websocket client talking to handle_phone_client).
 
 Runs in the sandbox (tests/sandbox.py): every tool a phone command could reach records an action instead of
@@ -41,7 +41,7 @@ def clean(sandboxed, monkeypatch, tmp_path):
     monkeypatch.setattr(app, "send_ui_update_once", lambda payload: sent.append(payload))
     monkeypatch.setattr(app, "send_ui_update",
                         lambda data_type, data: sent.append({"type": data_type, "data": data}))
-    monkeypatch.setenv("JERVIS_PHONE_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_PHONE_CONTROL", "on")
     fresh_registry = phone_control.DeviceRegistry(path=str(tmp_path / "devices.json"))
     monkeypatch.setattr(app.phone_server, "registry", fresh_registry)
     monkeypatch.setattr(app.phone_server, "_pairing", None)
@@ -49,6 +49,7 @@ def clean(sandboxed, monkeypatch, tmp_path):
     monkeypatch.setattr(app.phone_server, "_results", {})
     monkeypatch.setattr(app, "push_store", push.SubscriptionStore(path=str(tmp_path / "subs.json")))
     monkeypatch.setattr(app.session_router, "_conns", {})
+    monkeypatch.setattr(app.session_router, "_presence", None)
     yield sent
 
 
@@ -79,7 +80,7 @@ def test_pause_music_needs_no_payload():
 
 # ---------- recognizing the trigger phrase ----------
 @pytest.mark.parametrize("said", [
-    "connect my phone", "Jervis, connect my phone", "pair my phone", "connect to my phone",
+    "connect my phone", "Jarvis, connect my phone", "pair my phone", "connect to my phone",
     "let my phone control this computer", "control my computer from my phone",
 ])
 def test_phone_pair_phrases_are_recognized(said):
@@ -96,68 +97,39 @@ def test_ordinary_sentences_are_not_mistaken_for_pairing(said):
 
 # ---------- the confirm-then-pair flow ----------
 def test_pairing_is_refused_outright_when_the_feature_is_off(monkeypatch):
-    monkeypatch.setenv("JERVIS_PHONE_CONTROL", "off")
+    monkeypatch.setenv("JARVIS_PHONE_CONTROL", "off")
     reply = app.start_phone_pairing()
     assert "off" in reply.lower()
     assert not app.phone_server.pairing_open()
 
 
-def test_declining_the_confirmation_never_opens_pairing():
-    reply = app.start_phone_pairing()
-    assert "connect your phone" in reply
-    ask_id = app.pending_control_question["id"]
-    assert app.answer_control_question(ask_id, False)
-    for _ in range(100):
-        if app.pending_control_question is None or app.pending_control_question["id"] != ask_id:
-            break
-        time.sleep(0.01)
-    assert not app.phone_server.pairing_open()
-
-
-def test_confirming_opens_pairing_and_announces_the_code(clean):
+def test_connect_my_phone_goes_straight_to_a_qr_code(clean):
+    """"Connect my phone" puts the QR code up right away — no yes/no question first (removed in 8f95dab): scanning
+    it on the phone is the whole step, and the single-use code inside the scanned link is the approval."""
     sent = clean
     reply = app.start_phone_pairing()
-    assert "connect your phone" in reply
-    ask_id = app.pending_control_question["id"]
-    assert app.answer_control_question(ask_id, True)
-    for _ in range(200):
-        if app.phone_server.pairing_open():
-            break
-        time.sleep(0.01)
+    assert reply == "Scan the QR code on your screen with your phone's camera, on the same Wi-Fi."
     assert app.phone_server.pairing_open()
-    announced = app.announcements.get(timeout=2)
-    assert announced == "Scan the QR code on your screen with your phone to connect."   # short and clear, on purpose
+    assert app.pending_control_question is None
     pairing_update = next(p for p in sent if p.get("type") == "phone_pairing")["data"]
     assert "http://" in pairing_update["address"] and str(app.PHONE_WS_PORT) in pairing_update["address"]
-    # the code travels inside pairUrl too, so scanning the QR code alone is the whole step (see phone_client.html)
+    # the code travels inside pairUrl too, so scanning the QR code alone is the whole step (see phone_client.html),
+    # and is also shown on its own for an installed app pairing by typing it
     assert pairing_update["pairUrl"] == pairing_update["address"] + "/?code=" + pairing_update["code"]
+    assert len(pairing_update["code"]) == 6
 
 
-def test_asking_to_connect_a_phone_pushes_a_real_notification(monkeypatch):
-    """Even before pairing, a phone that already turned notifications on should be told Jervis is asking —
-    the whole reason this was built: reaching the phone doesn't require the page to be open."""
-    calls = []
-    monkeypatch.setattr(push, "send_to_all",
-                        lambda store, title, body, **kw: calls.append((store, title, body)) or 1)
-    app.start_phone_pairing()
-    for _ in range(200):
-        if calls:
-            break
-        time.sleep(0.01)
-    assert calls and calls[0][0] is app.push_store
-    assert "connect your phone" in calls[0][2]
-
-
-def test_asking_to_connect_a_phone_texts_when_twilio_is_configured(monkeypatch):
-    monkeypatch.setattr(app.sms, "configured", lambda: True)
-    calls = []
-    monkeypatch.setattr(app.sms, "send", lambda body: calls.append(body) or "")
-    app.start_phone_pairing()
-    for _ in range(200):
-        if calls:
-            break
-        time.sleep(0.01)
-    assert calls and "connect your phone" in calls[0]
+def test_connect_my_phone_still_shows_a_qr_code_once_a_phone_is_paired(monkeypatch):
+    """An already-paired phone reconnects by itself whenever the app opens — "connect my phone" is for pairing
+    (a new phone, or this one again), so it always means a fresh QR code, never a push to tap."""
+    app.phone_server.registry.add("Ariel's iPhone")
+    monkeypatch.setattr(app, "RELAY_URL", "wss://relay.example/")
+    pushed = []
+    monkeypatch.setattr(push, "send_to_all", lambda *a, **kw: pushed.append(a) or 1)
+    reply = app.start_phone_pairing()
+    assert "QR code" in reply
+    assert app.phone_server.pairing_open()
+    assert pushed == []
 
 
 def test_no_text_is_attempted_when_twilio_is_not_configured(monkeypatch):
@@ -169,14 +141,8 @@ def test_no_text_is_attempted_when_twilio_is_not_configured(monkeypatch):
     assert calls == []
 
 
-def test_yes_after_a_phone_confirmation_gives_the_phone_specific_reply():
-    app.open_control_question("Do you want to talk to Jarvis on your phone as well?", kind="phone")
-    reply = app.handle_control_voice("yes")
-    assert reply == "Okay, pairing your phone now."
-
-
 def test_yes_after_a_computer_control_confirmation_still_gives_the_original_reply():
-    app.open_control_question("Can I use your mouse and keyboard?", kind="computer")
+    app.open_control_question("Can I use your mouse and keyboard?")
     reply = app.handle_control_voice("yes")
     assert "Move the mouse" in reply
 
@@ -186,21 +152,11 @@ def _pair_a_phone():
     return app.phone_server.registry.add("Ariel's iPhone")
 
 
-def test_connect_my_phone_starts_a_session_once_a_phone_is_paired(monkeypatch):
-    """The old code-to-type flow is only ever for the first-ever phone — see phone_control.py's module docstring."""
-    _pair_a_phone()
-    monkeypatch.setattr(app, "RELAY_URL", "wss://relay.example/")
-    monkeypatch.setattr(push, "send_to_all", lambda *a, **kw: 1)
-    reply = app.start_phone_pairing()
-    assert reply == "I've sent a connection request to your phone."
-    assert not app.phone_server.pairing_open()   # the old code-based flow never opened
-
-
 def test_starting_a_session_without_a_relay_configured_still_works_locally(monkeypatch):
     """No relay deployed yet shouldn't block "connect my phone" for an already-paired phone on this Wi-Fi —
     confirm.html's own /decide is always relative to wherever it's served from, so the push payload doesn't even
     need to say which transport this is; same payload either way. See session_transport_url() for the separate,
-    optional "Open Jervis" live-session link, which is the only part that still cares."""
+    optional "Open Jarvis" live-session link, which is the only part that still cares."""
     _pair_a_phone()
     monkeypatch.setattr(app, "RELAY_URL", "")
     calls = []
@@ -219,7 +175,7 @@ def test_starting_a_session_pushes_confirm_and_reject_actions(monkeypatch):
     assert reply == "I've sent a connection request to your phone."
     assert len(calls) == 1
     title, body, kw = calls[0]
-    assert body == "Jervis wants to connect to this computer."
+    assert body == "Jarvis wants to connect to this computer."
     actions = {a["action"] for a in kw["actions"]}
     assert actions == {"confirm", "reject"}
     # confirm.html needs exactly these three — nothing transport-specific (no relayUrl): see its own docstring
@@ -235,7 +191,7 @@ def test_starting_a_session_with_no_reachable_phone_shows_a_qr_code(clean, monke
     reply = app.start_phone_session()
     assert "couldn't reach" in reply.lower()
     assert "qr code" in reply.lower()   # no link to open by hand — see index.html/panels.js's phonePairingLayer
-    # the whole fix: a scannable link to the actual address, not just "open its Jervis page" with nothing to open —
+    # the whole fix: a scannable link to the actual address, not just "open its Jarvis page" with nothing to open —
     # and with a relay configured, that's the relay's own stable link (https, with this install's computerId),
     # not a local IP that can change or require the same Wi-Fi
     pairing_update = next(p for p in sent if p.get("type") == "phone_pairing")["data"]
@@ -368,6 +324,7 @@ def test_a_local_session_attaches_and_runs_a_command_without_a_relay(monkeypatch
                                       "deviceId": paired["deviceId"], "token": paired["token"]}))
             ready = json.loads(await ws.recv())   # a local session is sent in the clear, never encrypted
             assert ready == {"type": "session_ready"}
+            assert json.loads(await ws.recv())["type"] == "session_info"
 
             await ws.send(json.dumps({"type": "command", "commandId": "c1",
                                       "commandType": "OPEN_APPLICATION", "payload": {"app_name": "Chrome"}}))
@@ -595,7 +552,7 @@ def test_the_mobile_page_is_served_over_plain_http():
 
     response = _drive(port, client())
     assert b"200" in response.split(b"\r\n", 1)[0]
-    assert b"Jervis" in response
+    assert b"Jarvis" in response
     # Served locally, not by the relay — see phone_client.html's own comment on why this is its own placeholder
     # rather than inferred from __COMPUTER_ID__/__LOCAL_ADDRESS__ (str.replace() replaces every occurrence, which
     # used to make that inference silently wrong whenever a real id/address was substituted in).
@@ -655,7 +612,7 @@ def test_the_mobile_page_is_served_with_a_query_string_too():
 
     response = _drive(port, client())
     assert b"200" in response.split(b"\r\n", 1)[0]
-    assert b"Jervis" in response
+    assert b"Jarvis" in response
 
 
 def test_the_confirm_page_is_served():
@@ -685,3 +642,191 @@ def test_a_public_looking_address_is_refused(monkeypatch):
                 await ws.recv()
 
     _drive(port, client())
+
+
+# ---------- the installed phone app: reconnect, sync, presence, unpair (see phone_client.html) ----------
+async def _attached(port, device_id, token):
+    """A phone app opening: hello, then auto_attach with its saved credentials — returns (ws, session_info)."""
+    ws = await websockets.connect(f"ws://127.0.0.1:{port}/")
+    await ws.send(json.dumps({"type": "hello", "role": "phone", "computerId": "x"}))
+    assert json.loads(await ws.recv()) == {"type": "hello_ok"}
+    await ws.send(json.dumps({"type": "auto_attach", "deviceId": device_id, "token": token}))
+    assert json.loads(await ws.recv()) == {"type": "session_ready"}
+    info = json.loads(await ws.recv())
+    assert info["type"] == "session_info"
+    return ws, info
+
+
+async def _recv_until(ws, kind, timeout=3):
+    while True:
+        message = json.loads(await asyncio.wait_for(ws.recv(), timeout))
+        if message.get("type") == kind:
+            return message
+
+
+def test_scanning_again_with_an_old_pairing_replaces_it_instead_of_adding_a_duplicate():
+    port = _free_port()
+    old_id, old_token, _ = app.phone_server.registry.add("iPhone")
+    app.phone_server.begin_pairing()
+    code = app.phone_server._pairing.code
+
+    async def client():
+        async with websockets.connect(f"ws://127.0.0.1:{port}/") as ws:
+            await ws.send(json.dumps({"type": "pair", "code": code, "deviceName": "iPhone",
+                                      "previousDeviceId": old_id, "previousToken": old_token}))
+            return json.loads(await ws.recv())
+
+    paired = _drive(port, client())
+    assert [d["id"] for d in app.phone_server.registry.list()] == [paired["deviceId"]]
+
+
+def test_previous_pairing_is_only_replaced_with_its_own_token():
+    """One phone can't unpair another by naming its device id."""
+    other_id, _, _ = app.phone_server.registry.add("Someone else's phone")
+    app.phone_server.begin_pairing()
+    paired = app.phone_server.try_pair(app.phone_server._pairing.code, "Mine", replaces=(other_id, "wrong"))
+    assert paired is not None
+    assert {d["id"] for d in app.phone_server.registry.list()} == {other_id, paired[0]}
+
+
+def test_attaching_sends_the_conversation_so_far_and_the_computer_sees_the_phone(clean):
+    sent = clean
+    port = _free_port()
+    app.phone_chat_history.clear()
+    app.broadcast("user", "what's the weather")
+    app.broadcast("ai", "Sunny and 24 degrees.")
+    device_id, token, _ = app.phone_server.registry.add("Samsung Galaxy")
+
+    async def client():
+        ws, info = await _attached(port, device_id, token)
+        presence = [p for p in sent if p.get("type") == "phone_connection"]
+        await ws.close()
+        await asyncio.sleep(0.2)
+        return info, presence
+
+    info, presence_while_open = _drive(port, client())
+    assert [(m["sender"], m["text"]) for m in info["history"]] == [("user", "what's the weather"),
+                                                                    ("ai", "Sunny and 24 degrees.")]
+    assert all(isinstance(m["ts"], int) for m in info["history"])
+    assert info["deviceName"] == "Samsung Galaxy" and info["computerName"]
+    assert presence_while_open[-1]["data"] == {"connected": True, "devices": ["Samsung Galaxy"]}
+    # the phone closing is noticed too
+    assert [p for p in sent if p.get("type") == "phone_connection"][-1]["data"] == {"connected": False, "devices": []}
+
+
+def test_a_message_typed_on_the_phone_reaches_jarvis_and_the_phone_sees_it_mirrored():
+    port = _free_port()
+    device_id, token, _ = app.phone_server.registry.add("iPhone")
+    while not app.typed_inputs.empty():
+        app.typed_inputs.get_nowait()
+
+    async def client():
+        ws, _ = await _attached(port, device_id, token)
+        await ws.send(json.dumps({"type": "text", "text": "open spotify"}))
+        queued = await asyncio.get_event_loop().run_in_executor(None, lambda: app.typed_inputs.get(timeout=3))
+        app.broadcast("user", str(queued))   # what main_loop does with it
+        echo = await _recv_until(ws, "chat")
+        await ws.close()
+        return queued, echo
+
+    queued, echo = _drive(port, client())
+    assert isinstance(queued, app.PhoneVoiceInput) and str(queued) == "open spotify"
+    assert echo["sender"] == "user" and echo["text"] == "open spotify"   # exact text: the app de-duplicates on it
+
+
+def test_unpairing_from_the_phone_revokes_it_on_the_computer():
+    port = _free_port()
+    device_id, token, _ = app.phone_server.registry.add("Xiaomi")
+
+    async def client():
+        ws, _ = await _attached(port, device_id, token)
+        await ws.send(json.dumps({"type": "unpair"}))
+        unpaired = await _recv_until(ws, "unpaired")
+        await ws.close()
+        async with websockets.connect(f"ws://127.0.0.1:{port}/") as again:   # the same credentials, later
+            await again.send(json.dumps({"type": "auto_attach", "deviceId": device_id, "token": token}))
+            refused = json.loads(await again.recv())
+        return unpaired, refused
+
+    unpaired, refused = _drive(port, client())
+    assert app.phone_server.registry.list() == []
+    assert refused["type"] == "session_error" and refused["code"] == "unpaired"
+
+
+def test_disconnect_my_phone_tells_the_phone_so_it_does_not_reconnect_by_itself():
+    port = _free_port()
+    device_id, token, _ = app.phone_server.registry.add("iPhone")
+
+    async def client():
+        ws, _ = await _attached(port, device_id, token)
+        reply = await asyncio.get_event_loop().run_in_executor(None, app.disconnect_phone_session)
+        ended = await _recv_until(ws, "session_ended")
+        await ws.close()
+        return reply, ended
+
+    reply, ended = _drive(port, client())
+    assert reply == "Disconnected."
+    assert ended == {"type": "session_ended"}
+
+
+def test_a_second_device_taking_over_tells_the_first_instead_of_leaving_it_stranded():
+    port = _free_port()
+    first = app.phone_server.registry.add("iPhone")
+    second = app.phone_server.registry.add("iPad")
+
+    async def client():
+        ws1, _ = await _attached(port, first[0], first[1])
+        ws2, _ = await _attached(port, second[0], second[1])
+        replaced = await _recv_until(ws1, "session_replaced")
+        await ws1.close(); await ws2.close()
+        return replaced
+
+    assert _drive(port, client()) == {"type": "session_replaced"}
+
+
+def test_heartbeat_ping_gets_a_pong():
+    port = _free_port()
+    device_id, token, _ = app.phone_server.registry.add("iPhone")
+
+    async def client():
+        ws, _ = await _attached(port, device_id, token)
+        await ws.send(json.dumps({"type": "ping", "t": 123}))
+        pong = await _recv_until(ws, "pong")
+        await ws.close()
+        return pong
+
+    assert _drive(port, client()) == {"type": "pong", "t": 123}
+
+
+def test_the_installable_app_files_are_served():
+    """What makes "Add to Home Screen" / "Install app" work: the manifest and its icons, iOS's own
+    apple-touch-icon, and nothing outside that fixed list."""
+    port = _free_port()
+
+    async def get(path):
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        writer.write(f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n".encode())
+        await writer.drain()
+        response = await reader.read()
+        writer.close()
+        head, _, body = response.partition(b"\r\n\r\n")
+        return head.decode("latin-1"), body
+
+    async def client():
+        return {p: await get(p) for p in ("/manifest.webmanifest", "/icons/icon-512.png", "/icons/icon-maskable-512.png",
+                                          "/apple-touch-icon.png", "/icons/../app.py", "/", "/sw.js")}
+
+    got = _drive(port, client())
+    head, body = got["/manifest.webmanifest"]
+    manifest = json.loads(body)
+    assert " 200 " in head and "application/manifest+json" in head
+    assert manifest["display"] == "standalone" and manifest["name"] == "Jarvis"
+    assert {i["purpose"] for i in manifest["icons"]} == {"any", "maskable"}
+    for path in ("/icons/icon-512.png", "/icons/icon-maskable-512.png", "/apple-touch-icon.png"):
+        head, body = got[path]
+        assert " 200 " in head and body.startswith(b"\x89PNG"), path
+    assert " 404 " in got["/icons/../app.py"][0]
+    page_head, page = got["/"]
+    assert "no-store" in page_head   # the page itself is never cached, so updates always reach the phone
+    assert b"apple-mobile-web-app-capable" in page and b"/manifest.webmanifest" in page
+    assert b'addEventListener("fetch"' in got["/sw.js"][1]

@@ -8,12 +8,12 @@ import pytest
 
 @pytest.fixture
 def fresh(tmp_path, monkeypatch):
-    """A clean settings module on an empty data folder, with no Jervis variables in the environment."""
+    """A clean settings module on an empty data folder, with no Jarvis variables in the environment."""
     for key in list(os.environ):
-        if key.startswith(("JERVIS_", "GROQ_", "LLM_", "OLLAMA_", "WEATHER_", "SPOTIFY_", "OPENAI_", "GOOGLE_",
+        if key.startswith(("JARVIS_", "GROQ_", "LLM_", "OLLAMA_", "WEATHER_", "SPOTIFY_", "OPENAI_", "GOOGLE_",
                            "WHATSAPP_", "TWILIO_")):
             monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("JERVIS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
     import paths
     import settings
     importlib.reload(paths)

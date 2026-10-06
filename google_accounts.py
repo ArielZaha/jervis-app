@@ -4,8 +4,8 @@ Two accounts are set in the .env file:
     GOOGLE_ACCOUNT_LEARNING=school account   (school work: documents, Drive, Classroom, learning sites and videos)
     GOOGLE_ACCOUNT_PERSONAL=personal account (everything else: Gmail, Photos, trailers, Netflix, fun documents, ...)
 
-Every page Jervis opens in the browser goes to the Chrome profile that has the right account, in a new tab for Google
-documents and in the tab Jervis itself opened earlier (in that same profile) for sites like YouTube and Netflix, so an
+Every page Jarvis opens in the browser goes to the Chrome profile that has the right account, in a new tab for Google
+documents and in the tab Jarvis itself opened earlier (in that same profile) for sites like YouTube and Netflix, so an
 open tab of the other account is never reused. Nothing is announced out loud: it just happens. Each decision is written
 to logs/routing.log so a wrong choice can be explained and fixed.
 """
@@ -147,7 +147,7 @@ def route(url: str, new_tab: bool = False, context: str = "", force_kind: str = 
     """Open any web page in the Chrome profile of the right account. Returns False if this page isn't routed (then the
     caller opens it the normal way).
 
-    Sites like YouTube and Netflix keep using ONE tab: the one Jervis opened earlier in that same profile.
+    Sites like YouTube and Netflix keep using ONE tab: the one Jarvis opened earlier in that same profile.
     """
     if not configured():
         return False

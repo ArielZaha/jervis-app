@@ -1,4 +1,4 @@
-// Jervis planet viewer: any body Jervis is asked about ("tell me about Mars", "show me Saturn") as a real, lit, spinning
+// Jarvis planet viewer: any body Jarvis is asked about ("tell me about Mars", "show me Saturn") as a real, lit, spinning
 // 3D model with a starfield behind it — the same raster-texturing technique as the Earth-distance globe (earth.js),
 // generalised to one body at a time, with no pins or arc, and an optional ring system for Saturn.
 (function () {
@@ -368,7 +368,7 @@
         if (!blob) return;
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `jervis-${data.key}-${Date.now()}.png`;
+        link.download = `jarvis-${data.key}-${Date.now()}.png`;
         document.body.append(link); link.click(); link.remove();
         setTimeout(() => URL.revokeObjectURL(link.href), 4000);
         $('planetSave').textContent = 'Saved ✓';

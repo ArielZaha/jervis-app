@@ -1,7 +1,7 @@
-"""Runs *inside* Blender (`blender --python blender_bridge.py`), so Jervis can build things with Blender's own
+"""Runs *inside* Blender (`blender --python blender_bridge.py`), so Jarvis can build things with Blender's own
 Python API instead of guessing mouse clicks.
 
-The protocol is two files in a temp folder: Jervis writes `request.json` ({"id", "code"}), this script execs
+The protocol is two files in a temp folder: Jarvis writes `request.json` ({"id", "code"}), this script execs
 `code` and writes `response.json` ({"id", "ok", "output", "error"}). Requests are polled from a Blender timer
 (`bpy.app.timers`) because the `bpy` API only works on Blender's own main thread — a background thread calling it
 directly would crash or silently do nothing.
@@ -22,12 +22,12 @@ import tempfile
 import time
 import traceback
 
-BRIDGE_DIR = os.path.join(tempfile.gettempdir(), "jervis_blender_bridge")
+BRIDGE_DIR = os.path.join(tempfile.gettempdir(), "jarvis_blender_bridge")
 REQUEST_FILE = os.path.join(BRIDGE_DIR, "request.json")
 RESPONSE_FILE = os.path.join(BRIDGE_DIR, "response.json")
 POLL_SECONDS = 0.15
 
-_namespace = {"__name__": "jervis_blender"}
+_namespace = {"__name__": "jarvis_blender"}
 _last_id = None
 
 
@@ -39,7 +39,7 @@ def process_one(request: dict, namespace: dict) -> dict:
     buffer = io.StringIO()
     try:
         with contextlib.redirect_stdout(buffer):
-            exec(compile(code, "<jervis>", "exec"), namespace)
+            exec(compile(code, "<jarvis>", "exec"), namespace)
         output = str(namespace.get("RESULT", "") or buffer.getvalue().strip())
         return {"id": request.get("id"), "ok": True, "output": output, "error": ""}
     except Exception:
@@ -48,7 +48,7 @@ def process_one(request: dict, namespace: dict) -> dict:
 
 
 def _write_json_atomic(path: str, data: dict) -> None:
-    """Both sides (Jervis writing a request, Blender writing a response) poll the same filename every ~0.1s, and on
+    """Both sides (Jarvis writing a request, Blender writing a response) poll the same filename every ~0.1s, and on
     Windows a rename can briefly collide with the other side's plain open() for reading ("being used by another
     process") — a transient sharing violation, not a real failure, so a few quick retries clear it."""
     tmp = path + ".tmp"
@@ -87,13 +87,13 @@ def poll():
 
 
 def install() -> None:
-    """Called once, at Blender startup — from `--python blender_bridge.py`, or from the copy Jervis puts in Blender's
+    """Called once, at Blender startup — from `--python blender_bridge.py`, or from the copy Jarvis puts in Blender's
     startup scripts folder (see blender_control.install_startup_script): prepare the namespace and start polling."""
     import bpy
     # Both ways can run in the same Blender (startup copy + --python): two pollers would run every request twice.
-    if bpy.app.driver_namespace.get("jervis_bridge_running"):
+    if bpy.app.driver_namespace.get("jarvis_bridge_running"):
         return
-    bpy.app.driver_namespace["jervis_bridge_running"] = True
+    bpy.app.driver_namespace["jarvis_bridge_running"] = True
     os.makedirs(BRIDGE_DIR, exist_ok=True)
     try:
         os.remove(RESPONSE_FILE)   # a response left over from a previous run must never look like a fresh answer

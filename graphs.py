@@ -11,12 +11,12 @@ import functions
 _VERB = re.compile(r"\b(?:graph(?:ing|ed)?|plot(?:ting|ted)?|draw(?:ing|n|s)?|drew|sketch(?:ing|ed)?|paint(?:ing|ed)?|chart|visuali[sz]e|illustrate|make|create|show)\b")
 _STRONG = re.compile(r"\b(?:graph|plot|chart|curve|function|parabola|quadratic|equation|sketch|drawing|picture)\b")
 _STRONG_NOUN = re.compile(r"\b(?:graph|plot|chart|curve|function|parabola|quadratic|equation)\b")
-_LEAD_WORDS = {"", "hey", "jervis", "jarvis", "ok", "okay", "please", "can", "could", "would", "you", "now", "then", "and", "just", "lets", "let", "s",
+_LEAD_WORDS = {"", "hey", "jarvis", "jervis", "ok", "okay", "please", "can", "could", "would", "you", "now", "then", "and", "just", "lets", "let", "s",
                "i", "want", "need", "to", "wanna", "like", "me", "also", "so", "well", "yes", "yeah", "no"}
 
 
 def _is_command(prefix: str) -> bool:
-    """True if what comes before the verb is only politeness ("hey jervis can you ..."), so it is an order and not a story about drawing."""
+    """True if what comes before the verb is only politeness ("hey jarvis can you ..."), so it is an order and not a story about drawing."""
     return all(word in _LEAD_WORDS for word in re.sub(r"[^a-z ]", " ", prefix).split())
 
 

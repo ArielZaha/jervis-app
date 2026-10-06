@@ -25,7 +25,7 @@ def sandboxed():
 
 @pytest.fixture(autouse=True)
 def fresh_state(sandboxed):
-    """Each sentence starts from a quiet Jervis: nothing playing, no question waiting for an answer."""
+    """Each sentence starts from a quiet Jarvis: nothing playing, no question waiting for an answer."""
     for name in ("pending_spotify_request", "pending_spotify_play", "pending_google_search", "pending_netflix_request",
                  "pending_stremio_request", "pending_calendar_choice", "pending_dictation", "pending_open_app",
                  "pending_app_choice"):
@@ -109,7 +109,7 @@ def test_timer():
     app.timer_manager.cancel(everything=True)
 
 
-def test_math_is_solved_by_jervis_not_the_ai():
+def test_math_is_solved_by_jarvis_not_the_ai():
     result, actions = route("solve 2x + 4 = 24")
     assert "x equals 10" in str(result)
     assert not actions
@@ -147,7 +147,7 @@ def test_followup_yields_to_a_different_request():
 
 
 def test_spotify_without_keys_uses_the_spotify_app(monkeypatch):
-    """No Spotify keys (every installed copy): Jervis searches in the Spotify app itself and presses play there."""
+    """No Spotify keys (every installed copy): Jarvis searches in the Spotify app itself and presses play there."""
     import sys
     import time
     from types import SimpleNamespace
@@ -162,7 +162,7 @@ def test_spotify_without_keys_uses_the_spotify_app(monkeypatch):
         assert "spotify keys shift+enter" in actions
 
 
-@pytest.mark.parametrize("said", ["Wake up Jervis", "Hey Jervis", "Hello Jervis", "hello jarvis", "hey jarvis can you hear me"])
+@pytest.mark.parametrize("said", ["Wake up Jarvis", "Hey Jarvis", "Hello Jarvis", "hello jarvis", "hey jarvis can you hear me"])
 def test_wake_phrases(said):
     assert app.is_wake_command(said)
 
@@ -186,16 +186,16 @@ def test_time_greeting_matches_the_hour(monkeypatch, hour, part):
         def now(cls, tz=None):
             return real_datetime(2026, 1, 1, hour, 0)
     monkeypatch.setattr(app, "datetime", FixedDatetime)
-    monkeypatch.delenv("JERVIS_USER_NAME", raising=False)
+    monkeypatch.delenv("JARVIS_USER_NAME", raising=False)
     assert app.time_greeting() == f"Good {part}, Sir. How can I help you today?"
 
 
 def test_time_greeting_uses_the_users_name_once_set(monkeypatch):
-    monkeypatch.setenv("JERVIS_USER_NAME", "Ariel")
+    monkeypatch.setenv("JARVIS_USER_NAME", "Ariel")
     assert app.time_greeting().startswith("Good ") and ", Ariel." in app.time_greeting()
 
 
-@pytest.mark.parametrize("said", ["goodbye jervis", "bye jervis", "have a good day jervis", "goodbye", "bye",
+@pytest.mark.parametrize("said", ["goodbye jarvis", "bye jarvis", "have a good day jarvis", "goodbye", "bye",
                                   "have a good day", "have a nice day"])
 def test_farewell_phrases_put_him_to_sleep(said):
     assert app.is_shutdown_command(said)
@@ -215,8 +215,8 @@ def test_closing_the_window_puts_him_to_sleep_and_the_wake_phrase_greets():
 
 
 def test_with_the_window_closed_only_his_name_opens_it_and_he_greets(monkeypatch):
-    """Jervis's real listening loop, with the microphone replaced by what was said."""
-    said = iter(["some chatter about dinner", "hello", "Hey Jervis"])
+    """Jarvis's real listening loop, with the microphone replaced by what was said."""
+    said = iter(["some chatter about dinner", "hello", "Hey Jarvis"])
 
     class Done(Exception):
         pass
@@ -232,7 +232,7 @@ def test_with_the_window_closed_only_his_name_opens_it_and_he_greets(monkeypatch
     monkeypatch.setattr(app, "broadcast", lambda *a, **k: None)
     monkeypatch.setattr(app, "send_status", lambda status: None)
     monkeypatch.setattr(app, "show_fullscreen", lambda: opened.append(True))
-    monkeypatch.delenv("JERVIS_WAKE_WORD", raising=False)
+    monkeypatch.delenv("JARVIS_WAKE_WORD", raising=False)
     app.awake = True
     app.set_window_visible(False)   # the window was closed: he's asleep, listening for his name
     with pytest.raises(Done):
@@ -286,7 +286,7 @@ def test_action_request_answered_in_text_without_a_tool_call_is_never_shown(monk
         tool_calls=None)
     fake_response = SimpleNamespace(choices=[SimpleNamespace(message=fake_message)])
     monkeypatch.setattr(app, "groq_chat", lambda **kwargs: fake_response)
-    reply = app.ask_jervis([{"role": "system", "content": "x"}], "take control on my computer and play Jane on Spotify")
+    reply = app.ask_jarvis([{"role": "system", "content": "x"}], "take control on my computer and play Jane on Spotify")
     assert "didn't do anything on your computer" in reply
     assert "clarify" not in reply and "confirm" not in reply
 
@@ -306,12 +306,12 @@ def test_ordinary_answers_are_not_mistaken_for_claims(reply):
     "take the contorl and search for the song Jane! in spotify.",
 ])
 def test_take_control_and_spotify_is_done_visibly_step_by_step(said, monkeypatch):
-    """Asked to take control: Jervis shows the process (pointer, letter-by-letter typing, results, play)."""
+    """Asked to take control: Jarvis shows the process (pointer, letter-by-letter typing, results, play)."""
     import time
     from types import SimpleNamespace
     import spotify_local
     monkeypatch.setattr(app, "sp", None)
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     monkeypatch.setattr(app, "computer_environment", lambda: SimpleNamespace(available=lambda: (True, "")))
     monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
     monkeypatch.setattr(app, "send_ui_update_once", lambda payload: None)
@@ -338,7 +338,7 @@ def test_take_control_stays_visible_even_with_spotify_keys_configured(monkeypatc
     import spotify_local
     fake_sp = SimpleNamespace(search=lambda **k: (_ for _ in ()).throw(AssertionError("the online API was called")))
     monkeypatch.setattr(app, "sp", fake_sp)
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "on")
     monkeypatch.setattr(app, "computer_environment", lambda: SimpleNamespace(available=lambda: (True, "")))
     monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
     monkeypatch.setattr(app, "send_ui_update_once", lambda payload: None)
@@ -365,7 +365,7 @@ def test_spotify_wont_call_an_unrelated_song_a_success(query, playing, should_ma
 
 def test_visible_spotify_play_refuses_to_report_an_unrelated_song(monkeypatch):
     """Shift+Enter can only play whatever Spotify already has selected — if that turns out not to match the
-    request (a stale selection, a slow search), Jervis must say so instead of announcing it as a success."""
+    request (a stale selection, a slow search), Jarvis must say so instead of announcing it as a success."""
     import time
     from types import SimpleNamespace
     import spotify_local
@@ -539,7 +539,7 @@ def test_take_control_asks_which_version_before_permission_and_carries_on(monkey
     monkeypatch.setattr(app.app_launcher, "installed_apps", lambda: {"blender 4 3": "Blender 4.3", "blender 4 5": "Blender 4.5"})
     real_start = app.start_computer_task
     monkeypatch.setattr(app, "start_computer_task", lambda goal, **k: started.append(goal) or real_start(goal, **k))
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "ask")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "ask")
     monkeypatch.setattr(app, "computer_environment", lambda: SimpleNamespace(available=lambda: (True, "")))
     monkeypatch.setattr(app, "open_control_question", lambda question, kind="computer": "q1")
     monkeypatch.setattr(app, "wait_control_answer", lambda ask_id, timeout=90.0: False)   # (answered "no" here)

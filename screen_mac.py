@@ -1,7 +1,7 @@
 """Computer control on macOS: reading the window in front through the Accessibility API, acting through Quartz.
 
-Needs the Accessibility permission (System Settings > Privacy & Security > Accessibility) for Jervis, which macOS asks
-for the first time. Screenshots additionally need Screen Recording; without it Jervis works from the accessibility
+Needs the Accessibility permission (System Settings > Privacy & Security > Accessibility) for Jarvis, which macOS asks
+for the first time. Screenshots additionally need Screen Recording; without it Jarvis works from the accessibility
 information alone.
 """
 import os
@@ -27,7 +27,7 @@ INTERACTIVE = {
 CONTEXT = {"AXStaticText": "text", "AXHeading": "heading", "AXImage": "image"}
 SUBROLE_NAMES = {"AXCloseButton": "Close window", "AXMinimizeButton": "Minimize window",
                  "AXZoomButton": "Zoom window", "AXFullScreenButton": "Full screen"}
-OWN_APPS = {"jervis", "electron"}   # Jervis's own window is never the thing to operate
+OWN_APPS = {"jarvis", "electron"}   # Jarvis's own window is never the thing to operate
 
 KEYCODES = {
     "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12, "w": 13,
@@ -100,8 +100,8 @@ class MacScreen(computer_use.Environment):
             import subprocess
             subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
         MacScreen._asked = True
-        return False, ("Jervis needs your permission to use this Mac. In System Settings, Privacy & Security, "
-                       "Accessibility, turn on Jervis, then ask me again.")
+        return False, ("Jarvis needs your permission to use this Mac. In System Settings, Privacy & Security, "
+                       "Accessibility, turn on Jarvis, then ask me again.")
 
     @staticmethod
     def trusted() -> bool:
@@ -110,7 +110,7 @@ class MacScreen(computer_use.Environment):
 
     # ---------- looking ----------
     def _target_app(self):
-        """The app the user is working in: the front app, or the one behind Jervis's own window."""
+        """The app the user is working in: the front app, or the one behind Jarvis's own window."""
         workspace = AppKit.NSWorkspace.sharedWorkspace()
         front = workspace.frontmostApplication()
         if front and (front.localizedName() or "").lower() not in OWN_APPS:
@@ -223,7 +223,7 @@ class MacScreen(computer_use.Environment):
 
     # ---------- acting ----------
     def _bring_forward(self) -> None:
-        """Keys and clicks go to the front app: if that is Jervis's own window, put the app being worked in first."""
+        """Keys and clicks go to the front app: if that is Jarvis's own window, put the app being worked in first."""
         target = getattr(self, "_target", None)
         front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
         if target is None or front is None or (front.localizedName() or "").lower() not in OWN_APPS:

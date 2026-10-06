@@ -42,7 +42,7 @@ def _need_windows() -> None:
 # ---------- keyboard ----------
 class InputRefused(OSError):
     """Windows didn't take the key presses or clicks: the screen is locked, or the window in front runs as
-    administrator while Jervis doesn't (Windows then protects it from other programs' input)."""
+    administrator while Jarvis doesn't (Windows then protects it from other programs' input)."""
 
 
 def _send(events: list, strict: bool = False) -> None:

@@ -1,9 +1,9 @@
-"""`jervis-backend --selftest`: check that an installed copy has every part it needs.
+"""`jarvis-backend --selftest`: check that an installed copy has every part it needs.
 
 Needs no microphone, no network and no permissions, so it runs on a build machine right after installing: a missing
 package, a native library that doesn't load, or a data file left out of the bundle fails here instead of on a user's
 computer. Prints one line starting with SELFTEST and a JSON report; the exit code is 0 only if everything required is
-there. Reached through app.py, so importing all of Jervis's own modules has already succeeded by the time this runs.
+there. Reached through app.py, so importing all of Jarvis's own modules has already succeeded by the time this runs.
 """
 import importlib
 import json
@@ -116,5 +116,5 @@ def run() -> int:
 
 
 if __name__ == "__main__":
-    os.environ.setdefault("JERVIS_DATA_DIR", tempfile.mkdtemp(prefix="jervis-selftest-"))
+    os.environ.setdefault("JARVIS_DATA_DIR", tempfile.mkdtemp(prefix="jarvis-selftest-"))
     sys.exit(run())

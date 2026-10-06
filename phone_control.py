@@ -1,9 +1,9 @@
-"""Phone -> Jervis: a small, allowlisted remote-command (and, once connected, voice) channel.
+"""Phone -> Jarvis: a small, allowlisted remote-command (and, once connected, voice) channel.
 
 This is deliberately separate from the trusted local connection the Electron window uses (which stays bound to
 127.0.0.1 with its own per-launch secret, see app.py's WS_HOST/WS_TOKEN): a phone is a different trust level, so it
 gets its own server, its own port, and its own pairing/authentication, and can only ever call a fixed, small set of
-existing Jervis tools (PHONE_COMMANDS) or send voice — never a raw shell, never arbitrary code.
+existing Jarvis tools (PHONE_COMMANDS) or send voice — never a raw shell, never arbitrary code.
 
 Two different flows use this module, for two different jobs:
 
@@ -76,7 +76,7 @@ class DeviceRegistry:
     """Paired phones, saved as id -> {name, token_hash, key_b64, paired_at, last_seen}. Only a hash of the pairing
     token is ever kept, the same way a password would be, so reading devices.json never hands out a working
     credential for LAN pairing. The per-device encryption key (key_b64) is the one exception: it must be kept in
-    the clear here, because Jervis needs to decrypt with it, not just check it — see phone_crypto.py for what it's
+    the clear here, because Jarvis needs to decrypt with it, not just check it — see phone_crypto.py for what it's
     for (end-to-end encryption of anything routed through the public relay). It never leaves this file and the
     one phone it was issued to; devices.json is gitignored and local to this computer like every other personal
     file (see paths.py)."""
@@ -136,6 +136,21 @@ class DeviceRegistry:
                 self._save()
         return device if valid else None
 
+    def touch(self, device_id: str) -> bool:
+        """Records a sighting of a device whose identity the caller already proved some other way (see
+        PhoneControlServer.begin_and_approve_session's `proven`). False if it isn't paired (any more)."""
+        with self._lock:
+            device = self._devices.get(device_id or "")
+            if device:
+                device["last_seen"] = time.time()
+                self._save()
+        return bool(device)
+
+    def name_of(self, device_id: str) -> str:
+        with self._lock:
+            device = self._devices.get(device_id or "")
+        return device["name"] if device else ""
+
     def list(self) -> list:
         with self._lock:
             return [{"id": k, "name": v["name"], "pairedAt": v["paired_at"], "lastSeen": v["last_seen"]}
@@ -171,7 +186,7 @@ class PairingSession:
 
 
 class PhoneSession:
-    """One "connect my phone" request, from the notification Jervis sends every already-paired phone through to
+    """One "connect my phone" request, from the notification Jarvis sends every already-paired phone through to
     a live, encrypted, relay-routed connection. Two separate secrets do two separate jobs, on purpose:
 
       - `secret` only proves "whoever is answering received the push notification" (arrival of a Web Push payload
@@ -208,7 +223,7 @@ class PhoneSession:
 
 class PhoneControlServer:
     """Owns pairing state and command dispatch. app.py builds one of these with `execute`, the callback that
-    actually runs an allowed command through Jervis's existing tools, and drives it from a websockets server (see
+    actually runs an allowed command through Jarvis's existing tools, and drives it from a websockets server (see
     run_phone_server in app.py) plus a small confirm-then-pair flow triggered by a spoken/typed request."""
 
     def __init__(self, execute, registry: DeviceRegistry = None):
@@ -239,14 +254,20 @@ class PhoneControlServer:
         with self._lock:
             return self._pairing.code if self._pairing is not None and not self._pairing.expired() else None
 
-    def try_pair(self, code: str, device_name: str):
-        """(device_id, token, key) on a correct, still-open code, else None."""
+    def try_pair(self, code: str, device_name: str, replaces: tuple = None):
+        """(device_id, token, key) on a correct, still-open code, else None.
+
+        `replaces`: (device_id, token) this same phone was paired with before, if it still has them — a phone
+        scanning "connect my phone" again then swaps its old record for the new one instead of leaving a stale
+        duplicate behind. Only ever honored with that record's own valid token, so one phone can't unpair another."""
         with self._lock:
             session = self._pairing
         if session is None or not session.check(code):
             return None
         with self._lock:
             self._pairing = None   # one phone per code: pairing another needs a fresh confirmation + code
+        if replaces and replaces[0] and self.registry.authenticate(*replaces) is not None:
+            self.registry.revoke(replaces[0])
         return self.registry.add(device_name)
 
     # ---------- sessions ("connect my phone", every time after the first — see PhoneSession) ----------
@@ -256,12 +277,19 @@ class PhoneControlServer:
             self._session = session
         return session
 
-    def begin_and_approve_session(self, device_id: str, token: str):
+    def begin_and_approve_session(self, device_id: str, token: str = None, proven: bool = False):
         """An already-paired phone reconnecting on its own — the saved bookmark, not a "connect my phone" push —
         skips the approval dance entirely: the device token itself, proven once here, is already a stronger proof
         than a push notification's tap ever was. Returns the pre-approved session, or None if the credentials
-        don't belong to a real paired device."""
-        if self.registry.authenticate(device_id, token) is None:
+        don't belong to a real paired device.
+
+        proven=True: the caller already verified the device another way — over the relay, a fresh envelope only
+        that device's own key could have produced (see phone_session.verify_attach_proof), so its token never has
+        to travel through the relay at all."""
+        if proven:
+            if not self.registry.touch(device_id):
+                return None
+        elif self.registry.authenticate(device_id, token or "") is None:
             return None
         session = self.begin_session()
         with self._lock:
@@ -283,7 +311,7 @@ class PhoneControlServer:
             session.decided_event.set()
         return True
 
-    def attach_session(self, session_id: str, device_id: str, token: str, conn_id: str):
+    def attach_session(self, session_id: str, device_id: str, token: str, conn_id: str, proven: bool = False):
         """A phone whose owner just approved the session opened a live connection and proved it's one of the
         already-paired devices. Returns the device's end-to-end key on success, else None — a wrong/expired
         session, a session nobody approved yet, or credentials that don't belong to a real paired device.
@@ -306,8 +334,7 @@ class PhoneControlServer:
                 return None
             if session.state == "active" and session.device_id != device_id:
                 return None
-        device = self.registry.authenticate(device_id, token)
-        if device is None:
+        if not (self.registry.touch(device_id) if proven else self.registry.authenticate(device_id, token)):
             return None
         key = self.registry.key_for(device_id)
         if key is None:
@@ -375,16 +402,34 @@ class PhoneControlServer:
 _CLIENT_PAGE = paths.resource("phone_client.html")
 _SERVICE_WORKER = paths.resource("phone_sw.js")
 _CONFIRM_PAGE = paths.resource("confirm.html")
+_MANIFEST = paths.resource("phone_manifest.webmanifest")
+_ICON_DIR = paths.resource("phone_icons")
+# The only icon files ever served — a fixed list, never a path taken from the request (no file browsing).
+ICON_FILES = frozenset({"icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png",
+                        "favicon-64.png"})
+ICON_MAX_AGE = 24 * 60 * 60   # icons may be cached a day; the page itself never is (see _response)
 
 
-def _response(content: bytes, content_type: str):
+def _response(content: bytes, content_type: str, cache_control: str = "no-store"):
     from websockets.datastructures import Headers
     from websockets.http11 import Response
     headers = Headers()
     headers["Content-Type"] = content_type
     headers["Content-Length"] = str(len(content))
-    headers["Cache-Control"] = "no-store"
+    headers["Cache-Control"] = cache_control
     return Response(200, "OK", headers, content)
+
+
+def icon_name_for(path: str):
+    """The bundled icon a request path refers to, or None. Both /icons/<name> (what the manifest lists) and the
+    bare /apple-touch-icon.png iOS asks for on its own when adding to the Home Screen."""
+    if path in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+        return "apple-touch-icon.png"
+    if path == "/favicon.ico":
+        return "favicon-64.png"
+    if path.startswith("/icons/") and path[len("/icons/"):] in ICON_FILES:
+        return path[len("/icons/"):]
+    return None
 
 
 def serve_static(connection, request, active_pair_code=None):
@@ -402,6 +447,19 @@ def serve_static(connection, request, active_pair_code=None):
     if request.headers.get("Upgrade"):   # a real WebSocket handshake: let it proceed as usual
         return None
     path = urlsplit(request.path).path
+    if path == "/manifest.webmanifest":
+        try:
+            with open(_MANIFEST, "rb") as f:
+                return _response(f.read(), "application/manifest+json", "no-cache")
+        except OSError:
+            return connection.respond(404, "Not found.")
+    icon = icon_name_for(path)
+    if icon:
+        try:
+            with open(f"{_ICON_DIR}/{icon}", "rb") as f:
+                return _response(f.read(), "image/png", f"public, max-age={ICON_MAX_AGE}")
+        except OSError:
+            return connection.respond(404, "Not found.")
     if path == "/sw.js":
         try:
             with open(_SERVICE_WORKER, "rb") as f:

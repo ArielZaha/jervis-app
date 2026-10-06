@@ -1,10 +1,10 @@
-"""Real phone notifications (Web Push): reaches a phone even when Jervis's page isn't open, through the browser's
+"""Real phone notifications (Web Push): reaches a phone even when Jarvis's page isn't open, through the browser's
 own push service (Apple's for Safari, Google's for Chrome/Android, Mozilla's for Firefox — whichever the phone's
-browser already uses for every other site's notifications). No server of Jervis's own is involved in delivery.
+browser already uses for every other site's notifications). No server of Jarvis's own is involved in delivery.
 
 A VAPID key pair (generated once, kept in vapid_key.pem) signs every push so the browser's push service can tell it
-really came from this Jervis. Each phone that turns notifications on sends back a "subscription" (an endpoint URL
-plus two keys, not a secret that grants any access to Jervis — it only lets something be pushed *to* that phone),
+really came from this Jarvis. Each phone that turns notifications on sends back a "subscription" (an endpoint URL
+plus two keys, not a secret that grants any access to Jarvis — it only lets something be pushed *to* that phone),
 kept in push_subscriptions.json, gitignored like every other personal file here.
 
 iOS note, unavoidable: Safari only delivers web push to a page added to the Home Screen (iOS 16.4+); a plain
@@ -20,7 +20,7 @@ VAPID_FILE = paths.data("vapid_key.pem")
 SUBSCRIPTIONS_FILE = paths.data("push_subscriptions.json")
 # Required by the Web Push spec (an "audience" contact for the push service to reach if it needs to complain about
 # this key being misused) — not a real inbox, never emailed by anything here.
-VAPID_CLAIMS = {"sub": "mailto:jervis-app@example.invalid"}
+VAPID_CLAIMS = {"sub": "mailto:jarvis-app@example.invalid"}
 PUSH_TTL = 120       # seconds a push service keeps trying a sleeping phone — matches phone_control.SESSION_TTL
 PUSH_TIMEOUT = 5     # seconds to wait on one push service before giving up on that phone
 
@@ -62,7 +62,7 @@ def public_key_b64() -> str:
 
 class SubscriptionStore:
     """Phones that asked to be notified, whether or not they've paired yet — a notification only ever *informs*,
-    it never grants Jervis any capability, so this list intentionally isn't gated behind pairing."""
+    it never grants Jarvis any capability, so this list intentionally isn't gated behind pairing."""
 
     def __init__(self, path: str = SUBSCRIPTIONS_FILE):
         self._path = path
@@ -116,7 +116,7 @@ def send_to_all(store: SubscriptionStore, title: str, body: str, tag: str = "", 
     if not available():
         return 0
     from pywebpush import webpush, WebPushException
-    payload = json.dumps({"title": title, "body": body, "tag": tag or "jervis", "at": time.time(),
+    payload = json.dumps({"title": title, "body": body, "tag": tag or "jarvis", "at": time.time(),
                           "actions": actions or [], "data": data or {}})
     vapid = _vapid()
     results = []

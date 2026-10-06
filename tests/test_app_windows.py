@@ -8,9 +8,9 @@ import winctl
 WINDOWS = {   # hwnd: (title, program)
     1: ("Untitled - Notepad", "notepad.exe"),
     2: ("Inbox - Gmail - Google Chrome", "chrome.exe"),
-    3: ("app.py - jervis-app - Visual Studio Code", "code.exe"),
+    3: ("app.py - jarvis-app - Visual Studio Code", "code.exe"),
     4: ("Friends - Discord", "discord.exe"),
-    5: ("Jervis", "jervis.exe"),
+    5: ("Jarvis", "jarvis.exe"),
     6: ("Program Manager", "explorer.exe"),
     7: ("How to use Discord - Google Chrome", "chrome.exe"),
     8: ("Document1 - Word", "winword.exe"),
@@ -40,13 +40,13 @@ def test_windows_are_matched_to_their_app(fake_windows, app, expected):
     assert [h for h, _t in app_launcher.app_windows(app)] == expected
 
 
-def test_jervis_and_the_desktop_are_never_matched(fake_windows):
-    assert app_launcher.app_windows("Jervis") == []
+def test_jarvis_and_the_desktop_are_never_matched(fake_windows):
+    assert app_launcher.app_windows("Jarvis") == []
     assert app_launcher.app_windows("explorer") == []   # "Program Manager" is the desktop itself
 
 
-def test_this_app_is_the_one_behind_jervis(fake_windows, monkeypatch):
-    monkeypatch.setattr(winctl, "list_windows", lambda: [(5, "Jervis"), (3, "x - Visual Studio Code‬")])
+def test_this_app_is_the_one_behind_jarvis(fake_windows, monkeypatch):
+    monkeypatch.setattr(winctl, "list_windows", lambda: [(5, "Jarvis"), (3, "x - Visual Studio Code‬")])
     hwnd, _title, friendly = app_launcher.front_app_window()
     assert hwnd == 3 and friendly == "Visual Studio Code"
 

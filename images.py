@@ -1,14 +1,14 @@
-"""Image intelligence for Jervis: understanding pictures (description, questions, OCR, comparison) and creating or
+"""Image intelligence for Jarvis: understanding pictures (description, questions, OCR, comparison) and creating or
 editing them.
 
-Understanding uses the same account as the rest of Jervis's AI (a vision-capable model on Groq, GROQ_API_KEY) —
+Understanding uses the same account as the rest of Jarvis's AI (a vision-capable model on Groq, GROQ_API_KEY) —
 nothing extra to set up. Generating a picture works out of the box too, through Pollinations.ai (no key, genuinely
 free, no billing) — OpenAI's image API (OPENAI_API_KEY, optional) is used instead when it's configured and working,
 since it also supports editing an existing picture, which Pollinations' simple endpoint does not. If OpenAI is
 configured but a request to it fails (no credits, bad key, service issue), generation quietly falls back to
 Pollinations rather than giving up — but says so, so nothing is hidden from the user.
 
-Every image that passes through Jervis (attached by the user, or made/edited by him) is saved under images/ and kept
+Every image that passes through Jarvis (attached by the user, or made/edited by him) is saved under images/ and kept
 in a short rolling memory (`_recent`) so the conversation can refer to "it", "this image", or compare "these two" —
 the same idea as `last_function`/`last_document` in app.py, just for pictures.
 """
@@ -38,7 +38,7 @@ except ImportError:  # the package ships in requirements.txt, but keep this modu
 
 # Optional, heavy, opt-in (see requirements-local-images.txt / run.py --local-images): genuinely unlimited, free,
 # private image generation on this machine's own GPU, instead of a cloud service. The actual generation runs in a
-# separate process (local_image_worker.py, via _generate_local) so a hang or crash there can never affect Jervis.
+# separate process (local_image_worker.py, via _generate_local) so a hang or crash there can never affect Jarvis.
 # Only checked for here, never imported at startup: importing torch takes seconds (much longer on a cold start), and
 # is only needed when a picture is actually generated locally.
 _LOCAL_IMAGE_PACKAGES = all(importlib.util.find_spec(name) is not None for name in ("torch", "diffusers"))
@@ -155,8 +155,8 @@ def _groq() -> Groq:
     global _groq_client
     key = _groq_key()
     if not key:
-        raise ImageError("Image understanding needs GROQ_API_KEY, the same key the rest of Jervis's AI uses — "
-                          "add it to your .env file (free at console.groq.com) and restart Jervis.")
+        raise ImageError("Image understanding needs GROQ_API_KEY, the same key the rest of Jarvis's AI uses — "
+                          "add it to your .env file (free at console.groq.com) and restart Jarvis.")
     if _groq_client is None:
         _groq_client = Groq(api_key=key)
     return _groq_client
@@ -165,11 +165,11 @@ def _groq() -> Groq:
 def _openai():
     global _openai_client
     if OpenAI is None:
-        raise ImageError("The 'openai' package isn't installed. Run:  pip install -r requirements.txt   and restart Jervis.")
+        raise ImageError("The 'openai' package isn't installed. Run:  pip install -r requirements.txt   and restart Jarvis.")
     key = _openai_key()
     if not key:
         raise ImageError("Generating or editing images needs an OPENAI_API_KEY in your .env file (create one at "
-                          "platform.openai.com, then restart Jervis). Without it I can still look at, describe and "
+                          "platform.openai.com, then restart Jarvis). Without it I can still look at, describe and "
                           "read text from images.")
     if _openai_client is None:
         _openai_client = OpenAI(api_key=key)
@@ -178,7 +178,7 @@ def _openai():
 
 # ---------- validation, storage, metadata ----------
 def validate_image_bytes(data: bytes, max_bytes: int = MAX_UPLOAD_BYTES) -> Image.Image:
-    """Open and verify image bytes are a real, undamaged image Jervis can work with. Raises ImageError otherwise."""
+    """Open and verify image bytes are a real, undamaged image Jarvis can work with. Raises ImageError otherwise."""
     if not data:
         raise ImageError("That file was empty.")
     if len(data) > max_bytes:
@@ -285,8 +285,8 @@ def context_note() -> str:
     if not has_pending_context():
         return ""
     last = _recent[-1]
-    phrase = {"upload": "The user attached an image", "generated": "Jervis just generated an image",
-              "edited": "Jervis just edited an image"}.get(last["kind"], "There is an image")
+    phrase = {"upload": "The user attached an image", "generated": "Jarvis just generated an image",
+              "edited": "Jarvis just edited an image"}.get(last["kind"], "There is an image")
     extra = f' ("{last["caption"]}")' if last.get("caption") else (f' (prompt: "{last["prompt"]}")' if last.get("prompt") else "")
     more = f" There are {len(_recent)} images total in this conversation, which compare_images can use." if len(_recent) > 1 else ""
     return (f"Context: {phrase}{extra} earlier in this conversation; it has not yet been described in words to the "
@@ -489,7 +489,7 @@ def _local_device() -> str:
 LOCAL_WORKER_SCRIPT = os.path.join(APP_DIR, "local_image_worker.py")
 LOCAL_LOAD_TIMEOUT = 900    # generous: a first-ever call also downloads the model (a few GB) over the network
 LOCAL_INFER_TIMEOUT = 120   # tight: once downloaded, this should take seconds; a machine that can't finish in time
-                             # (not enough free memory, thrashing) is killed and Jervis falls back automatically
+                             # (not enough free memory, thrashing) is killed and Jarvis falls back automatically
 
 
 def _local_model_cached(model: str) -> bool:
@@ -505,7 +505,7 @@ def _generate_local(prompt: str) -> dict:
     timeout: torch's MPS/CUDA calls can hold Python's GIL for a very long time, or the GPU driver itself can stall,
     in a way nothing inside this same process can reliably interrupt. Only killing the whole process — which
     subprocess.run(..., timeout=...) does, unconditionally, regardless of what that process is stuck on — can
-    guarantee generating locally never hangs the rest of Jervis."""
+    guarantee generating locally never hangs the rest of Jarvis."""
     model = _local_image_model()
     device = _local_device()
     timeout = LOCAL_INFER_TIMEOUT if _local_model_cached(model) else LOCAL_LOAD_TIMEOUT

@@ -12,11 +12,11 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_PATH = os.path.join(APP_DIR, "app.py")
 
 WAKE_PHRASES = [
-    "wake up jervis",
     "wake up jarvis",
-    "hey jervis",
-    "ok jervis",
-    "okay jervis",
+    "wake up jarvis",
+    "hey jarvis",
+    "ok jarvis",
+    "okay jarvis",
 ]
 
 LISTENER_START_DELAY = 2
@@ -46,16 +46,16 @@ def app_is_running():
         return False
 
 
-def start_jervis():
+def start_jarvis():
     if not os.path.exists(APP_PATH):
         print(f"ERROR: app.py not found: {APP_PATH}", flush=True)
         return False
 
     if app_is_running():
-        print("Jervis is already running.", flush=True)
+        print("Jarvis is already running.", flush=True)
         return True
 
-    print("Wake phrase detected. Starting Jervis...", flush=True)
+    print("Wake phrase detected. Starting Jarvis...", flush=True)
 
     try:
         detach = (
@@ -71,7 +71,7 @@ def start_jervis():
         )
         return True
     except Exception as e:
-        print(f"ERROR starting Jervis: {e}", flush=True)
+        print(f"ERROR starting Jarvis: {e}", flush=True)
         return False
 
 
@@ -86,8 +86,8 @@ def main():
     recognizer.non_speaking_duration = 0.3
 
     with sr.Microphone() as microphone:
-        print("Jervis Wake Listener is running.", flush=True)
-        print('Say "Wake Up Jervis" to start Jervis.', flush=True)
+        print("Jarvis Wake Listener is running.", flush=True)
+        print('Say "Wake Up Jarvis" to start Jarvis.', flush=True)
 
         try:
             recognizer.adjust_for_ambient_noise(microphone, duration=0.8)
@@ -95,10 +95,10 @@ def main():
             print(f"Microphone calibration warning: {e}", flush=True)
 
         while True:
-            # If Jervis is already running, this listener must stay out of
+            # If Jarvis is already running, this listener must stay out of
             # the way so the two processes never compete for the microphone.
             if app_is_running():
-                print("Jervis is running. Wake Listener will wait.", flush=True)
+                print("Jarvis is running. Wake Listener will wait.", flush=True)
                 time.sleep(5)
                 continue
 
@@ -120,7 +120,7 @@ def main():
                 print(f"Heard: {text}", flush=True)
 
                 if is_wake_phrase(text):
-                    if start_jervis():
+                    if start_jarvis():
                         # Give app.py time to take ownership of the microphone.
                         time.sleep(RESTART_GUARD_SECONDS)
             except sr.UnknownValueError:

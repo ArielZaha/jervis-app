@@ -210,20 +210,20 @@ _WIN_WORD_CREATE = r"""
 $w = New-Object -ComObject Word.Application
 $w.Visible = $true
 $d = $w.Documents.Add()
-$d.Content.Text = $env:JERVIS_TEXT
+$d.Content.Text = $env:JARVIS_TEXT
 $w.Activate()
 $d.Name
 """
 _WIN_WORD_UPDATE = r"""
 $w = [Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application')
-$d = $w.Documents.Item($env:JERVIS_REF)
-$d.Content.Text = $env:JERVIS_TEXT
+$d = $w.Documents.Item($env:JARVIS_REF)
+$d.Content.Text = $env:JARVIS_TEXT
 $w.Activate()
 """
 
 
 def _win_word(script: str, text: str, ref: str = "") -> str:
-    code, out, err = osal.run_powershell(script, {"JERVIS_TEXT": text, "JERVIS_REF": ref}, timeout=90)
+    code, out, err = osal.run_powershell(script, {"JARVIS_TEXT": text, "JARVIS_REF": ref}, timeout=90)
     if code != 0:
         if "80040154" in err or "class not registered" in err.lower():
             raise RuntimeError("Microsoft Word isn't installed on this PC.")
@@ -233,7 +233,7 @@ def _win_word(script: str, text: str, ref: str = "") -> str:
 
 def _win_notepad_file(title: str) -> str:
     os.makedirs(DOCS_DIR, exist_ok=True)
-    name = re.sub(r'[\\/:*?"<>|]+', " ", title).strip()[:50] or "Jervis note"
+    name = re.sub(r'[\\/:*?"<>|]+', " ", title).strip()[:50] or "Jarvis note"
     path = os.path.join(DOCS_DIR, f"{name}.txt")
     n = 2
     while os.path.exists(path):

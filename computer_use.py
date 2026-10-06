@@ -1,4 +1,4 @@
-"""Jervis using the computer like a person: look at the screen, decide, act, check what happened, and go on.
+"""Jarvis using the computer like a person: look at the screen, decide, act, check what happened, and go on.
 
     goal -> OBSERVE (what's on screen) -> DECIDE (the AI picks one action) -> ACT -> OBSERVE AGAIN -> VERIFY
          -> recover if nothing happened or something unexpected appeared -> ... -> DONE (or stopped, or asks)
@@ -14,7 +14,7 @@ The user stays in control:
   - a visible "AI control active" bar shows every step, with Pause and Stop,
   - moving the mouse yourself pauses it at once (you're taking over),
   - risky steps (send, delete, buy, pay, sign out...) wait for your OK,
-  - it never types into password fields, and never presses Jervis's own emergency-stop keys,
+  - it never types into password fields, and never presses Jarvis's own emergency-stop keys,
   - it stops after a fixed number of steps rather than wandering on.
 """
 import hashlib
@@ -29,17 +29,17 @@ MAX_STEPS = 25
 MAX_STALE = 8        # steps in a row that get nowhere (nothing changed, or the answer was unusable): stuck, stop
 MAX_REPEATS = 2      # the same action may change nothing this many times; after that it's refused
 MAX_INVALID = 4          # the AI's answer couldn't be used this many times in a row: give up and say so
-SETTLE_TIMEOUT = 4.5     # seconds to wait for the screen to settle after an action (a slower computer — Jervis's own
+SETTLE_TIMEOUT = 4.5     # seconds to wait for the screen to settle after an action (a slower computer — Jarvis's own
                          # local AI is several GB and runs alongside everything else — just needs more of this)
-TAKEOVER_PIXELS = 40     # the pointer moved this far without Jervis moving it: the user took over
+TAKEOVER_PIXELS = 40     # the pointer moved this far without Jarvis moving it: the user took over
 MAX_ELEMENTS_SHOWN = 120
-# What the window registers as the emergency stop (never pressed by Jervis himself), as said aloud.
+# What the window registers as the emergency stop (never pressed by Jarvis himself), as said aloud.
 STOP_SHORTCUT = "Control Option Q" if sys.platform == "darwin" else "Ctrl+Alt+Q"
 
 STATES = ("starting", "observing", "thinking", "acting", "waiting", "paused", "listening", "completed", "stopped",
           "error")
 # "listening": a persistent control session is open but no task is running right now (see app.py's
-# ControlSession/start_computer_task) — control is still active, Jervis is just waiting for the next command.
+# ControlSession/start_computer_task) — control is still active, Jarvis is just waiting for the next command.
 
 # What makes a step consequential enough to ask first.
 RISKY_WORDS = re.compile(
@@ -164,7 +164,7 @@ class Environment:
         return None
 
     def focus_moved(self) -> bool:
-        """True when the user has since switched to another app (not Jervis's own window): keys must not follow."""
+        """True when the user has since switched to another app (not Jarvis's own window): keys must not follow."""
         return False
 
     def focus_element(self, element: Element) -> str:
@@ -398,7 +398,7 @@ class ComputerTask:
         # instead of relying on the AI to notice (a small model clicks the menu shut again, then wanders off).
         self.finish_after = set(finish_after or ())
         self.env = env
-        self.ask_ai = ask_ai            # (messages, tools) -> OpenAI-style response (Jervis's own AI plumbing)
+        self.ask_ai = ask_ai            # (messages, tools) -> OpenAI-style response (Jarvis's own AI plumbing)
         self.report = report or (lambda state: None)
         self.confirm = confirm or (lambda question: False)   # blocking; True = the user said yes
         self.vision = vision            # optional: object with look(image, question) and locate(image, description)
@@ -685,7 +685,7 @@ class ComputerTask:
             if not element.enabled and kind != "scroll":
                 return f"[{element_id}] is disabled."
             if kind == "type_text" and element.password:
-                return "that's a password field; Jervis never types passwords. Ask the user to type it."
+                return "that's a password field; Jarvis never types passwords. Ask the user to type it."
             if kind == "type_text" and element.role not in TEXT_ROLES:
                 return (f"[{element_id}] is a {element.role}, which doesn't take typing. Type into a text field, "
                         "or click this instead.")
@@ -696,7 +696,7 @@ class ComputerTask:
                 return "that's too much text to type at once."
             focused = next((e for e in observation.elements if e.focused), None)
             if action.get("element") is None and focused is not None and focused.password:
-                return "the focused field is a password field; Jervis never types passwords."
+                return "the focused field is a password field; Jarvis never types passwords."
             if action.get("element") is None and focused is not None and focused.role not in TEXT_ROLES:
                 # Keys sent to a menu or a button aren't typing: they're shortcuts (in Notepad's Edit menu, letters
                 # start "Search with Bing"). Only type where text goes.
@@ -805,7 +805,7 @@ class ComputerTask:
                 if point is None:
                     return f"Couldn't find “{action['description']}” on the screen."
                 return self.env.click(point) or ""
-        except Exception as e:   # one failed step is reported back to the AI, it never ends Jervis
+        except Exception as e:   # one failed step is reported back to the AI, it never ends Jarvis
             self.log(f"Computer control action failed: {type(e).__name__}: {e}")
             if type(e).__name__ == "InputRefused":   # nothing more can work: see winctl.InputRefused
                 raise InputBlocked() from e

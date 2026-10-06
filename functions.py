@@ -81,7 +81,7 @@ _TOKEN = re.compile(r"\d+(?:\.\d+)?|\.\d+|[a-z]+\d*|[-+*/^()|=]")
 _FILLER = {"of", "for", "the", "a", "an", "me", "please", "function", "functions", "equation", "curve", "graph", "graphs", "plot", "wave", "with",
            "that", "is", "whose", "like", "called", "following", "this", "given", "my", "i", "want", "you", "to", "can", "could", "would", "make",
            "create", "show", "draw", "paint", "sketch", "chart", "picture", "image", "drawing", "visualize", "visualise", "illustrate", "it",
-           "on", "in", "screen", "and", "then", "now", "hey", "jervis", "some", "simple", "just", "nice", "beautiful", "pretty", "cool", "here",
+           "on", "in", "screen", "and", "then", "now", "hey", "jarvis", "some", "simple", "just", "nice", "beautiful", "pretty", "cool", "here",
            "give", "get", "let", "lets", "see", "look", "at", "up", "out", "again", "once", "more", "same", "previous", "last", "earlier", "there", "polynomial", "shape", "line", "straight"}
 _SHAPES = {"parabola": None, "parabolas": None, "quadratic": None, "quadratics": None,
            "cubic": ["pow", ["x"], ["num", 3]], "hyperbola": ["div", ["num", 1], ["x"]], "reciprocal": ["div", ["num", 1], ["x"]],

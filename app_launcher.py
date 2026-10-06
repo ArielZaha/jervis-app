@@ -71,7 +71,7 @@ SITES = {
     "classroom": "https://classroom.google.com",
     "google meet": "https://meet.google.com",
     "google calendar": "https://calendar.google.com",
-    "calendar": "https://calendar.google.com",  # not the native Calendar app: Jervis can only read/write Google's
+    "calendar": "https://calendar.google.com",  # not the native Calendar app: Jarvis can only read/write Google's
     "google photos": "https://photos.google.com",
     "google docs": "https://docs.google.com/document",
     "google doc": "https://docs.google.com/document",
@@ -113,15 +113,15 @@ VENDOR_PREFIXES = ("microsoft ", "google ", "apple ", "adobe ")
 FILLER_LEAD = ("the ", "my ", "up ")
 FILLER_TAIL = (" app", " application", " for me", " please", " now", " on my computer", " on my mac")
 
-_LEAD = (r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) |please |can you |could you |would you |"
+_LEAD = (r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) |please |can you |could you |would you |"
          r"i want you to |i want to |i need to |go ahead and |just )*")
 _OPEN_RE = re.compile(_LEAD + r"(open|launch|start|run)(?: up)? (.+)$")
 _CLOSE_RE = re.compile(_LEAD + r"(?:close|quit|exit)(?: out of)? (.+?)(?: for me| please| now)*$")
-# "Open this app" / "close this app": no name, so "this" means the window being worked in (never Jervis's own).
+# "Open this app" / "close this app": no name, so "this" means the window being worked in (never Jarvis's own).
 THIS_APP = {"this", "that", "it", "this app", "that app", "the app", "this application", "this program", "this window",
             "the current app", "current app", "the current window", "current window", "the active window",
             "the window", "the program", "this one"}
-OWN_PROCESSES = {"jervis.exe", "electron.exe", "jervis-backend.exe"}   # never close or "find" Jervis himself
+OWN_PROCESSES = {"jarvis.exe", "electron.exe", "jarvis-backend.exe"}   # never close or "find" Jarvis himself
 # Windows programs whose process name doesn't follow from the Start-menu name.
 WIN_EXE = {"visual studio code": "code.exe", "word": "winword.exe", "microsoft word": "winword.exe",
            "excel": "excel.exe", "powerpoint": "powerpnt.exe", "outlook": ("olk.exe", "outlook.exe"), "file explorer": "explorer.exe",
@@ -411,7 +411,7 @@ def app_windows(name: str) -> list:
 
 
 def front_app_window():
-    """The window the user is working in: the front one, or the one right behind Jervis's own window. (hwnd, title,
+    """The window the user is working in: the front one, or the one right behind Jarvis's own window. (hwnd, title,
     friendly app name) or None."""
     if not osal.IS_WIN:
         return None

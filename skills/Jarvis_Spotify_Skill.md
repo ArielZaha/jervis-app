@@ -1,17 +1,17 @@
-# Jervis Spotify Integration Skill
+# Jarvis Spotify Integration Skill
 
 ## Purpose
 
-You are an implementation agent working on **Jervis**, a personal AI voice/chat assistant.
+You are an implementation agent working on **Jarvis**, a personal AI voice/chat assistant.
 
-Your job is to implement, repair, or improve Jervis's Spotify feature so that natural-language **voice and chat commands** can control the user's Spotify playback reliably.
+Your job is to implement, repair, or improve Jarvis's Spotify feature so that natural-language **voice and chat commands** can control the user's Spotify playback reliably.
 
 The core requirement is:
 
-1. A user asks Jervis to play a **song, album, artist, or playlist**.
-2. Jervis identifies the requested Spotify resource, searches Spotify, selects an appropriate result, and starts playback.
-3. Jervis only reports success after the Spotify operation actually succeeds.
-4. If anything goes wrong, Jervis gives a **specific, useful explanation** of what failed and what the user can do next.
+1. A user asks Jarvis to play a **song, album, artist, or playlist**.
+2. Jarvis identifies the requested Spotify resource, searches Spotify, selects an appropriate result, and starts playback.
+3. Jarvis only reports success after the Spotify operation actually succeeds.
+4. If anything goes wrong, Jarvis gives a **specific, useful explanation** of what failed and what the user can do next.
 5. Do not fake success. Never say that something is playing merely because a search succeeded.
 
 ---
@@ -20,7 +20,7 @@ The core requirement is:
 
 ### Supported natural-language commands
 
-Jervis should understand commands such as:
+Jarvis should understand commands such as:
 
 - `Play Bohemian Rhapsody on Spotify`
 - `Play Bohemian Rhapsody by Queen`
@@ -37,7 +37,7 @@ Jervis should understand commands such as:
 
 The exact wording must not matter. Voice recognition and chat input can produce slightly different phrasing.
 
-Jervis should support at minimum:
+Jarvis should support at minimum:
 
 - **Track/song**
 - **Album**
@@ -75,11 +75,11 @@ Playback control is a **user-authorized** Spotify operation.
 
 The implementation must not use Client Credentials for playback control because Client Credentials does not represent the user's Spotify account.
 
-For a desktop application such as Jervis:
+For a desktop application such as Jarvis:
 
 - Use Spotify OAuth user authorization.
 - Prefer Authorization Code with PKCE when a client secret cannot safely be stored.
-- If Jervis has a genuinely secure backend where a client secret can be protected, Authorization Code may be appropriate.
+- If Jarvis has a genuinely secure backend where a client secret can be protected, Authorization Code may be appropriate.
 - Never use the deprecated Implicit Grant flow.
 - Store access/refresh credentials securely.
 - Never hard-code secrets into source code.
@@ -87,9 +87,9 @@ For a desktop application such as Jervis:
 
 At minimum, playback control requires the appropriate playback-control authorization scope, currently `user-modify-playback-state`.
 
-Only request scopes that Jervis actually needs.
+Only request scopes that Jarvis actually needs.
 
-If authorization is missing, expired, revoked, or insufficient, Jervis must explain that Spotify needs to be connected/authorized rather than pretending the command worked.
+If authorization is missing, expired, revoked, or insufficient, Jarvis must explain that Spotify needs to be connected/authorized rather than pretending the command worked.
 
 ---
 
@@ -100,7 +100,7 @@ Separate the Spotify feature into clear layers.
 Recommended structure:
 
 ```text
-Jervis command input
+Jarvis command input
         |
         v
 Intent detection / command parsing
@@ -124,7 +124,7 @@ Playback service
 Playback verification
         |
         v
-Jervis response
+Jarvis response
 ```
 
 Do not put all Spotify logic inside the main voice-listening loop.
@@ -141,7 +141,7 @@ result = spotify_service.play(
 )
 ```
 
-The exact language/API can differ depending on the existing Jervis codebase, but the architectural separation should remain.
+The exact language/API can differ depending on the existing Jarvis codebase, but the architectural separation should remain.
 
 ---
 
@@ -251,7 +251,7 @@ Do not make the parser so aggressive that ordinary conversation becomes a Spotif
 
 # Determining Resource Type
 
-Jervis should use explicit language when available.
+Jarvis should use explicit language when available.
 
 Examples:
 
@@ -277,7 +277,7 @@ If no type is specified:
 
 the assistant should infer the most likely type from the command and search results.
 
-If multiple resource types are plausible and the ambiguity matters, Jervis may ask a short clarification question.
+If multiple resource types are plausible and the ambiguity matters, Jarvis may ask a short clarification question.
 
 Example:
 
@@ -459,7 +459,7 @@ Do not hide this requirement behind a generic error.
 
 A common failure is that Spotify has no suitable active playback device.
 
-Jervis should:
+Jarvis should:
 
 1. Check available Spotify devices when necessary.
 2. Prefer the user's currently active device when appropriate.
@@ -486,7 +486,7 @@ A successful HTTP response from the search endpoint only proves that the item wa
 
 A successful request to the playback endpoint should be treated as the playback operation succeeding according to Spotify's API response.
 
-Where practical, verify playback state after starting playback, especially when the existing Jervis architecture makes verification reliable.
+Where practical, verify playback state after starting playback, especially when the existing Jarvis architecture makes verification reliable.
 
 The assistant must distinguish:
 
@@ -506,7 +506,7 @@ These are not the same state.
 
 # Success Responses
 
-When playback actually succeeds, Jervis should give a concise natural response.
+When playback actually succeeds, Jarvis should give a concise natural response.
 
 Examples:
 
@@ -547,7 +547,7 @@ Instead, map failures to useful messages.
 Example:
 
 ```text
-I couldn't play that because Jervis isn't currently authorized to control your Spotify account. Connect Spotify and try again.
+I couldn't play that because Jarvis isn't currently authorized to control your Spotify account. Connect Spotify and try again.
 ```
 
 ## Token expired
@@ -555,7 +555,7 @@ I couldn't play that because Jervis isn't currently authorized to control your S
 Example:
 
 ```text
-Your Spotify authorization expired, and Jervis couldn't refresh it. Please reconnect Spotify.
+Your Spotify authorization expired, and Jarvis couldn't refresh it. Please reconnect Spotify.
 ```
 
 ## Permission/scope failure
@@ -563,7 +563,7 @@ Your Spotify authorization expired, and Jervis couldn't refresh it. Please recon
 Example:
 
 ```text
-Jervis is connected to Spotify, but it doesn't have permission to control playback. Re-authorize Spotify with playback-control permission.
+Jarvis is connected to Spotify, but it doesn't have permission to control playback. Re-authorize Spotify with playback-control permission.
 ```
 
 ## Search returned no result
@@ -610,7 +610,7 @@ If Spotify returns HTTP 429:
 Example:
 
 ```text
-Spotify is temporarily rate-limiting Jervis. Please try again in a moment.
+Spotify is temporarily rate-limiting Jarvis. Please try again in a moment.
 ```
 
 ## Network/API failure
@@ -626,7 +626,7 @@ I couldn't reach Spotify right now, so I couldn't start playback. Check your int
 Include useful non-secret information:
 
 ```text
-I found the song, but Spotify rejected the playback request. Error: 403. Check that Jervis has playback-control permission and that a supported Spotify device is available.
+I found the song, but Spotify rejected the playback request. Error: 403. Check that Jarvis has playback-control permission and that a supported Spotify device is available.
 ```
 
 Never expose access tokens, client secrets, refresh tokens, authorization codes, cookies, or other credentials.
@@ -667,7 +667,7 @@ SpotifyResult(
 )
 ```
 
-The UI/voice layer should convert this structured result into a natural Jervis response.
+The UI/voice layer should convert this structured result into a natural Jarvis response.
 
 This separation makes debugging much easier.
 
@@ -702,11 +702,11 @@ If the project already has a logging system, integrate with it rather than creat
 
 ---
 
-# Existing Jervis Integration
+# Existing Jarvis Integration
 
 Before changing code:
 
-1. Inspect the existing Jervis project.
+1. Inspect the existing Jarvis project.
 2. Find the current Spotify integration.
 3. Identify how Spotify credentials are currently stored.
 4. Identify the existing `spotipy` or raw Web API usage.
@@ -717,7 +717,7 @@ Before changing code:
 
 Do not create duplicate Spotify authentication systems unless the existing implementation is fundamentally unusable.
 
-If Jervis already uses Spotipy, prefer extending the existing Spotipy integration instead of replacing it with raw HTTP without a clear reason.
+If Jarvis already uses Spotipy, prefer extending the existing Spotipy integration instead of replacing it with raw HTTP without a clear reason.
 
 If the project uses raw HTTP, continue using the established HTTP abstraction if it is reliable.
 
@@ -759,7 +759,7 @@ This prevents inconsistent behavior.
 
 # LLM Tool Integration
 
-If Jervis uses an LLM/tool-calling architecture, expose Spotify playback as a deterministic tool.
+If Jarvis uses an LLM/tool-calling architecture, expose Spotify playback as a deterministic tool.
 
 Example conceptual schema:
 
@@ -792,7 +792,7 @@ Example conceptual schema:
 }
 ```
 
-The exact tool format must match the existing Jervis LLM integration.
+The exact tool format must match the existing Jarvis LLM integration.
 
 The LLM should decide **what the user wants**.
 
@@ -1005,7 +1005,7 @@ Test:
 - HTTP 5xx
 - Malformed API response
 
-Each should produce a useful Jervis response.
+Each should produce a useful Jarvis response.
 
 ---
 
@@ -1022,7 +1022,7 @@ The Spotify feature is complete only when all of the following are true:
 - [ ] Spotify search is used to identify requested content.
 - [ ] Search results are matched intelligently.
 - [ ] Playback is actually requested through Spotify.
-- [ ] Jervis does not claim success when only a search succeeded.
+- [ ] Jarvis does not claim success when only a search succeeded.
 - [ ] Successful playback produces a concise success message.
 - [ ] Every important failure produces a detailed, actionable response.
 - [ ] Authentication errors are handled separately from search errors.
@@ -1030,7 +1030,7 @@ The Spotify feature is complete only when all of the following are true:
 - [ ] Permission errors are handled separately.
 - [ ] Rate limiting is handled using Spotify's retry guidance.
 - [ ] Secrets never appear in logs or user responses.
-- [ ] Existing Jervis architecture is reused where practical.
+- [ ] Existing Jarvis architecture is reused where practical.
 - [ ] The implementation does not duplicate Spotify logic unnecessarily.
 - [ ] Tests cover successful and failed playback.
 - [ ] Current Spotify API documentation has been checked before relying on endpoint behavior.
@@ -1043,7 +1043,7 @@ When asked to implement or fix this feature, follow this workflow.
 
 ## Step 1 — Inspect
 
-Read the relevant Jervis files first.
+Read the relevant Jarvis files first.
 
 Find:
 
@@ -1073,7 +1073,7 @@ Playback works from chat but not voice.
 ```
 
 ```text
-Jervis says it succeeded even when Spotify returned 403.
+Jarvis says it succeeded even when Spotify returned 403.
 ```
 
 ```text
@@ -1088,7 +1088,7 @@ Do not rely on old training data or deprecated API examples.
 
 ## Step 4 — Implement the Smallest Correct Change
 
-Prefer targeted changes over rewriting the whole Jervis project.
+Prefer targeted changes over rewriting the whole Jarvis project.
 
 Preserve working features.
 
@@ -1121,7 +1121,7 @@ Check:
 
 # Response Style
 
-Jervis should sound like a personal assistant, not a raw API wrapper.
+Jarvis should sound like a personal assistant, not a raw API wrapper.
 
 Good:
 
@@ -1187,11 +1187,11 @@ Important references:
 
 You are not merely adding a "Spotify search" feature.
 
-You are implementing a **reliable Spotify playback capability for Jervis**.
+You are implementing a **reliable Spotify playback capability for Jarvis**.
 
 The user's intent is:
 
-> "Tell Jervis what I want to hear, and Jervis should find it on Spotify, actually start it, and clearly tell me whether it worked."
+> "Tell Jarvis what I want to hear, and Jarvis should find it on Spotify, actually start it, and clearly tell me whether it worked."
 
 Therefore:
 
@@ -1203,6 +1203,6 @@ Therefore:
 
 **Saying "done" is not success.**
 
-The feature succeeds only when Jervis has completed the Spotify playback operation successfully or has accurately explained why it could not.
+The feature succeeds only when Jarvis has completed the Spotify playback operation successfully or has accurately explained why it could not.
 
-When modifying the project, preserve existing Jervis functionality and integrate this feature cleanly into the existing architecture.
+When modifying the project, preserve existing Jarvis functionality and integrate this feature cleanly into the existing architecture.

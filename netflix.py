@@ -43,7 +43,7 @@ def _parse(page: str):
 
 
 _WIKIDATA = "https://www.wikidata.org/w/api.php"
-_WIKIDATA_HEADERS = {"User-Agent": "JervisAssistant/1.0 (personal voice assistant)"}
+_WIKIDATA_HEADERS = {"User-Agent": "JarvisAssistant/1.0 (personal voice assistant)"}
 
 
 def _norm(text: str) -> str:

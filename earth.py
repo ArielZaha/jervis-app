@@ -18,7 +18,7 @@ def _title(request):
     return None if text is None else str(text)
 
 
-_LEAD = r"(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets|show me|tell me) )*"
+_LEAD = r"(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets|show me|tell me) )*"
 _VERB = r"(?:show|see|view|display|find|calculate|compute|what(?:'s| is)|whats|tell me|get|check)"
 _ON_GLOBE = r"(?:on (?:the |a )?(?:3d )?(?:earth|globe|world|planet)(?: model)?)"
 _PATTERNS = [
@@ -33,7 +33,7 @@ _RESHOW = re.compile(
     r"\b(?:show|open|bring\s+up|pull\s+up|display|see|reopen|put\s+up|look\s+at|let\s+me\s+see|go\s+back\s+to)\b.*"
     r"\b(?:globe|earth|world)\b.*\b(?:again|last|previous|earlier|before|back|once\s+more|one\s+more\s+time|next|first)\b"
     r"|\b(?:the\s+)?(?:previous|last|next|earlier|first)\s+(?:globe|earth|world)\b|\b(?:globe|earth)\s+(?:again|from\s+before)\b")
-_LEAD_WORDS = {"", "hey", "jervis", "jarvis", "ok", "okay", "please", "can", "could", "would", "you", "now", "then", "and",
+_LEAD_WORDS = {"", "hey", "jarvis", "jervis", "ok", "okay", "please", "can", "could", "would", "you", "now", "then", "and",
                "just", "lets", "let", "i", "want", "need", "to", "wanna", "like", "me", "also", "so", "well", "show", "see", "the", "it", "is", "a"}
 
 
@@ -98,7 +98,7 @@ def geocode(name: str):
 
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-USER_AGENT = "Jervis/1.0 (+https://github.com/ArielZaha/jervis-app)"   # Nominatim's policy: say who is asking
+USER_AGENT = "Jarvis/1.0 (+https://github.com/ArielZaha/jervis-app)"   # Nominatim's policy: say who is asking
 
 
 def _geocode_osm(name: str):

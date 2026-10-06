@@ -18,7 +18,7 @@ def set_url(url: str) -> None:
     URL = url.rstrip("/")
     _last_good["at"] = 0.0
 DEFAULT_MODEL = "llama3.2"
-# The best small models for a voice assistant, in the order Jervis prefers to pick from what is installed.
+# The best small models for a voice assistant, in the order Jarvis prefers to pick from what is installed.
 PREFERRED = ["llama3.2", "llama3.1", "qwen2.5", "qwen3", "gemma3", "phi4-mini", "mistral", "llama3", "gemma2", "phi3"]
 
 

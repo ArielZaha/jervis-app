@@ -1,4 +1,4 @@
-// Jervis 3D globe: a lit, rotating wireframe Earth with two glowing pins and an arc between them following the great
+// Jarvis 3D globe: a lit, rotating wireframe Earth with two glowing pins and an arc between them following the great
 // circle (the shortest path on a sphere). Drag to spin it, scroll to zoom. Every globe drawn is kept, exactly like the
 // graph window (graph.js), so "show me the globe again" can bring back any of them.
 (function () {
@@ -464,7 +464,7 @@
         if (!blob) return;
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `jervis-globe-${Date.now()}.png`;
+        link.download = `jarvis-globe-${Date.now()}.png`;
         document.body.append(link); link.click(); link.remove();
         setTimeout(() => URL.revokeObjectURL(link.href), 4000);
         $('earthSave').textContent = 'Saved ✓';
