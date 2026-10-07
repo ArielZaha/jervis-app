@@ -1,17 +1,17 @@
-"""Jervis's relay: a small, secret-free router so a paired phone can reach Jervis from anywhere, not just the same
-Wi-Fi. Deployed separately from the app itself (see README.md in this folder) — this is the one piece of Jervis
+"""Jarvis's relay: a small, secret-free router so a paired phone can reach Jarvis from anywhere, not just the same
+Wi-Fi. Deployed separately from the app itself (see README.md in this folder) — this is the one piece of Jarvis
 infrastructure that has to run somewhere other than the user's own computer, since home routers aren't reachable
 from the open internet by default and something has to sit in the middle for both sides to connect out to.
 
 On purpose, this process knows nothing worth stealing:
   - No device tokens, no pairing codes, no encryption keys ever pass through here in a form this code reads. Every
     payload it forwards between a computer and a phone is an opaque, end-to-end-encrypted blob once a session is
-    attached (see phone_crypto.py on the Jervis side) — this relay just moves bytes by connection id.
+    attached (see phone_crypto.py on the Jarvis side) — this relay just moves bytes by connection id.
   - It keeps no state on disk and nothing survives a restart; a dropped connection just means each side reconnects
     (both relay_client.py and phone_client.html already retry with backoff).
   - The one thing it does interpret is routing: which computerId a phone wants, and which connId a message is for.
     A `computerId` is a long random value (relay_client.py mints one per install) — knowing it lets a stranger open
-    a connection that LOOKS like a phone to that computer, but Jervis's own pairing/session checks (phone_control.py)
+    a connection that LOOKS like a phone to that computer, but Jarvis's own pairing/session checks (phone_control.py)
     are what actually decide whether anything happens with it, exactly as they already do for a local connection.
 
 Protocol (JSON text frames over one WebSocket per side):
@@ -66,6 +66,12 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 PHONE_PAGE_PATH = os.path.join(_HERE, "phone_client.html")
 SERVICE_WORKER_PATH = os.path.join(_HERE, "phone_sw.js")
 CONFIRM_PAGE_PATH = os.path.join(_HERE, "confirm.html")
+MANIFEST_PATH = os.path.join(_HERE, "phone_manifest.webmanifest")
+AGENT_PATH = os.path.join(_HERE, "phone_agent.js")
+ICON_DIR = os.path.join(_HERE, "phone_icons")
+# Same fixed list as phone_control.ICON_FILES (this file deploys on its own, so it can't import that module).
+ICON_FILES = frozenset({"icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png",
+                        "favicon-64.png"})
 
 computers = {}            # computerId -> websocket
 phone_owner = {}          # connId -> computerId
@@ -215,19 +221,19 @@ async def handler(websocket) -> None:
         await _handle_phone(websocket, computer_id)
 
 
-def _http_response(status: int, content: bytes, content_type: str):
+def _http_response(status: int, content: bytes, content_type: str, cache_control: str = "no-store"):
     from websockets.datastructures import Headers
     from websockets.http11 import Response
     headers = Headers()
     headers["Content-Type"] = content_type
     headers["Content-Length"] = str(len(content))
-    headers["Cache-Control"] = "no-store"
+    headers["Cache-Control"] = cache_control
     return Response(status, "OK" if status == 200 else "Error", headers, content)
 
 
 async def _fetch_page_context(computer_id: str) -> dict:
     """Two things only the connected computer itself knows, asked for live over its already-open connection:
-      - its public notification key (no single key to bake in here — every Jervis install generates its own,
+      - its public notification key (no single key to bake in here — every Jarvis install generates its own,
         see push.py); empty if unavailable, in which case the page just won't offer to turn notifications on
         (see phone_client.html's refreshNotifyCard, same as the local phone server's own page already handles).
       - its current local address, so a phone that was never recognized on *this* origin (never completed the
@@ -249,6 +255,16 @@ async def _fetch_page_context(computer_id: str) -> dict:
         return empty
     finally:
         pending_page_context.pop(request_id, None)
+
+
+def _icon_name_for(path: str):
+    """The installed app's icons: /icons/<name> (the manifest) or iOS's own /apple-touch-icon.png lookup."""
+    if path in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+        return "apple-touch-icon.png"
+    if path == "/favicon.ico":
+        return "favicon-64.png"
+    name = path[len("/icons/"):] if path.startswith("/icons/") else ""
+    return name if name in ICON_FILES else None
 
 
 async def process_request(connection, request):
@@ -274,6 +290,28 @@ async def process_request(connection, request):
         if not delivered:
             return connection.respond(503, "That computer isn't reachable right now.")
         return connection.respond(200, "OK")
+
+    if path.path == "/manifest.webmanifest":
+        try:
+            with open(MANIFEST_PATH, "rb") as f:
+                return _http_response(200, f.read(), "application/manifest+json", "no-cache")
+        except OSError:
+            return connection.respond(404, "Not found.")
+
+    if path.path == "/agent.js":
+        try:
+            with open(AGENT_PATH, "rb") as f:
+                return _http_response(200, f.read(), "text/javascript; charset=utf-8", "no-cache")
+        except OSError:
+            return connection.respond(404, "Not found.")
+
+    icon = _icon_name_for(path.path)
+    if icon:
+        try:
+            with open(os.path.join(ICON_DIR, icon), "rb") as f:
+                return _http_response(200, f.read(), "image/png", "public, max-age=86400")
+        except OSError:
+            return connection.respond(404, "Not found.")
 
     if path.path == "/sw.js":
         try:
@@ -330,7 +368,7 @@ async def main() -> None:
     asyncio.get_event_loop().create_task(_keepalive())
     async with websockets.serve(handler, "0.0.0.0", PORT, process_request=process_request,
                                 max_size=MAX_MESSAGE, ping_interval=None):
-        log.info("Jervis relay listening on :%d", PORT)
+        log.info("Jarvis relay listening on :%d", PORT)
         await asyncio.Future()
 
 
