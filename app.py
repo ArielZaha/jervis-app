@@ -55,6 +55,7 @@ import netflix
 import stremio
 from volume import change_volume
 import documents
+import music
 import google_accounts
 import local_llm
 import local_ai
@@ -2831,6 +2832,9 @@ def handle_direct_command(text: str):
     spotify = handle_spotify_search(text)   # before splitting "take control and search … in Spotify" into parts
     if spotify:
         return spotify
+    music_request = music.parse_music_request(text)   # "play my Workout playlist", "… album … on Apple Music"
+    if music_request:
+        return play_music(**vars(music_request))
     multi = handle_multi_task(text)
     if multi:
         return multi
@@ -3333,6 +3337,247 @@ def seek_music(seconds: int) -> str:
         return f"Could not jump: {e}"
 
 
+# ---------- playlists, albums, artists, liked songs — on Spotify, Apple Music, YouTube and more (see music.py) ----------
+# Reading the user's OWN playlists and liked songs needs a permission the playback connection (sp) doesn't have.
+# It's a separate sign-in, asked for once, only the first time it's actually needed — so the playback that already
+# works never gets interrupted by a new approval screen.
+SPOTIFY_LIBRARY_SCOPE = ("user-modify-playback-state user-read-playback-state playlist-read-private "
+                         "playlist-read-collaborative user-library-read")
+_spotify_library = {"auth": None, "client": None, "asking": False}
+
+
+def spotify_library():
+    """A Spotify connection that can also see the user's playlists and liked songs, or None until they've
+    approved that (ask_spotify_library_permission)."""
+    lib = _spotify_library
+    if not sp:
+        return None
+    if lib["client"]:
+        return lib["client"]
+    try:
+        if lib["auth"] is None:
+            lib["auth"] = SpotifyOAuth(
+                client_id=os.getenv("SPOTIFY_CLIENT_ID"), client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
+                redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8888/callback"),
+                scope=SPOTIFY_LIBRARY_SCOPE, open_browser=True,
+                cache_handler=spotipy.cache_handler.CacheFileHandler(cache_path=paths.data(".cache-spotify-library")))
+        if not lib["auth"].validate_token(lib["auth"].cache_handler.get_cached_token()):
+            return None
+        lib["client"] = spotipy.Spotify(auth_manager=lib["auth"])
+        return lib["client"]
+    except Exception as e:
+        print(f"Spotify library connection: {e!r}", flush=True)
+        return None
+
+
+def ask_spotify_library_permission() -> None:
+    """Opens Spotify's approval page in the browser, once, in the background: Jarvis keeps working meanwhile, and
+    the next request can use the user's playlists. (Asked again only if the last page went unanswered for a while.)"""
+    lib = _spotify_library
+    if lib["auth"] is None or (lib["asking"] and time.time() - lib.get("asked_at", 0) < 600):
+        return
+    lib["asking"], lib["asked_at"] = True, time.time()
+
+    def run():
+        try:
+            lib["auth"].get_access_token(as_dict=False)   # opens the browser and waits for the approval locally
+        except Exception as e:
+            print(f"Spotify permission wasn't given: {e!r}", flush=True)
+        finally:
+            lib["asking"] = False
+    threading.Thread(target=run, daemon=True, name="spotify-permission").start()
+
+
+_NEEDS_SPOTIFY_PERMISSION = ("To find your own playlists and liked songs I need Spotify's permission to see your "
+                             "library. The approval page is open in your browser: approve it once, then ask me again.")
+
+
+def _spotify_playlists(client) -> list:
+    playlists, offset = [], 0
+    while offset < 500:
+        page = client.current_user_playlists(limit=50, offset=offset)
+        items = [p for p in (page or {}).get("items") or [] if p]
+        playlists += items
+        if not (page or {}).get("next") or not items:
+            break
+        offset += 50
+    return playlists
+
+
+def _spotify_play_context(uri: str = "", uris: list = None, shuffle: bool = False) -> None:
+    if shuffle:
+        try:
+            spotify_player_call(lambda device_id: sp.shuffle(True, device_id=device_id))
+        except Exception:
+            pass   # a device that can't shuffle still plays
+    if uris:
+        spotify_player_call(lambda device_id: sp.start_playback(device_id=device_id, uris=uris))
+    else:
+        spotify_player_call(lambda device_id: sp.start_playback(device_id=device_id, context_uri=uri))
+    _mark_spotify_playing()
+
+
+def play_spotify_collection(req) -> str:
+    """A playlist, album, artist or the liked songs, on Spotify — the user's own first."""
+    shuffled = ", shuffled" if req.shuffle else ""
+    if not sp:
+        # No Spotify keys: the Spotify app's own search, which ranks the user's library first ("Liked Songs" too).
+        wanted = "Liked Songs" if req.kind == "liked" else req.query
+        return play_song_locally(wanted)
+    try:
+        library = spotify_library()
+        if req.kind == "liked":
+            if library:
+                own = best_match_playlist(library, req.names) if req.alt and req.alt.lower() != "my liked songs" else None
+                if own:   # a playlist that's really called that ("My Favorite Songs") beats the liked songs
+                    _spotify_play_context(own["uri"], shuffle=req.shuffle)
+                    return f"Playing your playlist {own['name']} on Spotify{shuffled}."
+                saved = [i["track"]["uri"] for i in (library.current_user_saved_tracks(limit=50) or {}).get("items") or []
+                         if i.get("track") and i["track"].get("uri")]
+                if not saved:
+                    return "You don't have any liked songs on Spotify yet."
+                _spotify_play_context(uris=saved, shuffle=req.shuffle)
+                return f"Playing your liked songs on Spotify{shuffled}."
+            ask_spotify_library_permission()
+            return _NEEDS_SPOTIFY_PERMISSION
+        if req.kind == "playlist":
+            mix = music.spotify_mix(req.alt or req.query) or music.spotify_mix(req.query)
+            if mix and music.NAMED_PLAYLISTS.match(req.query.lower()) and spotify_local.installed():
+                # Spotify's personal mixes (Discover Weekly…) aren't reachable through its API any more; its app finds them.
+                return play_song_locally(mix)
+            if not library:
+                # Never a guess from public search before Jarvis can see the user's own: search for "My Favorite
+                # Songs" finds strangers' playlists with that exact name.
+                if mix and spotify_local.installed():
+                    return play_song_locally(mix)
+                ask_spotify_library_permission()
+                return _NEEDS_SPOTIFY_PERMISSION
+            playlists = _spotify_playlists(library)
+            own = best_match_playlist(library, req.names, playlists)
+            if own:
+                _spotify_play_context(own["uri"], shuffle=req.shuffle)
+                return f"Playing your playlist {own['name']} on Spotify{shuffled}."
+            if mix:   # "the repeat playlist": the user's On Repeat, not a stranger's playlist called "repeat"
+                if spotify_local.installed():
+                    return play_song_locally(mix)
+                return f"Spotify only lets its own app play {mix}: open the Spotify app on this computer and ask me again."
+            # "a lofi playlist": anyone's will do. "the Lofi Beats playlist": only Spotify's own one by that name.
+            found = [p for p in (sp.search(q=req.query, type="playlist", limit=10).get("playlists") or {}).get("items") or [] if p]
+            if not req.public:
+                found = [p for p in found if (p.get("owner") or {}).get("id") == "spotify"
+                         or (p.get("owner") or {}).get("display_name") == "Spotify"]
+            public = music.best_match(req.query, found, lambda p: p.get("name", ""), threshold=0.6 if req.public else 0.85)
+            if req.public and not public and found:
+                public = found[0]
+            if public:
+                _spotify_play_context(public["uri"], shuffle=req.shuffle)
+                owner = (public.get("owner") or {}).get("display_name") or "Spotify"
+                return f"Playing the playlist {public['name']} by {owner} on Spotify{shuffled}."
+            if req.public:
+                return f"I couldn't find a {req.query} playlist on Spotify."
+            # One particular playlist ("the repeat playlist", "My Favorite Songs") that isn't the user's: say so,
+            # with the closest names they do have, rather than playing a stranger's playlist that happens to match.
+            print(f"Spotify playlist not found: {req.names} among {len(playlists)} of the user's playlists", flush=True)
+            close = sorted(playlists, key=lambda p: -max(music.name_score(n, p.get("name", "")) for n in req.names))
+            close = [p["name"].strip() for p in close[:2]
+                     if max(music.name_score(n, p.get("name", "")) for n in req.names) >= 0.35]
+            hint = f" Did you mean {' or '.join(close)}?" if close else ""
+            return (f"I couldn't find a playlist called {req.query} in your Spotify.{hint} "
+                    f"To play someone else's, say \"play a {req.query} playlist\".")
+        if req.kind == "album":
+            q = f"album:{req.query} artist:{req.by}" if req.by else req.query
+            found = (sp.search(q=q, type="album", limit=10).get("albums") or {}).get("items") or []
+            album = music.best_match(req.query, [a for a in found if a], lambda a: a.get("name", ""), threshold=0.6) \
+                or (found[0] if found and req.by else None)
+            if not album:
+                return f"I couldn't find the album {req.query} on Spotify."
+            _spotify_play_context(album["uri"], shuffle=req.shuffle)
+            artist = (album.get("artists") or [{}])[0].get("name", "")
+            return f"Playing the album {album['name']}{f' by {artist}' if artist else ''} on Spotify{shuffled}."
+        if req.kind == "artist":
+            found = (sp.search(q=req.query, type="artist", limit=5).get("artists") or {}).get("items") or []
+            artist = music.best_match(req.query, [a for a in found if a], lambda a: a.get("name", ""), threshold=0.6)
+            if not artist:
+                return f"I couldn't find {req.query} on Spotify."
+            _spotify_play_context(artist["uri"], shuffle=req.shuffle)
+            return f"Playing {artist['name']} on Spotify{shuffled}."
+        return play_song(f"{req.query} {req.by}".strip())
+    except SpotifyNotReady:
+        return "Spotify needs to be open on a device first. Open Spotify, then ask me again."
+    except Exception as e:
+        print(f"Spotify couldn't play {req.kind} {req.query!r}: {e!r}", flush=True)
+        return "Spotify didn't respond to that. Make sure Spotify is open, then ask me again."
+
+
+def best_match_playlist(client, names: list, playlists: list = None):
+    """The user's playlist that best matches any of the ways its name was said."""
+    playlists = _spotify_playlists(client) if playlists is None else playlists
+    for name in names:
+        found = music.best_match(name, playlists, lambda p: p.get("name", ""))
+        if found:
+            return found
+    return None
+
+
+def _open_music_url(url: str, host: str) -> None:
+    from youtube_browser import open_site
+    open_site(url, host)
+
+
+def play_youtube_collection(req, music_app: bool) -> str:
+    """A playlist (or an album / artist, as a playlist) on YouTube or YouTube Music: found by search and started."""
+    global youtube_active, netflix_active, stremio_active, spotify_active
+    where = "YouTube Music" if music_app else "YouTube"
+    host = "music.youtube.com" if music_app else "youtube.com"
+    if req.kind == "liked":
+        url = "https://music.youtube.com/playlist?list=LM" if music_app else "https://www.youtube.com/playlist?list=LL"
+        open_youtube(url, host=host, context="music")
+        youtube_active, netflix_active, stremio_active, spotify_active = not music_app, False, False, False
+        return f"Opened your liked {'songs' if music_app else 'videos'} on {where}. Press Play all to start them."
+    if req.kind == "song":
+        found = _find_video_yt_dlp(f"{req.query} {req.by}".strip()) or _find_video_scrape(f"{req.query} {req.by}".strip())
+        if not found:
+            return f"I couldn't find {req.query} on {where}."
+        open_youtube(f"https://music.youtube.com/watch?v={found[0]}" if music_app else f"https://www.youtube.com/watch?v={found[0]}",
+                     host=host, context="music")
+        youtube_active, netflix_active, stremio_active, spotify_active = not music_app, False, False, False
+        return f"Playing {found[1]} on {where}."
+    search = " ".join(filter(None, [req.query, req.by, {"album": "full album", "artist": "best songs"}.get(req.kind, "")]))
+    try:
+        playlists = music.youtube_playlists(search)
+    except Exception as e:
+        print(f"YouTube playlist search failed: {e!r}", flush=True)
+        playlists = []
+    if not playlists:
+        open_youtube("https://www.youtube.com/results?search_query=" + urllib.parse.quote(search), host=host, context="music")
+        return f"I couldn't find a playlist for {req.query} on {where}, so I opened the search."
+    title, playlist_id, first_video = music.best_match(req.query, playlists, lambda p: p[0], threshold=0.75) or playlists[0]
+    open_youtube(music.youtube_playlist_url(playlist_id, first_video, music_app), host=host, context="music")
+    youtube_active, netflix_active, stremio_active, spotify_active = not music_app, False, False, False
+    return f"Playing the playlist {title} on {where}."
+
+
+def play_music(query: str = "", kind: str = "any", service: str = "", shuffle: bool = False, mine: bool = False,
+               by: str = "", alt: str = "", public: bool = False, **kwargs) -> str:
+    """Play what the user asked for by name — a playlist, album, artist, song or their liked songs — on the service
+    they named, or the one they use (Spotify when it's set up, else Apple Music on a Mac, else YouTube)."""
+    req = music.MusicRequest(query=(query or "").strip(), kind=kind if kind in ("playlist", "album", "artist", "song", "liked", "any") else "any",
+                             service=service if service in music.SERVICES else "", shuffle=bool(shuffle), mine=bool(mine),
+                             by=(by or "").strip(), alt=(alt or "").strip(), public=bool(public) and not mine)
+    if not req.query and req.kind != "liked":
+        return "What should I play?"
+    target = req.service or ("spotify" if spotify_available() else "apple_music" if osal.IS_MAC else "youtube")
+    if target == "spotify":
+        if req.kind == "any":
+            req.kind = "song"
+        return play_spotify_collection(req)
+    if target == "apple_music":
+        return music.play_apple_music(req, _open_music_url)
+    if target in ("youtube", "youtube_music"):
+        return play_youtube_collection(req, target == "youtube_music")
+    return music.open_service_search(req, _open_music_url)
+
+
 _recent_artist_picks = collections.deque(maxlen=10)   # tracks "another song by X" chose lately, so it doesn't repeat
 
 
@@ -3663,6 +3908,7 @@ TOOL_FUNCTIONS = {
     "google_search": google_search,
     "play_youtube_video": play_youtube_video,
     "play_song": play_song,
+    "play_music": play_music,
     "pause_music": pause_music,
     "analyze_image": tool_analyze_image,
     "extract_image_text": tool_extract_image_text,
@@ -3727,6 +3973,28 @@ TOOLS = [
                     "song_name": {"type": "string", "description": "Song title or artist."}
                 },
                 "required": ["song_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_music",
+            "description": "Play a playlist, album, artist, or the user's liked songs, or play on a service other "
+                           "than Spotify (Apple Music, YouTube, YouTube Music, SoundCloud, Deezer, Tidal, Amazon Music).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The name, exactly as the user said it."},
+                    "kind": {"type": "string", "enum": ["playlist", "album", "artist", "song", "liked", "any"]},
+                    "service": {"type": "string", "enum": list(music.SERVICES)},
+                    "shuffle": {"type": "boolean"},
+                    "mine": {"type": "boolean", "description": "The user said it's theirs (\"my … playlist\")."},
+                    "by": {"type": "string", "description": "The artist, for an album or song."},
+                    "public": {"type": "boolean", "description": "Any playlist of that kind will do (\"a lofi "
+                                                                   "playlist\"), not one particular playlist."},
+                },
+                "required": ["query", "kind"],
             },
         },
     },
@@ -4179,7 +4447,9 @@ def write_document(request: str, app_key: str) -> str:
 def is_music_command(text: str) -> bool:
     """Only allow music controls for an explicit music request."""
     normalized = " ".join((text or "").lower().strip().split())
-    return bool(re.search(r"\b(play|pause|stop|resume|next)\b.*\b(song|music|spotify|track)\b", normalized)) or normalized.startswith("play ")
+    return (bool(re.search(r"\b(play|pause|stop|resume|next|shuffle|put on|listen to)\b.*\b(song|songs|music|spotify|track|"
+                           r"playlist|album|apple music|youtube music|soundcloud|deezer|tidal)\b", normalized))
+            or normalized.startswith(("play ", "shuffle ")))
 
 
 def is_app_command(text: str) -> bool:
@@ -4443,7 +4713,7 @@ def _failed_generation_text(error: Exception) -> str:
     return ""
 
 
-ACTION_TOOLS = {"use_computer", "play_song", "pause_music", "open_application", "play_youtube_video"}
+ACTION_TOOLS = {"use_computer", "play_song", "play_music", "pause_music", "open_application", "play_youtube_video"}
 _CLAIMS_ACTION = re.compile(
     r"\b(?:i'?m (?:now )?(?:using|controlling) (?:the|your) (?:computer|mouse)|i (?:have |'ve )?(?:opened|clicked|typed|"
     r"searched|started|played|launched|pressed)\b|i(?:'ll| will) (?:now )?(?:take control (?:of|over|on)|open|click|"
@@ -4514,7 +4784,7 @@ def ask_jarvis(messages, user_text=""):
         try:
             if name == "google_search" and not is_google_search_command(user_text):
                 result = "Google search was blocked because the user did not explicitly say Google. Respond without opening a browser."
-            elif name in {"play_song", "pause_music"} and not is_music_command(user_text):
+            elif name in {"play_song", "play_music", "pause_music"} and not is_music_command(user_text):
                 result = "Music control was blocked because the user did not explicitly request music playback. Respond normally."
             elif name == "play_youtube_video" and not is_youtube_command(user_text):
                 result = "YouTube playback was blocked because the user did not explicitly request a YouTube video. Respond normally."

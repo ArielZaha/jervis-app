@@ -80,6 +80,19 @@ Voice: the mic records only while you hold or tap it, and is transcribed with th
 - `src/ui/` — the screens.
 - `plugins/withLauncherQueries.js` — lets the Android app see installed apps (needed to open them on Android 11+).
 
+## The web app shares this code
+
+The Home Screen web app (`phone_client.html`, served by the relay and the computer) runs the same agent: `src/web/`
+adds the web's own phone tools (a web page can only open links: no contacts, alarms or Settings) and is bundled
+into `../phone_agent.js`. After changing `src/core/` or `src/web/`, rebuild it:
+
+```
+npm run build:web
+```
+
+Installed from the relay's address, the web app opens even when the computer is off (its app shell is kept on the
+phone) and Jarvis keeps answering there; the computer's Jarvis takes over whenever it's reachable.
+
 ## Tests
 
 ```

@@ -814,7 +814,7 @@ def test_the_installable_app_files_are_served():
 
     async def client():
         return {p: await get(p) for p in ("/manifest.webmanifest", "/icons/icon-512.png", "/icons/icon-maskable-512.png",
-                                          "/apple-touch-icon.png", "/icons/../app.py", "/", "/sw.js")}
+                                          "/apple-touch-icon.png", "/icons/../app.py", "/", "/sw.js", "/agent.js")}
 
     got = _drive(port, client())
     head, body = got["/manifest.webmanifest"]
@@ -830,3 +830,5 @@ def test_the_installable_app_files_are_served():
     assert "no-store" in page_head   # the page itself is never cached, so updates always reach the phone
     assert b"apple-mobile-web-app-capable" in page and b"/manifest.webmanifest" in page
     assert b'addEventListener("fetch"' in got["/sw.js"][1]
+    agent_head, agent = got["/agent.js"]   # Jarvis on the phone (built from mobile/src/web): works with the computer off
+    assert " 200 " in agent_head and b"JarvisCore" in agent and b"api.groq.com" in agent

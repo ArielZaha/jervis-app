@@ -1,6 +1,7 @@
 # Secrets and personal data: never committed
 .env
 .cache
+.cache-*
 .calendar_token.json
 .jarvis-netflix-profile/
 transcripts/

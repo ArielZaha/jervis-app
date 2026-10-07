@@ -10,7 +10,7 @@ WORKDIR /app
 COPY relay/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY relay/server.py .
-COPY phone_client.html phone_sw.js confirm.html phone_manifest.webmanifest ./
+COPY phone_client.html phone_sw.js confirm.html phone_manifest.webmanifest phone_agent.js ./
 COPY phone_icons ./phone_icons
 EXPOSE 8080
 CMD ["python", "server.py"]

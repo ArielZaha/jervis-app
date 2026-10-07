@@ -106,6 +106,12 @@ test("conversation history goes along, so follow-ups like 'open them' have conte
                         history: [{ role: "user", content: "Find Radiohead" }, { role: "assistant", content: "Radiohead are an English rock band." }] });
   const roles = ai.bodies[0].messages.map((m: any) => m.role);
   assert.deepEqual(roles, ["system", "user", "assistant", "user"]);
+  // a leading message of Jarvis's own (no question before it) isn't sent: the model would answer it again
+  const ai2 = scripted(say("ok"));
+  const agent2 = new JarvisAgent({ registry: new ToolRegistry(), platform: "ios", getConfig: () => config, fetch: ai2.fetch as any });
+  await agent2.respond({ ...base, text: "What's 15% of 80?", ctx: ctx(),
+                         history: [{ role: "assistant", content: "Your iPhone is now paired." }, { role: "user", content: "open youtube" }, { role: "assistant", content: "Opened YouTube." }] });
+  assert.deepEqual(ai2.bodies[0].messages.map((m: any) => m.role), ["system", "user", "assistant", "user"]);
 });
 
 test("a declined confirmation means nothing ran", async () => {

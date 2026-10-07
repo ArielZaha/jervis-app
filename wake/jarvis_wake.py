@@ -177,6 +177,7 @@ _STATIC = {   # path -> (file in the project, content type, cache) — a fixed l
     "/index.html": ("phone_client.html", "text/html; charset=utf-8", "no-store"),
     "/sw.js": ("phone_sw.js", "text/javascript; charset=utf-8", "no-store"),
     "/manifest.webmanifest": ("phone_manifest.webmanifest", "application/manifest+json", "no-cache"),
+    "/agent.js": ("phone_agent.js", "text/javascript; charset=utf-8", "no-cache"),
     "/apple-touch-icon.png": ("phone_icons/apple-touch-icon.png", "image/png", "public, max-age=86400"),
     "/favicon.ico": ("phone_icons/favicon-64.png", "image/png", "public, max-age=86400"),
 }

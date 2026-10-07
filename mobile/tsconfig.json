@@ -6,5 +6,5 @@
     "preserveSymlinks": true,
     "noUncheckedIndexedAccess": false
   },
-  "exclude": ["node_modules", "node_modules.nosync", "dist", "dist-*", "test"]
+  "exclude": ["node_modules", "node_modules.nosync", "dist", "dist-*", "test", "jarvis"]
 }

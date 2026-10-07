@@ -67,6 +67,7 @@ PHONE_PAGE_PATH = os.path.join(_HERE, "phone_client.html")
 SERVICE_WORKER_PATH = os.path.join(_HERE, "phone_sw.js")
 CONFIRM_PAGE_PATH = os.path.join(_HERE, "confirm.html")
 MANIFEST_PATH = os.path.join(_HERE, "phone_manifest.webmanifest")
+AGENT_PATH = os.path.join(_HERE, "phone_agent.js")
 ICON_DIR = os.path.join(_HERE, "phone_icons")
 # Same fixed list as phone_control.ICON_FILES (this file deploys on its own, so it can't import that module).
 ICON_FILES = frozenset({"icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png",
@@ -294,6 +295,13 @@ async def process_request(connection, request):
         try:
             with open(MANIFEST_PATH, "rb") as f:
                 return _http_response(200, f.read(), "application/manifest+json", "no-cache")
+        except OSError:
+            return connection.respond(404, "Not found.")
+
+    if path.path == "/agent.js":
+        try:
+            with open(AGENT_PATH, "rb") as f:
+                return _http_response(200, f.read(), "text/javascript; charset=utf-8", "no-cache")
         except OSError:
             return connection.respond(404, "Not found.")
 

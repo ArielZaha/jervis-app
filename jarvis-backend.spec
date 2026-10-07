@@ -30,7 +30,7 @@ datas += collect_data_files("googleapiclient")
 datas += collect_data_files("tzdata")   # zoneinfo's time zones (forecast.py)
 hiddenimports += ["tzdata", "forecast", "web_search"]
 # The phone app the backend serves to a paired phone (phone_control.serve_static reads these via paths.resource)
-datas += [(f, ".") for f in ("phone_client.html", "phone_sw.js", "confirm.html", "phone_manifest.webmanifest")]
+datas += [(f, ".") for f in ("phone_client.html", "phone_sw.js", "confirm.html", "phone_manifest.webmanifest", "phone_agent.js")]
 datas += [("phone_icons", "phone_icons")]
 
 if sys.platform == "win32":

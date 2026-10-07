@@ -7,7 +7,9 @@ Firefox all work, but only for a tab that is the ACTIVE tab of its window (the t
 Anything else falls back to the system default browser, which simply opens a new tab.
 """
 import platform
+import re
 import subprocess
+from collections import namedtuple
 import time
 import webbrowser
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -106,6 +108,43 @@ on run argv
                     set closed to closed + 1
                     if how is not "count" then close t
                     if how is "one" then return closed as text
+                end if
+            end repeat
+        end repeat
+    end tell
+    return closed as text
+end run
+'''
+
+# Every tab of every window, front window first: "window<TAB>id<TAB>active<TAB>title<TAB>url" per line.
+_LIST_TABS = f'''
+on run
+    set out to ""
+    tell application "{CHROME}"
+        set wi to 0
+        repeat with w in windows
+            set wi to wi + 1
+            set activeId to id of active tab of w
+            repeat with t in tabs of w
+                set out to out & wi & tab & (id of t) & tab & ((id of t) is activeId) & tab & (title of t) & tab & (URL of t) & linefeed
+            end repeat
+        end repeat
+    end tell
+    return out
+end run
+'''
+
+# Close exactly the tabs with these ids (argv), wherever they are.
+_CLOSE_TAB_IDS = f'''
+on run argv
+    set closed to 0
+    tell application "{CHROME}"
+        repeat with w in windows
+            repeat with i from (count of tabs of w) to 1 by -1
+                set t to tab i of w
+                if ((id of t) as text) is in argv then
+                    close t
+                    set closed to closed + 1
                 end if
             end repeat
         end repeat
@@ -220,7 +259,12 @@ def _win_close_tabs(target: str, mode: str) -> str:
         if mode in ("other", "everything"):
             return "On Windows I can only close the tab you are looking at, or one I can see by name."
         if target:
-            windows = winctl.find_windows(*needles_for(target))
+            # Each browser window's title is its active tab's title: scored the same way as on the Mac.
+            suffix = re.compile(r"\s+[-–—]\s+(?:%s)$" % "|".join(map(re.escape, winctl.BROWSER_SUFFIXES)))
+            candidates = [Tab(i + 1, str(h), True, suffix.sub("", title), "")   # not "... - Google Chrome"
+                          for i, (h, title) in enumerate(winctl.find_windows(*winctl.BROWSER_SUFFIXES))]
+            chosen = pick_tabs(target, candidates, "all" if mode == "all" else "one")
+            windows = [(int(t.id), t.title) for t in chosen]
         else:
             windows = winctl.find_windows(*winctl.BROWSER_SUFFIXES)[:1]  # the front-most browser window
         if not windows:
@@ -369,6 +413,99 @@ def needles_for(target: str) -> list:
     return list(dict.fromkeys(n for n in needles if n))
 
 
+# ---------- finding the tab the user means ----------
+Tab = namedtuple("Tab", "window id active title url")   # window 1 is the front window
+
+# Words that describe a tab without naming it: "the Queen VIDEO tab", "the tab ABOUT Einstein".
+_FILLER = {"the", "a", "an", "my", "this", "that", "of", "to", "for", "on", "in", "at", "with", "about", "and", "from",
+           "video", "videos", "page", "pages", "site", "website", "web", "one", "article", "thing", "stuff", "window"}
+
+
+def _words(text: str) -> list:
+    return re.findall(r"[a-z0-9]+", (text or "").lower())
+
+
+def _same_word(said: str, seen: str) -> bool:
+    """Whole words only ("x" is not in "netflix"), allowing a plural either way ("flight" / "flights")."""
+    return said == seen or said in (seen + "s", seen + "es") or seen in (said + "s", said + "es")
+
+
+def tab_match_score(target: str, title: str, url: str) -> int:
+    """How well a tab fits what the user called it: 3 = its site or its exact name ("YouTube", "Breaking Bad"),
+    2 = every word of the description is in its title or address ("the Queen video", "Wikipedia about Einstein"),
+    0 = not this tab."""
+    parsed = urlparse(url or "")
+    host, path = parsed.netloc.lower(), parsed.path.lower()
+    title_l = (title or "").lower()
+    title_words = set(_words(title))
+    place_words = set(_words(host)) | set(_words(path))
+    for needle in needles_for(target):
+        n = needle.lower()
+        if "." in n or "/" in n:                      # an address: the same site, not just the same letters
+            if _same_site(n, host, path):
+                return 3
+        elif " " in n or "-" in n:                    # a name of several words: as a phrase in the title
+            if re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", title_l):
+                return 3
+        elif any(_same_word(n, w) for w in title_words | place_words):
+            return 3
+    if _is_known_site(target):
+        return 0   # a site has its own rule above: "Google" means a Google search tab, not Gmail at mail.google.com
+    wanted = [w for w in _words(target) if w not in _FILLER]
+    if not wanted:
+        return 0
+    seen = title_words | place_words
+    return 2 if all(any(_same_word(w, x) for x in seen) for w in wanted) else 0
+
+
+def _same_site(address: str, host: str, path: str) -> bool:
+    """"x.com" is x.com or www.x.com, never netflix.com; "docs.google.com/document" also needs that path."""
+    domain, _, wanted_path = re.sub(r"^https?://", "", address).partition("/")
+    domain = domain.removeprefix("www.")
+    host = host.split(":")[0]
+    on_site = host == domain or host.endswith("." + domain)
+    return on_site and (not wanted_path or path.lstrip("/").startswith(wanted_path))
+
+
+def _is_known_site(target: str) -> bool:
+    t = _TAB_ALIASES.get(target.strip().lower(), target.strip().lower())
+    try:
+        from app_launcher import SITES
+    except Exception:
+        SITES = {}
+    return t in _SITES or t in SITES
+
+
+def pick_tabs(target: str, tabs: list, mode: str = "one") -> list:
+    """The tabs to close for "close the <target> tab" (mode one) or "close all the <target> tabs" (mode all): the
+    best-matching ones; for one, the tab you're looking at if it's among them, else the front window's."""
+    scored = [(tab_match_score(target, t.title, t.url), t) for t in tabs]
+    best = max((s for s, _ in scored), default=0)
+    if best == 0:
+        return []
+    matches = [t for s, t in scored if s == best]
+    if mode == "all":
+        return matches
+    matches.sort(key=lambda t: (not (t.active and t.window == 1), t.window, not t.active))   # in view, then nearest
+    return matches[:1]
+
+
+def short_title(title: str) -> str:
+    """A tab's title as it's worth saying out loud: without the site's name at the end, and not too long."""
+    t = re.sub(r"\s+[-|–—]\s+[^-|–—]{1,25}$", "", (title or "").strip()) or (title or "").strip()
+    return t if len(t) <= 60 else t[:57].rsplit(" ", 1)[0] + "…"
+
+
+def _mac_tabs() -> list:
+    out = _osascript(_LIST_TABS)
+    tabs = []
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 5:
+            tabs.append(Tab(int(parts[0]), parts[1], parts[2] == "true", "\t".join(parts[3:-1]), parts[-1]))
+    return tabs
+
+
 def close_tabs(target: str = "", mode: str = "one") -> str:
     """Close browser tabs. target: a site or any word in a tab's title ("youtube", "gmail", "breaking bad"), or "" for the
     active tab. mode: one (a single match), all (every match), other (all but the active tab), everything."""
@@ -378,7 +515,24 @@ def close_tabs(target: str = "", mode: str = "one") -> str:
         return _win_close_tabs(target, mode)
     if not _chrome_running():
         return "Chrome isn't open."
-    args = [mode] + (needles_for(target) if mode in ("one", "all", "count") else [])
+    if target and mode in ("one", "all"):
+        # Found by Jarvis, not by Chrome: every open tab is read once, scored by whole words, and exactly the chosen
+        # tab(s) are closed by id — never a tab that merely contains the letters ("x" is not netflix.com).
+        try:
+            tabs = _mac_tabs()
+            chosen = pick_tabs(target, tabs, mode)
+            if not chosen:
+                return f"I don't see a {target} tab open."
+            closed = _osascript(_CLOSE_TAB_IDS, *[t.id for t in chosen])
+        except (subprocess.SubprocessError, OSError) as e:
+            return f"I couldn't reach Chrome: {e}"
+        count = int(closed) if closed.isdigit() else 0
+        if count == 0:
+            return "Chrome didn't let me close that tab."
+        if count == 1:
+            return f"Closed “{short_title(chosen[0].title)}”." if chosen[0].title else f"Closed the {target} tab."
+        return f"Closed {count} {target} tabs."
+    args = [mode] + (needles_for(target) if mode == "count" else [])
     try:
         closed = _osascript(_CLOSE_TABS, *args)
     except (subprocess.SubprocessError, OSError) as e:

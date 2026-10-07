@@ -36,6 +36,8 @@ export type AgentOptions = {
   fetch: Fetch;
   now?: () => Date;
   timeoutMs?: number;
+  /** What this copy of Jarvis can't do, told to the AI (the web app can't read contacts or set alarms). */
+  note?: string;
 };
 
 export class JarvisAgent {
@@ -66,9 +68,13 @@ export class JarvisAgent {
   private async withAI(req: AgentRequest, config: AiConfig): Promise<AgentReply> {
     const { registry, platform } = this.opts;
     const tools = registry.schemas(platform);
+    // The conversation so far, starting at something the user said: a leading announcement of Jarvis's own ("your
+    // iPhone is now paired") with no question before it gets answered all over again by the model otherwise.
+    const history = req.history.slice(-12);
+    while (history.length && history[0].role !== "user") history.shift();
     const messages: any[] = [
       { role: "system", content: this.systemPrompt(req, config) },
-      ...req.history.slice(-12).map((t) => ({ role: t.role, content: t.content.slice(0, 600) })),
+      ...history.map((t) => ({ role: t.role, content: t.content.slice(0, 600) })),
       { role: "user", content: req.text },
     ];
     let where: AgentReply["where"] = "none";
@@ -200,6 +206,7 @@ export class JarvisAgent {
         "If the person, place or device is ambiguous and it matters (calling, messaging, the computer), ask briefly. " +
         "No app can switch Wi-Fi/Bluetooth on iPhone; on Android only the user can, from the panel.",
       "Reply in one or two warm, natural sentences (may be read aloud). No markdown tables. Never mention tool names.",
+      ...(this.opts.note ? [this.opts.note] : []),
     ].join("\n");
   }
 }

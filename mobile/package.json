@@ -48,7 +48,8 @@
     "test": "node --test --test-concurrency=1 --test-timeout=120000 test/*.test.ts",
     "test:ai": "node test/routing.live.ts",
     "build:android": "npx eas-cli@latest build -p android --profile preview",
-    "build:ios": "npx eas-cli@latest build -p ios --profile preview"
+    "build:ios": "npx eas-cli@latest build -p ios --profile preview",
+    "build:web": "npx --yes esbuild@0.25 src/web/entry.ts --bundle --format=iife --global-name=JarvisCore --target=safari15,chrome100 --minify --legal-comments=none --outfile=../phone_agent.js"
   },
   "private": true
 }

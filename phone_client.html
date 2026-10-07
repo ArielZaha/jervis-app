@@ -177,6 +177,15 @@
   }
   [data-conn="ready"] .who .sub { color: var(--text-2); }
 
+  .mode { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); flex-shrink: 0; }
+  .mode button {
+    appearance: none; border: 0; background: transparent; color: var(--text-2); display: inline-flex; align-items: center; gap: 5px;
+    font-size: 13px; font-weight: 640; padding: 7px 11px; border-radius: 999px; cursor: pointer; transition: background-color .2s, color .2s;
+  }
+  .mode button svg { width: 15px; height: 15px; }
+  .mode button[aria-selected="true"] { background: var(--brand); color: var(--you-text); }
+  @media (max-width: 400px) { .mode button span { display: none; } .mode button { padding: 7px 10px; } }
+
   /* a slim strip under the header, only while something about the connection needs saying */
   .banner {
     position: absolute; left: 0; right: 0; top: 100%; z-index: 4; display: flex; justify-content: center;
@@ -528,6 +537,12 @@
         <div class="name">Jarvis</div>
         <div class="sub" id="connText" aria-live="polite">Connecting…</div>
       </div>
+      <!-- Where Jarvis acts when the message doesn't say: the computer, or right here on the phone. Shown once the
+           phone has its own Jarvis (the AI settings); "on my phone" / "on my computer" always wins either way. -->
+      <div class="mode" id="modeSwitch" role="tablist" aria-label="Where Jarvis acts" hidden>
+        <button type="button" role="tab" data-mode="computer" aria-label="Computer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2.2"/><path d="M8.5 20h7M12 16v4"/></svg><span>Computer</span></button>
+        <button type="button" role="tab" data-mode="phone" aria-label="Phone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="3"/><path d="M11 18.5h2"/></svg><span>Phone</span></button>
+      </div>
       <button class="icon-btn" id="menuBtn" type="button" aria-label="Menu" aria-haspopup="dialog">
         <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>
       </button>
@@ -600,6 +615,9 @@
 
 <div class="toast" id="toast" role="status"></div>
 
+<!-- Jarvis on the phone (the same agent as the native app, built from mobile/src/web): answers and acts here even
+     when the computer is off. Missing on an older server: then this page is the computer's remote only, as before. -->
+<script src="/agent.js"></script>
 <script>
 (() => {
   "use strict";
@@ -679,8 +697,14 @@
     if (device) store.set("jarvis_forgotten", device.id);   // so an iOS Home Screen link can't silently re-add it
     store.del("jarvis_device");
     store.del("jarvis_transcript");
+    store.del("jarvis_ai");
+    aiConfig = null;
   }
-  const prefs = Object.assign({ speakAlways: false, installDismissed: 0 }, store.get("jarvis_prefs", {}));
+  const prefs = Object.assign({ speakAlways: false, installDismissed: 0, mode: "computer" }, store.get("jarvis_prefs", {}));
+  // The AI settings (the same Groq account as the computer's): handed over once by the computer over the encrypted
+  // relay session, then kept here, so Jarvis keeps answering on this phone while the computer is off.
+  let aiConfig = store.get("jarvis_ai");
+  const phoneAI = () => !!(window.JarvisCore && aiConfig && aiConfig.apiKey);
   const savePrefs = () => store.set("jarvis_prefs", prefs);
 
   // base64url, for the pairing handoff in the URL and the relay's encrypted envelopes
@@ -709,7 +733,11 @@
     try {
       const device = JSON.parse(b64urlToText(m[1]));
       const forgotten = store.get("jarvis_forgotten");
-      if (device && device.id && device.token && !saved() && forgotten !== device.id) saveDevice(device);
+      if (device && device.id && device.token && !saved() && forgotten !== device.id) {
+        if (device.ai && device.ai.apiKey) store.set("jarvis_ai", device.ai);
+        delete device.ai;
+        saveDevice(device);
+      }
     } catch { /* not a usable handoff; ignore it */ }
     history.replaceState(null, "", location.pathname);
   })();
@@ -717,7 +745,7 @@
     const device = saved();
     if (!IS_IOS || isStandalone() || !device) return;
     const minimal = { id: device.id, token: device.token, key: device.key, computerId: device.computerId,
-                      relayUrl: device.relayUrl, name: device.name };
+                      relayUrl: device.relayUrl, name: device.name, ...(aiConfig ? { ai: aiConfig } : {}) };
     history.replaceState(null, "", location.pathname + (on ? "?source=app#jv=" + textToB64url(JSON.stringify(minimal)) : ""));
   }
 
@@ -959,12 +987,13 @@
     refreshInstallCard();
   }
 
-  function showTyping() {
-    if (typingEl) return;
+  function showTyping(label = "Working on it on your computer…") {
+    if (typingEl) { const l = typingEl.querySelector(".label"); if (l) l.textContent = label; return; }
     clearEmpty();
     typingEl = document.createElement("div");
     typingEl.className = "row jarvis typing enter";
-    typingEl.innerHTML = '<div class="dots"><i></i><i></i><i></i></div><div class="label">Working on it on your computer…</div>';
+    typingEl.innerHTML = '<div class="dots"><i></i><i></i><i></i></div><div class="label"></div>';
+    typingEl.querySelector(".label").textContent = label;
     thread.appendChild(typingEl);
     lastRow = null;
     typingTimer = setTimeout(() => typingEl && typingEl.classList.add("long"), 5000);
@@ -1040,7 +1069,12 @@
         conn.renderStatus();
         refreshMenu();
         break;
+      case "ai_config":
+        if (m.apiKey) { aiConfig = m; store.set("jarvis_ai", m); refreshAction(); conn.renderStatus(); }
+        break;
       case "chat": {
+        if (m.sender === "user" && takeEcho(m.text)) break;   // a request the phone's own Jarvis sent there
+        if (m.sender === "ai" && computerRequests.size) { holdComputerAnswer(m); break; }
         if (m.sender === "user") {
           const i = pending.findIndex((p) => p.sent && p.text === (m.text || "").trim());
           if (i >= 0) {   // our own message, now actually received by Jarvis
@@ -1057,6 +1091,13 @@
         break;
       }
       case "reply":
+        if (m.requestId && computerRequests.has(m.requestId)) {   // the phone's own Jarvis asked: it shows the answer
+          const done = computerRequests.get(m.requestId);
+          computerRequests.delete(m.requestId);
+          dropHeldAnswer(m.text);
+          done(m.text);
+          break;
+        }
         // The direct answer to something this phone sent. Usually already on screen from the "chat" mirror just
         // before it; shown here only if not (e.g. "Sorry, I didn't catch that." for unclear voice).
         hideTyping();
@@ -1101,11 +1142,116 @@
     } catch { /* text is on screen either way */ }
   }
 
+  // ===================================================================================================== Jarvis on the phone
+  // The computer's Jarvis does what it always did whenever it's reachable (Computer mode). Jarvis on the phone
+  // handles Phone mode, and everything while the computer is off — answering, searching the web, opening apps —
+  // with run_on_computer as one of its tools, so "on my computer" still reaches the computer when it's on.
+  const computerRequests = new Map();   // requestId -> resolve(answer)
+  const outgoingEcho = [];
+  const heldAnswers = [];
+  const norm = (t) => String(t || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  function takeEcho(text) {
+    const i = outgoingEcho.indexOf(norm(text));
+    if (i < 0) return false;
+    outgoingEcho.splice(i, 1);
+    return true;
+  }
+  function holdComputerAnswer(m) {   // probably the answer to our own request; its reply (with our id) follows
+    const entry = { text: m.text, timer: setTimeout(() => {
+      const i = heldAnswers.indexOf(entry);
+      if (i >= 0) { heldAnswers.splice(i, 1); hideTyping(); addMessage("ai", m.text, { ts: m.ts }); }
+    }, 4000) };
+    heldAnswers.push(entry);
+  }
+  function dropHeldAnswer(text) {
+    const i = heldAnswers.findIndex((h) => h.text === text);
+    if (i >= 0) { clearTimeout(heldAnswers[i].timer); heldAnswers.splice(i, 1); }
+  }
+  function askComputer(request) {
+    if (!conn.ready) return Promise.resolve({ ok: false, text: "Your computer is off or not reachable right now, so I can't do that there." });
+    const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        computerRequests.delete(requestId);
+        resolve({ ok: false, text: "Your computer didn't answer in time. It may still be working on it." });
+      }, 180000);
+      computerRequests.set(requestId, (text) => { clearTimeout(timer); resolve({ ok: true, text }); });
+      outgoingEcho.push(norm(request));
+      if (outgoingEcho.length > 20) outgoingEcho.shift();
+      conn.send({ type: "text", text: request, requestId });
+    });
+  }
+  let phoneAgent = null;
+  const agent = () => phoneAgent || (phoneAgent = window.JarvisCore.createAgent(() => aiConfig, askComputer));
+  let turns = Promise.resolve();
+
+  function historyForAI() {
+    const out = [];
+    for (const m of transcript.slice(-24)) {
+      const role = m.s === "user" ? "user" : "assistant";
+      const prev = out[out.length - 1];
+      if (prev && prev.role === role) prev.content += "\n" + m.t; else out.push({ role, content: String(m.t || "").slice(0, 600) });
+    }
+    return out.slice(-12);
+  }
+
+  async function runOnPhone(text, voice) {
+    const history = historyForAI();
+    addMessage("user", text);
+    showTyping("Still thinking…");
+    let reply;
+    try {
+      reply = await agent().respond({
+        text, mode: prefs.mode, history,
+        computer: { online: conn.ready, name: computerName, status: $("connText").textContent || "not connected" },
+        confirm: async (title, detail) => window.confirm(detail ? `${title}\n${detail}` : title),
+        onActivity: (a) => { if (a.where === "computer" && a.status === "running") showTyping("Working on it on your computer…"); },
+      });
+    } catch (e) {
+      reply = { text: "Something went wrong there. Try again?", where: "none" };
+    }
+    hideTyping();
+    addMessage("ai", reply.text);
+    lastAiTexts.push(reply.text); if (lastAiTexts.length > 5) lastAiTexts.shift();
+    if (voice || prefs.speakAlways) speak(reply.text);
+    // part of the one conversation: the computer's window and its AI hear about it too, whenever it's reachable
+    if (reply.where !== "computer" && conn.ready) conn.send({ type: "phone_turn", user: text, reply: reply.text });
+  }
+
+  /** Who handles this message: the computer's Jarvis, or Jarvis right here on the phone. */
+  function toComputer(text) {
+    if (!phoneAI()) return true;                                   // no AI here yet: the computer's remote, as always
+    const named = window.JarvisCore.explicitTarget(text);
+    if (named === "phone" || prefs.mode === "phone") return false;
+    if (conn.ready) return true;                                   // Computer mode, computer on
+    return ["connecting", "waiting", "starting"].includes(conn.state);   // a moment away: wait for it, as before
+  }
+
+  function refreshModeSwitch() {
+    for (const b of document.querySelectorAll("#modeSwitch button")) b.setAttribute("aria-selected", String(b.dataset.mode === prefs.mode));
+    input.placeholder = prefs.mode === "phone" ? "Ask Jarvis" : "Message Jarvis";
+  }
+  $("modeSwitch").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-mode]");
+    if (!b || b.dataset.mode === prefs.mode) return;
+    prefs.mode = b.dataset.mode;
+    savePrefs();
+    haptic(8);
+    refreshModeSwitch();
+    toast(prefs.mode === "phone" ? "Jarvis acts here on your phone" : "Jarvis acts on your computer");
+  });
+  refreshModeSwitch();
+
   // ===================================================================================================== chat: messages out
-  function sendText(raw) {
+  function sendText(raw, opts = {}) {
     const text = String(raw || "").trim();
     if (!text) return;
     haptic(6);
+    if (!toComputer(text)) {
+      stickToBottom = true;
+      turns = turns.then(() => runOnPhone(text, opts.voice)).catch(() => {});
+      return;
+    }
     const p = { text, ts: Date.now(), sent: false, el: null };
     p.el = addMessage("user", text, { pending: true, noCache: true });
     pending.push(p);
@@ -1139,7 +1285,7 @@
     const mode = hasText || !micAvailable() ? "send" : "mic";
     actionBtn.classList.toggle("send", mode === "send");
     actionBtn.setAttribute("aria-label", mode === "send" ? "Send" : "Hold to talk");
-    actionBtn.disabled = mode === "send" ? !hasText : !conn.ready;
+    actionBtn.disabled = mode === "send" ? !hasText : !(conn.ready || phoneAI());
   }
   input.addEventListener("input", () => { autosize(); refreshAction(); }, { passive: true });
   input.addEventListener("keydown", (e) => {
@@ -1174,8 +1320,11 @@
     r.onerror = () => resolve("");
     r.readAsDataURL(blob);
   });
+  let voiceHere = false, voiceChunks = [];   // transcribed on the phone (Groq) instead of streamed to the computer
   async function startRecording() {
-    if (!conn.ready || recorder) return;
+    if (recorder || !(conn.ready || phoneAI())) return;
+    voiceHere = phoneAI() && !(conn.ready && prefs.mode === "computer");
+    voiceChunks = [];
     recCancelled = false;
     app.classList.add("recording-on");
     actionBtn.classList.add("recording");
@@ -1192,15 +1341,25 @@
     recorder = new MediaRecorder(recStream, mimeType ? { mimeType } : undefined);
     recorder.ondataavailable = async (ev) => {
       if (!ev.data || !ev.data.size || recCancelled) return;
+      if (voiceHere) { voiceChunks.push(ev.data); return; }
       const data = await blobToB64(ev.data);
       if (data && !recCancelled) conn.send({ type: "voice_chunk", data });
     };
     recorder.onstop = () => {
+      if (voiceHere) {
+        if (recCancelled || !voiceChunks.length) return;
+        const audio = new Blob(voiceChunks, { type: voiceChunks[0].type || recorder?.mimeType || "audio/webm" });
+        showTyping("Listening…");
+        window.JarvisCore.transcribe(audio, aiConfig)
+          .then((text) => { hideTyping(); if (text) sendText(text, { voice: true }); else toast("I didn't catch that"); })
+          .catch((e) => { hideTyping(); toast(e && e.message ? e.message : "I couldn't understand that recording"); });
+        return;
+      }
       if (recCancelled) { conn.send({ type: "voice_cancel" }); return; }
       // the final chunk's ondataavailable fires before onstop; give its async send a moment to go out first
       setTimeout(() => { conn.send({ type: "voice_end" }); speakNext = true; showTyping(); }, 60);
     };
-    conn.send({ type: "voice_start" });
+    if (!voiceHere) conn.send({ type: "voice_start" });
     recorder.start(300);
     recStart = Date.now();
     $("recTime").textContent = "0:00";
@@ -1377,6 +1536,7 @@
       this.setState("ready");
       this.startHeartbeat();
       if (this.afterReady) { const fn = this.afterReady; this.afterReady = null; fn(); return; }
+      if (this.viaRelay) this.send({ type: "get_ai_config" });   // only ever sent over this encrypted session
       flushOutbox();
       if (pendingSubscription) { this.send({ type: "push_subscribe", subscription: pendingSubscription }); pendingSubscription = null; }
     },
@@ -1456,7 +1616,20 @@
         replaced: ["Open on another device", false, "Use here", () => this.start()],
         ended: ["Disconnected by your computer", false, "Reconnect", () => this.start()],
       }[s];
-      setBanner(banner);
+      if (phoneAI() && ["unreachable", "closed", "stopped", "ended"].includes(s)) {
+        $("connText").textContent = s === "closed" ? "Jarvis is closed on your computer" : "Computer off";
+        if (s === "closed") setBanner(banner);
+        else if (!this.toldOffline) {
+          // said once when it happens, then out of the way: the chat keeps working here
+          this.toldOffline = true;
+          setBanner(["Your computer is off. Jarvis answers here on your phone.", false]);
+          setTimeout(() => { if (!this.ready) setBanner(null); }, 5000);
+        }
+      } else {
+        if (s === "ready") this.toldOffline = false;
+        setBanner(banner);
+      }
+      $("modeSwitch").hidden = !phoneAI();
       $("mConnectLbl").textContent = this.ready || s === "connecting" || s === "waiting" ? "Disconnect" : "Connect";
     },
   };
@@ -1628,10 +1801,10 @@
     // one, the relay is. Moves this phone's pairing there in the URL fragment (never sent to either server) via the
     // same one-time handoff the relay page already understands (?sync=1), then lands on the install sheet.
     const device = saved();
-    if (!IS_ANDROID || window.isSecureContext || !device || !/^wss:\/\//.test(device.relayUrl || "")) return "";
+    if (!(IS_ANDROID || IS_IOS) || window.isSecureContext || !device || !/^wss:\/\//.test(device.relayUrl || "")) return "";
     try {
       const origin = new URL(device.relayUrl.replace(/^wss/, "https")).origin;
-      return `${origin}/?sync=1&install=1#${encodeURIComponent(JSON.stringify(device))}`;
+      return `${origin}/?sync=1&install=1#${encodeURIComponent(JSON.stringify({ ...device, ...(aiConfig ? { ai: aiConfig } : {}) }))}`;
     } catch { return ""; }
   }
   function openInstall() {
@@ -1640,9 +1813,16 @@
     $("installNative").hidden = !deferredInstall;
     $("installSteps").hidden = !!deferredInstall;
     const secure = secureInstallUrl();
+    // From this computer's own address, the installed app would only open while the computer is on. From the
+    // secure relay address it always opens (and works away from home): install from there.
+    $("installSteps").hidden = !!deferredInstall || !!secure;
+    $("installLead").textContent = secure
+      ? "One more step: Jarvis installs from its secure address, so the app opens even when your computer is off, and away from home."
+      : "Open it straight from your Home Screen, like any app. It reconnects on its own. Nothing to confirm.";
     $("installSecure").hidden = !secure || !!deferredInstall;
     $("installSecure").href = secure || "#";
-    $("installSecure").textContent = "Install the full app (works away from home too)";
+    $("installSecure").textContent = "Continue to install";
+    $("installSecure").className = secure ? "btn brand" : "btn quiet";
     if (IS_MI_BROWSER || IS_IN_APP) {
       $("installNative").hidden = false;
       $("installNative").textContent = "Copy link for Chrome";
@@ -1800,12 +1980,17 @@
   }
 
   fitToVisualViewport();
+  if (window.isSecureContext && "serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => { /* still works, just not offline */ });
+  }
   if (params.get("sync") === "1") {
     // Arrived from the other origin with this phone's pairing in the fragment (see syncToOtherOrigin): save it,
     // then either bounce straight back, or — for the secure-app install — stay right here.
     if (location.hash.length > 1) {
       try {
         const device = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+        if (device && device.ai && device.ai.apiKey) { store.set("jarvis_ai", device.ai); aiConfig = device.ai; }
+        if (device) delete device.ai;
         if (device && device.id && device.token && device.key) saveDevice(device);
       } catch { /* malformed: nothing to save */ }
     }

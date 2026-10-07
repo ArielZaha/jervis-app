@@ -26,7 +26,7 @@ def _free_port():
 
 @pytest.fixture
 def door(tmp_path, monkeypatch):
-    for name in ("phone_client.html", "phone_sw.js", "phone_manifest.webmanifest"):
+    for name in ("phone_client.html", "phone_sw.js", "phone_manifest.webmanifest", "phone_agent.js"):
         os.symlink(os.path.join(ROOT, name), tmp_path / name)
     os.symlink(os.path.join(ROOT, "phone_icons"), tmp_path / "phone_icons")
     (tmp_path / "settings.json").write_text(json.dumps({"values": {"JARVIS_PHONE_CONTROL": "on"}}))
@@ -101,6 +101,7 @@ def test_the_phone_app_page_and_icons_are_served_and_nothing_else(door):
     page = asyncio.run(get("/"))
     assert b" 200 " in page.split(b"\r\n")[0] and b"__SERVED_BY_RELAY__" not in page and b"Jarvis" in page
     assert b" 200 " in asyncio.run(get("/icons/icon-192.png")).split(b"\r\n")[0]
+    assert b" 200 " in asyncio.run(get("/agent.js")).split(b"\r\n")[0]
     assert b" 404 " in asyncio.run(get("/settings.json")).split(b"\r\n")[0]
     assert b" 404 " in asyncio.run(get("/phone_devices.json")).split(b"\r\n")[0]
 

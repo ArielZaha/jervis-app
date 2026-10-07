@@ -403,6 +403,7 @@ _CLIENT_PAGE = paths.resource("phone_client.html")
 _SERVICE_WORKER = paths.resource("phone_sw.js")
 _CONFIRM_PAGE = paths.resource("confirm.html")
 _MANIFEST = paths.resource("phone_manifest.webmanifest")
+_AGENT = paths.resource("phone_agent.js")   # the phone app's own Jarvis (built from mobile/src: npm run build:web)
 _ICON_DIR = paths.resource("phone_icons")
 # The only icon files ever served — a fixed list, never a path taken from the request (no file browsing).
 ICON_FILES = frozenset({"icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png",
@@ -451,6 +452,12 @@ def serve_static(connection, request, active_pair_code=None):
         try:
             with open(_MANIFEST, "rb") as f:
                 return _response(f.read(), "application/manifest+json", "no-cache")
+        except OSError:
+            return connection.respond(404, "Not found.")
+    if path == "/agent.js":
+        try:
+            with open(_AGENT, "rb") as f:
+                return _response(f.read(), "text/javascript; charset=utf-8", "no-cache")
         except OSError:
             return connection.respond(404, "Not found.")
     icon = icon_name_for(path)
