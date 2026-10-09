@@ -16,6 +16,8 @@ faster-whisper             # Speech recognition on this computer: no key, works 
 av                          # Decodes a phone's voice recording (webm/opus, mp4/aac, ...) for relay_client.py; also
                             # already a faster-whisper dependency, but relay_client.py imports it directly too now
 numpy
+phonikud                   # Hebrew voice: vowel marks -> phonemes (CC-BY-4.0); see hebrew_voice.py
+phonikud-onnx              # Hebrew voice: the diacritizer that adds the vowel marks (runs on onnxruntime)
 
 # Windows: exact volume control (without it Jervis presses the keyboard volume keys instead)
 pycaw; sys_platform == "win32"

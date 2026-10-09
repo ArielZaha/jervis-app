@@ -46,7 +46,7 @@ def test_jervis_and_the_desktop_are_never_matched(fake_windows):
 
 
 def test_this_app_is_the_one_behind_jervis(fake_windows, monkeypatch):
-    monkeypatch.setattr(winctl, "list_windows", lambda: [(5, "Jervis"), (3, "x - Visual Studio Code‬")])
+    monkeypatch.setattr(winctl, "list_windows", lambda: [(5, "Jervis"), (3, "x - Visual Studio Code\u202c")])
     hwnd, _title, friendly = app_launcher.front_app_window()
     assert hwnd == 3 and friendly == "Visual Studio Code"
 

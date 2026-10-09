@@ -5,6 +5,7 @@ copies everything printed to the console into the log file as well, with a times
 Jervis answered is never written to the log (those lines are replaced by a placeholder): conversation text belongs in
 the transcripts, which the user can switch off, not in a diagnostic file that may be shared to report a problem.
 """
+import faulthandler
 import os
 import re
 import sys
@@ -22,6 +23,7 @@ _PRIVATE = re.compile(r"^(\s*)(Recognized|Speaking|Typed|Heard|You said|Transcri
 _lock = threading.Lock()
 _log_file = None
 _log_path = None
+_crash_file = None
 
 
 def log_path() -> str:
@@ -125,6 +127,41 @@ def install() -> str:
     except OSError:
         return _log_path   # no log (read-only disk?): Jervis still runs, just without the file
     write(f"===== Jervis backend starting (pid {os.getpid()}, data folder {paths.DATA_DIR}) =====")
+    _report_previous_crash()
+    _catch_native_crashes()
+    # The window reads the engine's output as UTF-8 (backend.js), but the packaged engine ignores PYTHONIOENCODING
+    # and wrote the Windows code page: Hebrew arrived as gibberish. Say it in UTF-8 whatever the system's language.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, ValueError, OSError):
+            pass
     sys.stdout = _Tee(sys.stdout)
     sys.stderr = _Tee(sys.stderr)
     return _log_path
+
+
+def crash_log_path() -> str:
+    return os.path.join(paths.logs_dir(), "crash.log")
+
+
+def _catch_native_crashes() -> None:
+    """A crash inside a native library (audio, speech, AI runtime) ends the process before Python can print anything,
+    so the log used to show nothing at all. faulthandler writes every thread's Python stack to crash.log at that
+    moment; the next start copies it into this log (see _report_previous_crash)."""
+    global _crash_file
+    try:
+        _crash_file = open(crash_log_path(), "w", encoding="utf-8")
+        faulthandler.enable(file=_crash_file, all_threads=True)
+    except (OSError, ValueError, RuntimeError):
+        _crash_file = None
+
+
+def _report_previous_crash() -> None:
+    try:
+        with open(crash_log_path(), encoding="utf-8", errors="replace") as f:
+            stacks = f.read().strip()
+    except OSError:
+        return
+    if stacks:
+        write("The previous run crashed inside a native library. Where each thread was:\n" + stacks)

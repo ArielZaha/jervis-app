@@ -13,7 +13,12 @@ import tempfile
 
 REQUIRED = ["websockets", "requests", "groq", "speech_recognition", "pyaudio", "psutil", "spotipy", "PIL", "numpy",
             "faster_whisper", "ctranslate2", "onnxruntime", "av", "mss", "dotenv",
-            "computer_use", "screen_vision", "stt_local", "local_ai", "local_llm", "settings", "paths"]
+            "computer_use", "screen_vision", "stt_local", "local_ai", "local_llm", "settings", "paths", "language",
+            "nlu", "hebrew_voice", "phonikud", "phonikud_onnx"]
+# Read with paths.resource(): an installed engine without one of them fails only when that feature is used (a
+# missing phone page once broke every phone connection), so the self-test checks each is really there.
+BUNDLED_FILES = ["phone_client.html", "phone_sw.js", "confirm.html", "blender_bridge.py", "blender_kit.py",
+                 "blender_assets.py"]
 PLATFORM = {
     "win32": ["uiautomation", "comtypes", "pycaw", "screen_windows", "winctl"],
     "darwin": ["Quartz", "AppKit", "ApplicationServices", "screen_mac"],
@@ -36,6 +41,14 @@ def run() -> int:
     for name in REQUIRED + PLATFORM.get(sys.platform, []) + OPTIONAL:
         passed = _check(results, name, lambda n=name: importlib.import_module(n) and None)
         ok = ok and (passed or name in OPTIONAL)
+
+    def bundled_files():   # files the engine reads from its own folder (pages for the phone, Blender scripts)
+        import paths
+        missing = [name for name in BUNDLED_FILES if not os.path.isfile(paths.resource(name))]
+        if missing:
+            raise FileNotFoundError(", ".join(missing))
+        return f"ok ({len(BUNDLED_FILES)} files)"
+    ok = _check(results, "bundled_files", bundled_files) and ok
 
     def flac():
         import speech_recognition as sr
@@ -90,6 +103,11 @@ def run() -> int:
     except Exception as e:  # noqa: BLE001
         results["computer_control"] = f"not ready: {e}"
 
+    def speech_engine():   # which speech models this computer would use (the GPU needs Ollama's CUDA libraries)
+        import stt_local
+        return f"{'/'.join(stt_local.plan())} ({'GPU' if stt_local.gpu_possible() else 'CPU'})"
+    _check(results, "speech_engine", speech_engine)
+
     if "--speech" in sys.argv:   # also download the speech model and run it (needs the internet, ~150 MB)
         def speech():
             import io
@@ -105,9 +123,19 @@ def run() -> int:
                 w.setframerate(16000)
                 w.writeframes(b"\0\0" * 16000)
             started = time.time()
-            stt_local.transcribe(clip.getvalue())
-            return f"ok (model in {paths.models_dir()}, ran in {time.time() - started:.1f}s)"
+            heard = stt_local.transcribe_full(clip.getvalue())
+            return f"ok ({heard.engine or stt_local.engine_summary()}, models in {paths.models_dir()}, "                    f"ran in {time.time() - started:.1f}s)"
         ok = _check(results, "offline_speech", speech) and ok
+
+        def hebrew_voice():   # the natural Hebrew voice really speaks (its tables and models are all packaged)
+            import time
+            import hebrew_voice as voice
+            if not voice.available():
+                return "not downloaded (Windows' Hebrew voice speaks instead)"
+            started = time.time()
+            wav = voice.synthesize("שלום, פתחתי את Blender ב-14:32.")
+            return f"ok ({len(wav) // 44100:.0f}s of speech in {time.time() - started:.1f}s)"
+        ok = _check(results, "hebrew_voice_speaks", hebrew_voice) and ok
 
     results["python"] = sys.version.split()[0]
     results["frozen"] = bool(getattr(sys, "frozen", False))

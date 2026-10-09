@@ -7,6 +7,8 @@ import platform
 import time
 from ctypes import wintypes
 
+import pointer_motion
+
 IS_WIN = platform.system() == "Windows"
 
 VK = {
@@ -131,10 +133,26 @@ def _mouse(flags: int, data: int = 0) -> None:
     _send([_INPUT(type=0, mi=_MOUSEINPUT(0, 0, data, flags, 0, 0))], strict=True)   # only computer control clicks
 
 
+def move_pointer(x: int, y: int) -> None:
+    """Glide the pointer to (x, y) the way a hand would (see pointer_motion), so the user can follow it. Raises
+    pointer_motion.PointerTakenOver if the user grabs the mouse on the way."""
+    _need_windows()
+    winmm = ctypes.windll.winmm
+    winmm.timeBeginPeriod(1)   # 1 ms sleeps for the glide's ticks (Windows' default granularity is ~15 ms)
+    try:
+        pointer_motion.glide(cursor_position(), (int(x), int(y)),
+                             set_position=lambda px, py: ctypes.windll.user32.SetCursorPos(px, py),
+                             get_position=cursor_position, sleep=time.sleep)
+    finally:
+        winmm.timeEndPeriod(1)
+
+
 def click(x: int, y: int, button: str = "left", double: bool = False) -> None:
     _need_windows()
-    ctypes.windll.user32.SetCursorPos(int(x), int(y))
-    time.sleep(0.05)
+    move_pointer(x, y)
+    time.sleep(0.06)   # arrive, then press: a click mid-motion is what lands on the wrong thing
+    if cursor_position() != (int(x), int(y)):
+        raise pointer_motion.PointerTakenOver("You moved the mouse, so I didn't click.")
     down, up = (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP) if button == "right" else \
                (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP)
     for _ in range(2 if double else 1):
@@ -147,7 +165,7 @@ def scroll(amount: int, x: int = None, y: int = None) -> None:
     """amount: positive scrolls up, negative down (in notches)."""
     _need_windows()
     if x is not None and y is not None:
-        ctypes.windll.user32.SetCursorPos(int(x), int(y))
+        move_pointer(x, y)
     _mouse(MOUSEEVENTF_WHEEL, ctypes.c_uint32(int(amount) * 120).value)
 
 

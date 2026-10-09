@@ -16,7 +16,8 @@ except ImportError as _missing:
 import paths  # noqa: E402  where Jervis reads his files and where he writes (see paths.py)
 import logbook  # noqa: E402
 import settings  # noqa: E402
-logbook.install()   # before anything prints, so startup problems end up in logs/jervis.log too
+if "--selftest" not in __import__("sys").argv:   # (an installed copy checking itself isn't Jervis starting up)
+    logbook.install()   # before anything prints, so startup problems end up in logs/jervis.log too
 settings.load()     # before any module reads its configuration from the environment
 import platform
 import re
@@ -58,6 +59,11 @@ import google_accounts
 import local_llm
 import local_ai
 import stt_local
+import language
+import microphones
+import write_here
+import agent_code
+import screen_reader
 import blender_commands
 import blender_control
 import agent_blender
@@ -68,6 +74,7 @@ import reasoning
 import nlu
 import computer_use
 import spotify_local
+import spotify_match
 import osal
 import calendar_api
 import calendar_time
@@ -90,6 +97,7 @@ import sms
 import queue
 from timers import TimerManager, format_duration, parse_timer_command
 from speech_fixes import fix_names
+import speech_fixes
 import timeparse
 from timeparse import format_time, parse_start_time
 
@@ -238,6 +246,18 @@ def is_wake_command(text: str) -> bool:
     return any(re.search(rf"\b{re.escape(phrase)}\b", normalized) for phrase in WAKE_PHRASES)
 
 
+_WAKE_LEAD = re.compile(r"^.*?\b(?:wake up|hey|hello|hi|ok|okay)\s+(?:jervis|jarvis)\b[\s,.!?:;-]*", re.I)
+
+
+def after_wake_phrase(text: str) -> str:
+    """What was said after the wake phrase, if it's a request ("Hey Jervis, create a house" -> "create a house"),
+    else "" (just "Hey Jervis", or "hey Jervis are you there")."""
+    rest = _WAKE_LEAD.sub("", text or "", count=1).strip(" ,.!?")
+    if len(rest.split()) < 2 or _EXPLICIT_WAKE.fullmatch(" ".join(re.sub(r"[^a-z0-9 ]", " ", rest.lower()).split())):
+        return ""
+    return rest[0].upper() + rest[1:]
+
+
 _EXPLICIT_WAKE = re.compile(r"(?:(?:hey|hi|hello|ok|okay|wake up|wake)\s+)?(?:jervis|jarvis)(?:\s+(?:wake up|are you there|you there))?|wake up|are you there")
 
 
@@ -360,9 +380,42 @@ class PhoneVoiceInput(str):
 PRIVATE_PLACEHOLDER = "[private WhatsApp messages: shown and read aloud only]"
 
 
+def localized(reply):
+    """`reply` (English) in the language the user is speaking (language.py), as the same kind of reply: a private
+    one stays private, a SpokenReply's spoken version is translated too. Unchanged for English, for text already in
+    the user's language, and when it can't be translated reliably."""
+    code = language.reply_language()
+    if code == "en" or not reply or not isinstance(reply, str):
+        return reply
+    try:   # never a model call on an event loop's thread (the window's connection): it would stall the loop
+        asyncio.get_running_loop()
+        allow_model = False
+    except RuntimeError:
+        allow_model = True
+    try:
+        text = language.to_user_language(str(reply), code, allow_model=allow_model)
+        spoken = (language.to_user_language(reply.spoken, code, allow_model=allow_model)
+                  if isinstance(reply, SpokenReply) else None)
+    except Exception:
+        traceback.print_exc()
+        return reply
+    if text == str(reply) and spoken is None:
+        return reply
+    if type(reply) is str:
+        return text
+    out = str.__new__(type(reply), text)
+    out.__dict__.update(getattr(reply, "__dict__", {}))
+    if spoken is not None:
+        out.spoken = spoken
+    return out
+
+
 def broadcast(sender, text="", image=None, image_kind=None):
     """Show (and, unless private, log) a chat message. `image` is a data: URL, for a picture the user attached or
-    Jervis made/edited; `text` may be empty when a message is only a picture."""
+    Jervis made/edited; `text` may be empty when a message is only a picture. Jervis's own messages are shown in the
+    language the user is speaking."""
+    if sender != "user" and text:
+        text = localized(text)
     private = isinstance(text, PrivateReply)
     text = str(text).strip() if text else ""
     if not text and not image:
@@ -469,20 +522,11 @@ def _connection_allowed(websocket) -> bool:
 
 def list_microphones() -> list:
     """Names of the input devices, for the Settings screen (the same order PyAudio numbers them in)."""
-    names = []
     try:
-        import pyaudio
-        audio = pyaudio.PyAudio()
-        try:
-            for i in range(audio.get_device_count()):
-                info = audio.get_device_info_by_index(i)
-                if int(info.get("maxInputChannels", 0)) > 0 and info.get("name") not in names:
-                    names.append(info.get("name"))
-        finally:
-            audio.terminate()
+        return microphones.input_device_names()
     except Exception as e:
         print(f"Could not list microphones: {e}", flush=True)
-    return names
+        return []
 
 
 # Listing microphones and voices takes seconds (the audio system and the OS voice list are slow to ask), so they are
@@ -1041,6 +1085,35 @@ def show_weather(city: str = "", refresh: bool = False, speak_reply: bool = True
     return text
 
 
+_CLOCK_TIME = re.compile(r"^(?:hey |ok |okay )?(?:jervis[, ]+)?(?:(?:can you |could you )?(?:please )?tell me )?"
+                         r"(?:what(?:'s| is) the (?:current )?time(?: (?:now|right now|please))?|what time is it"
+                         r"(?: (?:now|right now|please))?|(?:the )?time(?: please| now)?|current time)\??$", re.I)
+_CLOCK_DATE = re.compile(r"^(?:hey |ok |okay )?(?:jervis[, ]+)?(?:(?:can you |could you )?(?:please )?tell me )?"
+                         r"(?:what(?:'s| is) (?:the date|today'?s date|the date today)|what date is (?:it|today)"
+                         r"(?: today)?|what day is (?:it|today)(?: today)?|which day is (?:it|today)|"
+                         r"what(?:'s| is) today)\??$", re.I)
+_CLOCK_TIME_HE = re.compile(r"^(?:מה|כמה) השעה(?: עכשיו)?\??$")
+_CLOCK_DATE_HE = re.compile(r"^(?:איזה יום (?:היום|זה היום)|מה התאריך(?: היום)?|איזה תאריך היום)\??$")
+
+
+def handle_clock_question(text: str):
+    """"What time is it?" / "What's the date?": this computer's own clock answers, instantly. (The chat model has no
+    clock: asked, it said it couldn't check the time.)"""
+    said = " ".join((text or "").strip().rstrip(".!").split())
+    now = datetime.now()
+    clock = now.strftime("%H:%M")
+    day = f"{now.strftime('%A')}, {now.strftime('%B')} {now.day}, {now.year}"
+    if _CLOCK_TIME.match(said):
+        return f"It's {clock}."
+    if _CLOCK_DATE.match(said):
+        return f"Today is {day}."
+    if _CLOCK_TIME_HE.match(said):
+        return f"השעה {clock}."
+    if _CLOCK_DATE_HE.match(said):
+        return f"היום {now.day}.{now.month}.{now.year}."
+    return None
+
+
 def handle_weather_command(text: str):
     request = parse_weather_request(text)
     if request is None:
@@ -1596,10 +1669,9 @@ def parse_spotify_request(text: str):
     if not m:
         return None
     query = re.sub(r"\b(?:(?:on|in|with|using|from)\s+)?spotify\b", " ", m.group(1), flags=re.I)
-    query = re.sub(r"\b(?:the\s+)?(?:song|track|music)\b", " ", query, flags=re.I)
-    query = re.sub(r"\bby\b", " ", query, flags=re.I)
-    query = " ".join(query.split())
-    return (query, seconds) if query else None
+    # (what it says stays: "by Pink Floyd" names the artist, "playlist" what kind — spotify_match reads them)
+    query = " ".join(query.split()).strip(" ,.")
+    return (query, seconds) if query and spotify_match.parse(query)["text"] else None
 
 
 def parse_seek_command(text: str):
@@ -2197,7 +2269,8 @@ _multi_active = False
 _TASK_START = (r"(?:draw|drew|graph|plot|sketch|paint|solve|find|calculate|compute|factor|expand|simplify|open|close|play|pause|stop|resume|skip|set|start|"
                r"cancel|remind|write|read|check|tell|show|what|what's|whats|how|who|where|when|why|search|google|turn|mute|unmute|send|make|create|give|"
                r"explain|list|translate|convert|remember|call|text|schedule|add|remove|delete|type|launch|switch|go|save|put|bring|take|"
-               r"build|construct|model|design|place|in blender)")
+               r"build|construct|model|design|place|in blender|improve|refine|polish|enhance|plant|grow|scatter|"
+               r"color|colour|rotate|move|scale|resize|duplicate|undo|export|render)")
 _TASK_SPLIT = re.compile(
     rf"(?:\s*[.;!?]+\s+(?:(?:and|then|also)\s+(?:then\s+|also\s+)?)?|\s*,\s*(?:and\s+)?(?:then\s+|also\s+)?|\s+(?:and\s+then|and\s+also|and|then|also|after\s+that|afterwards|plus)\s+)(?=(?i:{_TASK_START})\b)",
     re.I)
@@ -2207,6 +2280,30 @@ def split_tasks(text: str) -> list:
     """The separate things asked for in one message (each starts with an action or a question), or the whole text as one."""
     parts = [p.strip(" ,.;") for p in _TASK_SPLIT.split((text or "").strip())]
     return [p for p in parts if p] or [text]
+
+
+_OPEN_BLENDER = re.compile(r"^(?:please |now |then |first )*(?:open|launch|start|run)\s+(?:up\s+)?blender(?:\s+\d[\d.]*)?"
+                           r"[.!]?$", re.I)
+_IN_BLENDER = re.compile(r"\s*,?\s*\b(?:in|inside|with|using) blender\b", re.I)
+
+
+def blender_sequence(text: str, parts: list):
+    """The parts of a several-step Blender request, in order (without "open Blender", which the task does anyway),
+    or None when this isn't one. Blender is named, or was just being worked in, and the parts are things to build,
+    change or save there."""
+    if len(parts) < 2:
+        return None
+    named = bool(re.search(r"\bblender\b", text or "", re.I))
+    if not named and time.time() - blender_last_used > BLENDER_RECENT_SECONDS:
+        return None
+    steps = [_IN_BLENDER.sub("", p).strip(" ,.") for p in parts if not _OPEN_BLENDER.match(p.strip(" ,."))]
+    steps = [p for p in steps if p]
+    blenderish = [p for p in steps if blender_commands.is_command(p) or _BUILD_REQUEST.match(p)
+                  or agent_blender.save_request(p)[1] is not None or re.match(r"^(?:and\s+|then\s+)*save\b", p, re.I)
+                  or re.match(r"^(?:improve|refine|polish|enhance|fix)\b", p, re.I)]
+    if len(steps) < 2 or len(blenderish) < len(steps):
+        return None   # something in it isn't Blender work ("... and play some music"): the usual paths
+    return steps
 
 
 def handle_multi_task(text: str):
@@ -2221,6 +2318,12 @@ def handle_multi_task(text: str):
             return None   # "take control of my computer and open Notepad": the "and" joins the request to its goal
         text = goal   # "take control, open Blender, then make the cube bigger": each part on its own, in order
     parts = [p for p in split_tasks(text) if not _CONTROL_BARE.match(p)]   # "take on my computer, then …"
+    sequence = blender_sequence(text, parts)
+    if sequence:
+        # "Open Blender, create an island, add trees, improve the water, and save it": the parts build on each
+        # other, so they run one after another, each checked, in ONE task (agent_core.SequenceTask) — answering
+        # them here one by one started each before the last had finished, and saved an empty scene.
+        return start_computer_task(text, blender=True, sequence=sequence)
     if len(parts) < 2 or split_open_and_do(text):
         return None
     _multi_active = True
@@ -2323,6 +2426,19 @@ _SESSION_QUESTION = re.compile(
     r"^(?:what|why|how|when|who|where|which|can you tell me|tell me about|"
     r"(?:is|are|do|does)\s+(?:you|we|i|it|there|this|that)\b(?!\s+again\b))\b", re.I)
 _YES = re.compile(r"(?:yes|yeah|yep|sure|ok|okay|go ahead|do it|allow|allowed|fine|please do|yes please)")
+
+
+def bare_answer(text: str):
+    """True for a bare yes ("yes", "ok", "כן"), False for a bare no, None for anything that says more — a follow-up
+    that asked for a song or a search never takes "yes" as the song or the search."""
+    n = " ".join(re.sub(r"[^a-z\u05d0-\u05ea' ]", " ", (text or "").lower().replace("\u2019", "'")).split())
+    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jervis|jarvis) ", "", n)
+    n = re.sub(r"\s+(?:thanks|thank you|please|jervis|jarvis)$", "", n)
+    if _YES.fullmatch(n) or n in ("כן", "בטח", "סבבה", "אוקיי", "יאללה", "כן בבקשה", "תעשה את זה"):
+        return True
+    if _NO.fullmatch(n) or n in ("לא", "לא תודה", "בטל", "עזוב"):
+        return False
+    return None
 _NO = re.compile(r"(?:no|nope|don't|do not|don't do it|cancel|stop|not now|never mind|nevermind)")
 
 
@@ -2390,18 +2506,20 @@ def open_control_question(question: str) -> str:
     """Show a yes/no question in the window and listen for "yes"/"no". Returns its id for wait_control_answer.
     Also shown in a connected phone's chat, where typing "yes"/"no" answers it the same way."""
     global pending_control_question
+    question = localized(question)
     ask_id = f"q{int(time.time() * 1000)}"
     _control_questions[ask_id] = (threading.Event(), {"answer": None})
     pending_control_question = {"id": ask_id, "at": time.time()}
     send_ui_update_once({"type": "control_confirm", "id": ask_id, "question": question})
-    mirror_to_phone({"type": "chat", "sender": "ai", "text": f"{question} (yes / no)"})
+    mirror_to_phone({"type": "chat", "sender": "ai", "text": f"{question} {language.phrase('(yes / no)')}"})
     return ask_id
 
 
 def ask_control_question(question: str, timeout: float = 90.0) -> bool:
     """Ask the user (in the window and aloud) and wait for yes or no. No answer means no."""
+    question = localized(question)
     ask_id = open_control_question(question)
-    announcements.put(f"{question} Say yes or no.")
+    announcements.put(f"{question} {language.phrase('Say yes or no.')}")
     return wait_control_answer(ask_id, timeout)
 
 
@@ -2545,7 +2663,7 @@ def _which_app_first(goal: str):
 
 
 def start_computer_task(goal: str, scripted=None, after=None, persistent: bool = False, blender: bool = False,
-                        agent_adapter=None) -> str:
+                        agent_adapter=None, sequence=None) -> str:
     """Use the mouse and keyboard for `goal`: worked out step by step by the AI, or, with `scripted`, a list of
     known steps (see computer_use.ScriptedTask). Either way: asked first (Settings), shown, and stoppable.
 
@@ -2556,7 +2674,8 @@ def start_computer_task(goal: str, scripted=None, after=None, persistent: bool =
     flag — whatever is already granted covers anything said next."""
     global computer_task, control_session
     mode = (os.getenv("JERVIS_COMPUTER_CONTROL") or "ask").strip().lower()
-    if mode == "off":
+    # Off means no mouse and keyboard. Building in Blender through its scripting bridge uses neither, so it stays on.
+    if mode == "off" and not (blender and not scripted and goal.strip()):
         return "Using the mouse and keyboard is turned off. You can allow it in Settings, under Computer control."
     if not _make_room_for_new_task():
         return "Still working on that — one moment."
@@ -2582,7 +2701,7 @@ def start_computer_task(goal: str, scripted=None, after=None, persistent: bool =
     # "open Blender" launched with the scripting bridge from the start, so a follow-up goal ("create a chair")
     # doesn't have to restart it and ask first (see blender_control.ensure_bridge).
     blender_open = None
-    if not bare and not scripted:
+    if not bare and not scripted and not sequence:   # (a sequence opens Blender itself, if it isn't open)
         opening = parse_open_request(goal)
         if opening and not app_launcher.means_this_app(opening):
             status, value = resolve_app(opening)
@@ -2655,17 +2774,27 @@ def start_computer_task(goal: str, scripted=None, after=None, persistent: bool =
                             "maxSteps": 0})
                     launching.join(blender_control.LAUNCH_SECONDS)   # never start a second Blender meanwhile
                 bridge = blender_control.ensure_bridge(session, confirm=ask_control_question)
-                if not bridge:   # Blender unreachable, or the user declined restarting it: fall back to plain clicking
+                if not bridge and mode == "off":   # clicking is what's turned off: don't fall back to it
+                    result = ("I can't reach Blender's scripting bridge, and using the mouse and keyboard is turned "
+                              "off, so I didn't do anything. Is Blender open?")
+                    computer_task = None
+                    report({"state": "error", "detail": result, "goal": goal, "step": 0, "maxSteps": 0})
+                elif not bridge:   # Blender unreachable, or the user declined restarting it: fall back to plain clicking
                     task = computer_use.ComputerTask(goal, env, _ask_ai_for_control, report=report,
                                                      confirm=ask_control_question, vision=vision, max_steps=steps,
                                                      finish_after=finishing_actions(goal))
+                elif sequence and local_llm.role_model("agent"):
+                    # Several parts, in order, each planned, done and checked before the next (agent_core.SequenceTask).
+                    task = agent_core.SequenceTask(goal, sequence, agent_blender.BlenderAdapter(bridge, session),
+                                                   report=report, confirm=ask_control_question,
+                                                   history=session.history, memory=agent_memory_store)
                 else:
                     deterministic = blender_commands.steps_for(goal, session, bridge)
                     if deterministic:
                         # The common case: a known, verified bpy snippet — no model call, nothing to invent.
                         task = computer_use.ScriptedTask(goal, deterministic, report=report,
                                                          cursor=spotify_local.cursor)
-                    elif not blender_commands.looks_concrete(goal):
+                    elif not blender_commands.looks_concrete(goal) and not wants_picture_rebuilt(goal):
                         # Never hand a vague/incomplete remark to the AI to interpret — ask instead.
                         result = blender_commands.clarification_for(goal)
                         computer_task = None
@@ -2825,6 +2954,9 @@ def handle_direct_command(text: str):
     planet_reply = handle_planet_command(text)
     if planet_reply:
         return planet_reply
+    clock_reply = handle_clock_question(text)
+    if clock_reply:
+        return clock_reply
     weather_reply = handle_weather_command(text)
     if weather_reply:
         return weather_reply
@@ -2853,6 +2985,15 @@ def handle_direct_command(text: str):
             return write_document(
                 "Put exactly what the user dictated into the document, formatted neatly (a clean bulleted list if it is a "
                 f"list of items). Do not add anything they did not say. Dictation: {text}", pending["app"])
+    global pending_spotify_choice
+    if pending_spotify_choice:
+        pending, pending_spotify_choice = pending_spotify_choice, None
+        if time.time() - pending["at"] < 60:
+            answer = bare_answer(text)
+            if answer is True:   # exactly the result that was offered, by its URI — "yes" is never a new request
+                return play_spotify_choice(pending)
+            if answer is False:
+                return "Okay, I didn't play anything."
     global pending_spotify_request
     if pending_spotify_request:
         pending, pending_spotify_request = pending_spotify_request, None
@@ -2860,6 +3001,9 @@ def handle_direct_command(text: str):
             cleaned = " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())
             if re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|stop|nevermind)", cleaned):
                 return "Okay."
+            if bare_answer(text) is not None:   # "yes"/"ok" to "what would you like to listen to?" isn't a song
+                pending_spotify_request = {"at": time.time()}
+                return "What should I play?"
             return play_song(text)
     global pending_google_search
     if pending_google_search:
@@ -2868,6 +3012,9 @@ def handle_direct_command(text: str):
             cleaned = " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())
             if re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|stop|nevermind)", cleaned):
                 return "Okay."
+            if bare_answer(text) is not None:
+                pending_google_search = {"at": time.time()}
+                return "What should I search for?"
             return google_search(text)
     app_reply = handle_app_followup(text)
     if app_reply:
@@ -2879,6 +3026,9 @@ def handle_direct_command(text: str):
             cleaned = " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())
             if re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|stop|nevermind)", cleaned):
                 return "Okay."
+            if bare_answer(text) is not None:
+                pending_netflix_request = {"at": time.time()}
+                return "What should I put on?"
             return play_netflix_show(text)
     global pending_stremio_request
     if pending_stremio_request:
@@ -2887,6 +3037,9 @@ def handle_direct_command(text: str):
             cleaned = " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())
             if re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|stop|nevermind)", cleaned):
                 return "Okay."
+            if bare_answer(text) is not None:
+                pending_stremio_request = {"at": time.time()}
+                return "What should I put on?"
             return play_stremio_title(text)
     global pending_calendar_choice
     if pending_calendar_choice:
@@ -2932,6 +3085,15 @@ def handle_direct_command(text: str):
     trailer = parse_trailer_request(text)
     if trailer is not None:
         return play_trailer(trailer, new_tab=wants_new_tab(text))
+    seen = handle_screen_question(text)
+    if seen:
+        return seen
+    here = handle_write_here(text)
+    if here:
+        return here
+    program = handle_program_request(text)
+    if program:
+        return program
     if documents.is_transfer_request(text):
         return transfer_to_document(text)
     if documents.is_blank_request(text):
@@ -3081,13 +3243,17 @@ def is_blender_goal(goal: str, said: str = "") -> bool:
     with "Blender" said outright. Not "take control …" or "open Blender …" sentences: those have their own paths."""
     said = said or goal
     named = bool(re.search(r"\bblender\b", said, re.I))
-    if goal and _BLENDER_HOUSEKEEPING.fullmatch(goal) and (named or time.time() - blender_last_used <
-                                                           BLENDER_RECENT_SECONDS):
+    recent = time.time() - blender_last_used < BLENDER_RECENT_SECONDS
+    if goal and _BLENDER_HOUSEKEEPING.fullmatch(goal) and (named or recent):
         return True   # "undo" / "do it again" right after working in Blender means Blender's last change
+    if goal and blender_commands.correction(goal) and (named or recent):
+        return True   # "no, the roof" / "the door too" right after a Blender command corrects or repeats it
     if not goal or not looks_like_session_goal(goal) or _is_explicit_control_phrase(said):
         return False
     if re.search(r"\b(?:open|launch|start)\s+(?:up\s+)?blender\b", said, re.I):
         return False
+    if not named and agent_code.is_program_request(said):
+        return False   # "create a Python program that ..." right after Blender work is for the code agent
     known = blender_commands.is_command(goal)
     thing = bool(_BLENDER_THING.search(said)) and blender_commands.looks_concrete(goal)
     build = (bool(_BUILD_REQUEST.match(goal)) and blender_commands.looks_concrete(goal)
@@ -3106,7 +3272,8 @@ def is_blender_goal(goal: str, said: str = "") -> bool:
 
 _BUILD_REQUEST = re.compile(r"^(?:please |can you |could you |now |then |also )*(?:create|make|build|model|design|"
                             r"add|draw|generate|construct|put|place|give me|sculpt|colou?r|paint|rotate|spin|scale|"
-                            r"resize|duplicate|rename|move|delete|remove|stack|arrange|align)\b", re.I)
+                            r"resize|duplicate|rename|move|delete|remove|stack|arrange|align|plant|grow|scatter|"
+                            r"spawn|set up|erect)\b", re.I)
 # "Remove the timer" / "move the song to my playlist" with Blender in front are still not about the scene.
 _NOT_BLENDER = re.compile(r"\b(?:timers?|alarms?|songs?|music|tracks?|volume|reminders?|playlists?|videos?|tabs?|"
                           r"windows? (?:of|in) (?:chrome|the browser)|emails?|messages?|events?|meetings?)\b", re.I)
@@ -3183,11 +3350,32 @@ def blender_launching() -> bool:
 
 
 def prime_blender_agent() -> None:
+    # Not while the conversation is in another language: on an 8 GB GPU the agent's model and the translator can't
+    # both stay loaded, and warming one up evicts the other just before it's needed (each swap ~5 s).
+    if language.reply_language() != "en" and language.translator():
+        return
     agent_core.AgentTask("", agent_blender.BlenderAdapter(None)).prime()
+
+
+def wants_picture_rebuilt(text: str) -> bool:
+    """"Recreate this image in Blender" / "turn this photo into a 3D scene" with a picture in the conversation:
+    the Blender agent rebuilds it (agent_blender reads the picture itself) — never the chat AI describing it."""
+    try:
+        import reconstruct
+    except Exception:
+        return False
+    if not reconstruct.is_reconstruction_request(text) or not images.has_pending_context():
+        return False
+    named = re.search(r"\b(?:blender|3d|3-d|three[- ]d|scene)\b", text or "", re.I)
+    return bool(named or blender_control.blender_running() or
+                time.time() - blender_last_used < BLENDER_RECENT_SECONDS)
 
 
 def handle_blender_command(text: str):
     global blender_last_used
+    if wants_picture_rebuilt(text):
+        blender_last_used = time.time()
+        return start_computer_task(" ".join(text.split()), persistent=True, blender=True)
     goal = blender_commands.normalize(text)
     if not is_blender_goal(goal, said=text):
         return None
@@ -3333,22 +3521,67 @@ def _mark_spotify_playing() -> None:
     spotify_active = True
 
 
+pending_spotify_choice = None   # {"candidate": {uri, kind, title, artists, query}, "at"}: "play the closest one?"
+
+
+def _offer_closest(message: str, closest) -> str:
+    """Nothing fit well enough to play without asking: offer the nearest result — kept exactly (its URI), so a
+    "yes" plays that very result and nothing else."""
+    global pending_spotify_choice
+    if not closest:
+        return message
+    pending_spotify_choice = {"action": "PLAY_SPOTIFY_ITEM", "at": time.time(),
+                              "candidate": {k: closest.get(k) for k in ("uri", "kind", "title", "artists", "query")}}
+    return f"{message} Should I play it?"
+
+
+def _playing_reply(chosen: dict, start_seconds=None, where_ok=False, request: str = "") -> str:
+    where = f" from {format_time(int(start_seconds))}" if start_seconds and where_ok else ""
+    asked = spotify_match.parse(request) if request else {}
+    if asked.get("title") and asked.get("artist") and chosen.get("kind") == "artist":
+        # a song by them was asked for and Spotify hasn't got it: say so, don't pass their music off as it
+        return (f"I couldn't find \"{asked['title']}\" by {chosen['title']} on Spotify, so I'm playing "
+                f"{chosen['title']}.")
+    closest = " (the closest match I found)" if chosen.get("verdict") == "plausible" else ""
+    return f"Playing {spotify_match.describe(chosen)} on Spotify{where}{closest}."
+
+
 def play_song_locally(request: str, start_seconds=None) -> str:
-    """No Spotify keys: Jervis uses the Spotify app's own search (see spotify_local.py)."""
+    """No Spotify keys: Jervis reads the Spotify app's own search results, picks the one meant (spotify_match),
+    presses its own Play button and checks it really plays (spotify_local.play_request)."""
     global youtube_active, netflix_active, stremio_active, spotify_active
     try:
-        playing = spotify_local.play(spotify_local.clean_query(request))
+        chosen = spotify_local.play_request(request)
+    except spotify_local.NotFound as e:
+        print(f"Spotify: nothing fits {request!r} (searched {e.searched})", flush=True)
+        return _offer_closest(str(e), e.closest)
     except spotify_local.SpotifyLocalError as e:
+        print(f"Spotify (app) didn't start {request!r}: {e}", flush=True)
         return str(e)
     except Exception as e:
-        print(f"Spotify (app) failed: {e!r}", flush=True)
-        return "Something went wrong while starting Spotify. Try again, or press play in Spotify."
+        traceback.print_exc()
+        return f"Something went wrong while starting Spotify ({type(e).__name__}: {e}). Try again, or press play in Spotify."
     youtube_active = netflix_active = stremio_active = False
     spotify_active = True
-    where = ""
-    if start_seconds and spotify_local.seek(int(start_seconds)):
-        where = f" from {format_time(int(start_seconds))}"
-    return f"Playing {playing} on Spotify{where}." if playing else "Playing it on Spotify."
+    print(f"Spotify: {request!r} -> {chosen.get('uri')} ({chosen.get('verdict')} {chosen.get('score')}), "
+          f"now playing {chosen.get('now')!r}", flush=True)
+    seeked = bool(start_seconds) and spotify_local.seek(int(start_seconds))
+    if chosen.get("uri") is None:   # (a Mac: Spotify's Quick Search played its top result)
+        return f"Playing {chosen['now']} on Spotify." if chosen.get("now") else "Playing it on Spotify."
+    return _playing_reply(chosen, start_seconds, seeked, request)
+
+
+def play_spotify_choice(pending: dict) -> str:
+    """The offered result, exactly (by its URI)."""
+    cand = pending["candidate"]
+    if not sp:
+        try:
+            chosen = spotify_local.play_exact(cand)
+        except spotify_local.SpotifyLocalError as e:
+            return str(e)
+        _mark_spotify_playing()
+        return _playing_reply(chosen)
+    return _play_uri_with_keys(cand)
 
 
 def play_song(song_name: str, start_seconds=None, **kwargs) -> str:
@@ -3358,34 +3591,72 @@ def play_song(song_name: str, start_seconds=None, **kwargs) -> str:
     start_seconds = start_seconds or spoken_seconds
     if not sp:
         return play_song_locally(song_name, start_seconds)
-    try:
-        results = sp.search(q=song_name, type="track", limit=1)
-    except Exception as e:
-        return f"Spotify search failed: {e}"
-    tracks = results.get("tracks", {}).get("items", [])
-    if not tracks:
-        return f"I couldn't find a song called {song_name}."
-    track = tracks[0]
+    # With the user's own Spotify keys: the Web API's results, ranked by the same rules, played by exact URI.
+    intent = spotify_match.parse(song_name)
+    found, searched, pick = [], [], None
+    for q in spotify_match.queries(intent):
+        try:
+            results = sp.search(q=q, type="track,artist,album,playlist", limit=10)
+        except Exception as e:
+            return f"Spotify search failed: {e}"
+        searched.append(q)
+        found += spotify_api_candidates(results, q)
+        pick = spotify_match.choose(intent, found)
+        if spotify_match.settled(intent, pick):
+            break
+    if not pick or pick["verdict"] == "none":
+        closest = pick["best"] if pick else None
+        return _offer_closest(f"I couldn't find {intent['text']} on Spotify." +
+                              (f" The closest was {spotify_match.describe(closest)}." if closest else ""), closest)
+    chosen = dict(pick["best"], verdict=pick["verdict"])
+    print(f"Spotify (API): {song_name!r} -> {chosen['uri']} ({pick['verdict']} {pick['score']:.2f})", flush=True)
+    return _play_uri_with_keys(chosen, start_seconds)
+
+
+def spotify_api_candidates(results: dict, query: str) -> list:
+    """The Web API's search results as candidates for spotify_match (Spotify's own order kept as position)."""
+    out = []
+    for kind, key in (("track", "tracks"), ("artist", "artists"), ("album", "albums"), ("playlist", "playlists")):
+        for i, item in enumerate(((results or {}).get(key) or {}).get("items") or []):
+            if not item or not item.get("uri"):
+                continue
+            artists = [a.get("name", "") for a in item.get("artists") or []]
+            if kind == "playlist":
+                artists = [((item.get("owner") or {}).get("display_name") or "")]
+            out.append({"uri": item["uri"], "kind": kind, "title": item.get("name", ""), "artists": artists,
+                        "position": i, "query": query, "duration_ms": item.get("duration_ms")})
+    return out
+
+
+def _play_uri_with_keys(chosen: dict, start_seconds=None) -> str:
+    """Start exactly `chosen` (its URI) with the Web API, and check Spotify reports it playing."""
     global youtube_active, netflix_active, stremio_active, spotify_active
-    youtube_active = netflix_active = stremio_active = False
-    spotify_active = True
     device_id = ensure_spotify_device()
     if not device_id:
         return "Spotify needs to be open on a device first."
     position_ms = None
-    if start_seconds:
-        position_ms = min(int(start_seconds) * 1000, max(0, track.get("duration_ms", 0) - 1000))
+    if start_seconds and chosen.get("kind") == "track":
+        position_ms = min(int(start_seconds) * 1000, max(0, int(chosen.get("duration_ms") or 10 ** 9) - 1000))
     try:
-        sp.start_playback(
-            device_id=device_id,
-            context_uri=track["album"]["uri"],
-            offset={"uri": track["uri"]},
-            position_ms=position_ms,
-        )
-        where = f" from {format_time(position_ms // 1000)}" if position_ms else ""
-        return f"Playing {track['name']} by {track['artists'][0]['name']}{where}."
+        if chosen.get("kind") == "track":
+            sp.start_playback(device_id=device_id, uris=[chosen["uri"]], position_ms=position_ms)
+        else:
+            sp.start_playback(device_id=device_id, context_uri=chosen["uri"])
     except Exception as e:
-        return f"Spotify player error: {e}"
+        return f"Spotify didn't start {spotify_match.describe(chosen)}: {e}"
+    youtube_active = netflix_active = stremio_active = False
+    spotify_active = True
+    for _ in range(10):   # did it really start? (a device can accept the call and play nothing)
+        time.sleep(0.4)
+        try:
+            now = sp.current_playback() or {}
+        except Exception:
+            break
+        item = now.get("item") or {}
+        context = (now.get("context") or {}).get("uri")
+        if now.get("is_playing") and (item.get("uri") == chosen["uri"] or context == chosen["uri"]):
+            return _playing_reply(chosen, position_ms and position_ms // 1000, bool(position_ms))
+    return f"I asked Spotify to play {spotify_match.describe(chosen)}, but it didn't report it playing."
 
 
 def seek_music(seconds: int) -> str:
@@ -4118,6 +4389,90 @@ DOC_SYSTEM_PROMPT = (
 )
 
 
+last_turn_typed = False   # whether the request being handled was typed into Jervis's window (else spoken)
+
+
+def handle_screen_question(text: str):
+    """"What's on my screen?" / "What does this error say?": read the window the user is working in and answer from
+    what's really there (screen_reader.py). Reading only — nothing is clicked or typed."""
+    if not screen_reader.is_screen_question(text):
+        return None
+    if (os.getenv("JERVIS_SCREEN_READING") or "on").strip().lower() == "off":
+        return "Reading your screen is turned off in Settings."
+    import screen_vision
+    vision = screen_vision.ScreenVision() if screen_vision.available() else None
+
+    def chat(messages):
+        response = groq_chat(model=GROQ_MODEL, messages=messages, max_tokens=500)
+        return response.choices[0].message.content or ""
+    try:
+        return screen_reader.answer(text, computer_environment(), vision, chat)
+    except Exception as e:
+        print(f"Reading the screen failed: {e!r}", flush=True)
+        return "I couldn't read your screen just now."
+last_program = None       # the last program written (agent_code.CodeTask.program()): "make it also ...", "run it again"
+code_task = None
+
+
+def handle_program_request(text: str):
+    """"Write a Python program that ...": written, run, checked and fixed until its own self-checks pass
+    (agent_code.py), on a thread of its own; the verified result is announced when it's done. Follow-ups ("make it
+    also print the total", "run it again") change or rerun the last program."""
+    global code_task
+    recent = last_program is not None and time.time() - last_program["at"] < 15 * 60
+    follow = bool(recent and agent_code.FOLLOW_UP.match(text or ""))
+    if not (agent_code.is_program_request(text) or follow) or re.search(r"\bblender\b", text or "", re.I):
+        return None
+    if code_task is not None and code_task.state not in ("completed", "error", "stopped"):
+        return "I'm still working on the last program — one moment."
+    rerun = follow and bool(re.match(r"^(?:(?:now|ok|okay|and|please)\s+)*(?:run|rerun|test) it", text, re.I))
+    task = agent_code.CodeTask(text, log=lambda m: print(m, flush=True),
+                               confirm=ask_control_question, previous=last_program if follow else None, rerun=rerun)
+    code_task = task
+
+    def work():
+        global last_program
+        result = task.run()
+        if task.path:
+            last_program = task.program()
+            if task.code:   # the code itself goes in the window (never read aloud)
+                broadcast("ai", f"**{os.path.basename(task.path)}** — `{task.path}`\n\n```{task.language}\n"
+                                f"{task.code.rstrip()}\n```")
+        print(f"Program task {task.state}: {result[:160]}", flush=True)
+        announcements.put(result)
+
+    threading.Thread(target=work, daemon=True, name="code-task").start()
+    if rerun:
+        return "Running it again and checking it."
+    return ("On it — I'll change it, run it and check it." if follow else
+            "On it — I'll write it, run it, and check it works before I tell you it's done.")
+
+
+def handle_write_here(text: str):
+    """"Write me a story about a secret island" with the cursor in a document, an email or an editor: write it and
+    type it in right there, then check it's really there (see write_here.py). None when it isn't that."""
+    if not write_here.is_write_request(text):
+        return None
+    target = write_here.find_target()   # now, before Jervis's own window steps forward or aside
+    if not write_here.wants_here(text, target, spoken=not last_turn_typed):
+        return None
+
+    def write_and_type():
+        try:
+            response = groq_chat(model=GROQ_MODEL, max_tokens=2500, messages=[
+                {"role": "system", "content": write_here.writing_prompt(target)}, {"role": "user", "content": text}])
+            body = write_here.clean(response.choices[0].message.content or "")
+        except Exception as e:
+            print(f"Writing failed: {e!r}", flush=True)
+            raise RuntimeError(groq_error_reply(e)) from e
+        if not body:
+            raise RuntimeError("I couldn't come up with any text for that, so I didn't type anything.")
+        return write_here.insert(target, body)
+
+    print(f"Writing where the cursor is, in {target.app!r} ({target.title[:60]!r})", flush=True)
+    return start_computer_task(text, scripted=[("Writing it and typing it where your cursor is", write_and_type)])
+
+
 def write_document(request: str, app_key: str) -> str:
     """Write what the user asked for, then put it into a new document in the chosen app."""
     app_name = documents.APP_NAMES[app_key]
@@ -4323,6 +4678,14 @@ def trim_for_ai(messages: list) -> list:
     if not messages:
         return messages
     head, rest = messages[:1], messages[1:]
+    if head[0].get("role") == "system":   # the model has no clock: "how long until Friday?" needs today's date
+        now = datetime.now()
+        # The coming week spelled out: a small model miscounts "days until Friday" from the weekday name alone.
+        week = "; ".join(f"in {n} day{'s' if n > 1 else ''} it is {(now + timedelta(days=n)).strftime('%A, %B')} "
+                         f"{(now + timedelta(days=n)).day}" for n in range(1, 8))
+        head = [{**head[0], "content": f"{head[0]['content']}\n- Right now it is {now.strftime('%A')}, "
+                                       f"{now.strftime('%B')} {now.day}, {now.year}, {now.strftime('%H:%M')} (this "
+                                       f"computer's clock); {week}. Use it for anything about the time, date or day."}]
     rest = rest[-10:]
     while rest and (rest[0].get("role") == "tool" or (rest[0].get("role") == "assistant" and rest[0].get("tool_calls"))):
         rest = rest[1:]  # never start in the middle of a tool call
@@ -4600,13 +4963,18 @@ def _strip_markdown(text: str) -> str:
 _STRUCTURE = re.compile(r"^(?:\||#{1,6}\s|[-*\u2022]\s|\d+[.)]\s|>\s?|```|\*\*[^*]+\*\*:?\s*$)")
 
 
+_MATH_WORDS = {
+    "en": (" equals ", " times ", " divided by ", " plus ", " minus ", " squared", " cubed", "square root of "),
+    "he": (" \u05e9\u05d5\u05d5\u05d4 ", " \u05db\u05e4\u05d5\u05dc ", " \u05d7\u05dc\u05e7\u05d9 ", " \u05d5\u05e2\u05d5\u05d3 ", " \u05e4\u05d7\u05d5\u05ea ", " \u05d1\u05e8\u05d9\u05d1\u05d5\u05e2", " \u05d1\u05d7\u05d6\u05e7\u05ea \u05e9\u05dc\u05d5\u05e9", "\u05e9\u05d5\u05e8\u05e9 \u05e9\u05dc "),
+}
+
+
 def _say_math(text: str) -> str:
-    """Math symbols as words for the voice: "x = 10" -> "x equals 10"."""
-    for pattern, words in ((r"\s*[=\u2248]\s*", " equals "), (r"\s*\u00d7\s*", " times "), (r"\s*\u00f7\s*", " divided by "),
-                           (r"(?<=\d)\s+\+\s+(?=[\w(])", " plus "), (r"(?<=\d)\s+[-\u2212]\s+(?=\d)", " minus "),
-                           (r"\^2\b", " squared"), (r"\^3\b", " cubed"),
-                           (r"\u221a", "square root of ")):
-        text = re.sub(pattern, words, text)
+    """Math symbols as words for the voice: "x = 10" -> "x equals 10" (in Hebrew for a Hebrew reply)."""
+    words = _MATH_WORDS["he" if osal.has_hebrew(text) else "en"]
+    for pattern, said in zip((r"\s*[=\u2248]\s*", r"\s*\u00d7\s*", r"\s*\u00f7\s*", r"(?<=\d)\s+\+\s+(?=[\w(])",
+                              r"(?<=\d)\s+[-\u2212]\s+(?=\d)", r"\^2\b", r"\^3\b", r"\u221a"), words):
+        text = re.sub(pattern, said, text)
     return " ".join(text.split())
 
 
@@ -4632,8 +5000,8 @@ def _spoken_version(text: str) -> str:
         closing = ""
         if len(lines) - 1 > first and not _STRUCTURE.match(last) and _strip_markdown(last).endswith("?"):
             closing = _strip_markdown(last)
-        note = "I've put the details on your screen." if connected_clients else ""
-        return " ".join(part for part in (intro or "Here's what I found.", note, closing) if part)
+        note = _note("I've put the details on your screen.", text) if connected_clients else ""
+        return " ".join(part for part in (intro or _note("Here's what I found.", text), note, closing) if part)
     plain = _strip_markdown(" ".join(lines))
     if len(plain) <= 320:
         return plain
@@ -4643,7 +5011,12 @@ def _spoken_version(text: str) -> str:
             break
         short = f"{short} {sentence}".strip()
     short = short[:320].rsplit(" ", 1)[0] if len(short) > 320 else short
-    return f"{short} I've put the details on your screen." if connected_clients else short
+    return f"{short} " + _note("I've put the details on your screen.", text) if connected_clients else short
+
+
+def _note(english: str, reply: str) -> str:
+    """A sentence the voice adds to a reply, in the reply's own language."""
+    return language.phrase(english, language.detect(reply)[0] or "en")
 
 
 _FAREWELL = re.compile(
@@ -4680,6 +5053,28 @@ WHISPER_HALLUCINATIONS = {
     "thanks for watching", "thank you for watching", "please subscribe",
     "subscribe to my channel", "you", "so", "uh", "um", "hmm",
 }
+# ...and these in Hebrew (the closing lines of the subtitled videos it learned from). "תודה" / "תודה רבה" can be
+# real, so they're only dropped while Jervis is asleep and hearing the whole room.
+WHISPER_HALLUCINATIONS_HE = re.compile(r"^(?:תודה (?:רבה )?(?:ש|על ה|ל)צפי(?:תם|ה|יה)|הפקה|"
+                                       r"(?:תרגום|כתוביות)(?: \S+){0,3}|אה+|אממ+|הממ+|מממ+)$")   # (credits)
+WHISPER_HALLUCINATIONS_HE_PASSIVE = {"תודה", "תודה רבה", "שלום", "ביי", "להתראות"}
+
+
+def is_whisper_hallucination(text: str, passive: bool) -> bool:
+    cleaned = " ".join(re.sub(r"[^a-z0-9' ]", " ", text.lower()).split())
+    if cleaned in WHISPER_HALLUCINATIONS:
+        return True
+    hebrew = " ".join(re.sub(r"[^א-ת\"״ ]", " ", text).split())
+    if not hebrew or re.search(r"[a-z]", text, re.I):
+        return False
+    return bool(WHISPER_HALLUCINATIONS_HE.match(hebrew)) or (passive and hebrew in WHISPER_HALLUCINATIONS_HE_PASSIVE)
+
+
+def transcribe_local(wav_bytes: bytes) -> str:
+    heard = stt_local.transcribe_full(wav_bytes)
+    print(f"Local Whisper ({heard.engine}, {heard.language} {heard.confidence:.2f}, {heard.seconds:.2f}s): "
+          f"{heard.text!r}", flush=True)
+    return heard.text
 
 
 def transcribe_groq(wav_bytes: bytes) -> str:
@@ -4701,7 +5096,9 @@ def transcribe_groq(wav_bytes: bytes) -> str:
 
 def transcribe_google(audio) -> str:
     try:
-        return recognizer.recognize_google(audio, language="he-IL" if stt_local.LANGUAGE == "he" else "en-US").strip()
+        # Google's free recognizer hears one language: the one the conversation is in.
+        hebrew = stt_local.BILINGUAL and language.reply_language() == "he"
+        return recognizer.recognize_google(audio, language="he-IL" if hebrew else "en-US").strip()
     except sr.UnknownValueError:
         return ""
 
@@ -4713,8 +5110,11 @@ def transcribe(audio, passive=False) -> str:
     free Google engine first to spare the Groq rate limit; active listening
     tries Whisper first for accuracy. Either falls back to the other on error.
     """
+    last_transcription.update(started=time.time(), seconds=0.0, engine="")
     wav_bytes = audio.get_wav_data(convert_rate=16000, convert_width=2)
-    local = [("Local Whisper", lambda: stt_local.transcribe(wav_bytes))] if stt_local.ready() else []
+    # This computer's Whisper gets the recording as made (44.1/48 kHz): stt_local resamples it with a proper filter.
+    native = audio.get_wav_data(convert_width=2)
+    local = [("Local Whisper", lambda: transcribe_local(native))] if stt_local.ready() else []
     online_whisper = ([("Whisper", lambda: transcribe_groq(wav_bytes))]
                       if GROQ_KEY and time.time() >= groq_down_until else [])  # needs the key and a reachable Groq
     google = [("Google", lambda: transcribe_google(audio))]
@@ -4729,10 +5129,12 @@ def transcribe(audio, passive=False) -> str:
         except Exception as e:
             print(f"{name} speech recognition failed: {e}")
             continue
-        cleaned = " ".join(re.sub(r"[^a-z0-9' ]", " ", text.lower()).split())
-        if cleaned in WHISPER_HALLUCINATIONS:
+        last_transcription.update(seconds=time.time() - last_transcription["started"], engine=name)
+        if is_whisper_hallucination(text, passive):
             return ""
-        return nlu.latin_names(text)   # Hebrew speech: "היי ג'רביס" -> "hey Jervis", so the wake phrases still work
+        # Hebrew speech: "היי ג'רביס" -> "hey Jervis"; and "hey Gravis" / "okay Gervis" -> "hey jervis": the wake
+        # phrases work however the name was heard.
+        return speech_fixes.fix_wake_name(nlu.latin_names(text))
     return ""
 
 
@@ -4763,20 +5165,14 @@ def open_microphone():
     wanted = os.getenv("JERVIS_MIC", "").strip()
     if wanted:
         try:
-            import pyaudio
-            audio = pyaudio.PyAudio()
-            try:
-                for i in range(audio.get_device_count()):
-                    info = audio.get_device_info_by_index(i)
-                    if info.get("name") == wanted and int(info.get("maxInputChannels", 0)) > 0:
-                        return sr.Microphone(device_index=i)
-            finally:
-                audio.terminate()
+            index = microphones.input_device_index(wanted)
+            if index is not None:
+                return microphones.Microphone(device_index=index)
             report_mic_problem(f"The microphone \u201c{wanted}\u201d isn't connected; using the system default.",
                                blocking=False)
         except Exception as e:
             print(f"Could not open the chosen microphone: {e}", flush=True)
-    return sr.Microphone()
+    return microphones.Microphone()
 
 
 def report_mic_problem(message: str, blocking: bool = True) -> None:
@@ -4798,9 +5194,76 @@ def clear_mic_problem() -> None:
         send_ui_update("mic", {"ok": True, "message": ""})
 
 
+CONTINUATION_SECONDS = 3.0   # how long a sentence cut off by a pause ("make the roof... green") is waited on
+
+
+def listen_for_the_rest() -> str:
+    """The rest of a sentence the speaker paused in ("put a tree next to the..." "...house"): one more short listen,
+    transcribed and returned ("" if nothing more was said)."""
+    if os.getenv("JERVIS_TEST_AUDIO"):
+        audio = _test_recording(gap=False) if TEST_AUDIO else None
+        return transcribe(audio).strip() if audio is not None else ""
+    try:
+        with open_microphone() as source:
+            send_status("listening")
+            audio = recognizer.listen(source, timeout=CONTINUATION_SECONDS, phrase_time_limit=15)
+    except (sr.WaitTimeoutError, OSError):
+        return ""
+    except Exception as e:
+        print(f"Couldn't listen for the rest: {e}", flush=True)
+        return ""
+    seconds = len(audio.frame_data) / (audio.sample_rate * audio.sample_width)
+    if seconds < MIN_PHRASE_SECONDS or mic_muted.is_set():
+        return ""
+    send_status("thinking")
+    return transcribe(audio).strip()
+
+
+# Tests only: JERVIS_TEST_AUDIO="a.wav;b.wav" plays these recordings to the listening loop, one per listen, in
+# place of the microphone — the whole voice path (wake phrase, recognition, follow-ups) runs for real, and no
+# microphone is opened.
+TEST_AUDIO = [p for p in (os.getenv("JERVIS_TEST_AUDIO") or "").split(";") if p]
+
+
+def _test_recording(gap: bool = True):
+    if not TEST_AUDIO:
+        time.sleep(0.25)
+        return None
+    if gap:   # JERVIS_TEST_AUDIO_GAP: seconds of "silence" before each recording (a build finishing meanwhile)
+        time.sleep(float(os.getenv("JERVIS_TEST_AUDIO_GAP") or 0))
+    import wave
+    with wave.open(TEST_AUDIO.pop(0), "rb") as wav:
+        return sr.AudioData(wav.readframes(wav.getnframes()), wav.getframerate(), wav.getsampwidth())
+
+
+def _recognized(audio, passive: bool):
+    """The text of one captured phrase (None if too short or not understood), with a sentence cut off by a pause
+    completed from the next one."""
+    seconds = len(audio.frame_data) / (audio.sample_rate * audio.sample_width)
+    if seconds < MIN_PHRASE_SECONDS:
+        send_status("sleeping" if passive else "idle")
+        return None
+    if not passive:
+        send_status("thinking")
+    text = transcribe(audio, passive=passive)
+    if len(text.strip()) < 2:
+        print("Speech was not understood.")
+        send_status("sleeping" if passive else "idle")
+        return None
+    if not passive and speech_fixes.sounds_unfinished(text):
+        rest = listen_for_the_rest()
+        if rest:
+            text = f"{text.rstrip(' ,.')} {rest}"
+    print(f"Recognized: {text}")
+    return text
+
+
 def listen(passive=False):
     """Capture one phrase and return its text, or None if nothing usable was heard."""
     global mic_calibrated, last_calibrated_at
+    if TEST_AUDIO or os.getenv("JERVIS_TEST_AUDIO"):
+        audio = _test_recording()
+        return _recognized(audio, passive) if audio is not None else None
     if AUDIO_OFF:   # test mode: nothing is recorded; typed lines are handled by the main loop
         time.sleep(0.25)
         return None
@@ -4832,21 +5295,7 @@ def listen(passive=False):
 
         if mic_muted.is_set():
             return None
-        seconds = len(audio.frame_data) / (audio.sample_rate * audio.sample_width)
-        if seconds < MIN_PHRASE_SECONDS:
-            send_status("sleeping" if passive else "idle")
-            return None
-
-        if not passive:
-            send_status("thinking")
-        text = transcribe(audio, passive=passive)
-        if len(text.strip()) < 2:
-            print("Speech was not understood.")
-            send_status("sleeping" if passive else "idle")
-            return None
-
-        print(f"Recognized: {text}")
-        return text
+        return _recognized(audio, passive)
 
     except sr.WaitTimeoutError:
         send_status("sleeping" if passive else "idle")
@@ -4879,7 +5328,7 @@ def speak(text):
     if not text or not text.strip():
         return
 
-    text = text.strip()
+    text = str(localized(text)).replace("`", "").strip()   # (osal picks the Hebrew voice for Hebrew text)
     send_status("speaking")
     print(f"Speaking: {text}")
     interrupt_speech.clear()
@@ -4950,10 +5399,187 @@ def _run_command(text):
     return result
 
 
+# ---------------------------------------------------------------- other languages (language.py)
+# A request in Hebrew (or Hebrew mixed with English) is translated into English here, before anything else sees it,
+# so every command, the Blender and code agents, the chat and its tools, follow-ups and corrections work exactly as
+# they do in English; the reply is translated back when it's shown and spoken (localized). The window shows the
+# words as said, and the log keeps them next to the English.
+CONFIRM_SECONDS = 90
+pending_translation = None   # {"english", "input", "at"} while Jervis asks whether he understood a request right
+last_request = {"text": "", "at": 0.0}   # the last request, in English: helps read a follow-up or a correction
+
+
+current_turn = {"language": "en", "original": "", "translated": False}   # how this turn was said (see main_loop)
+
+
+class TurnTimer:
+    """One line per request in the log, written when Jervis is back to listening: where its time went, stage by
+    stage, from the end of the speech to the end of the spoken answer (never the words said or answered)."""
+
+    def __init__(self):
+        self.count = 0
+        self.open = False
+        self.stages = []
+
+    def start(self, how: str, began: float, waiting: str = "") -> None:
+        self.finish()
+        self.count += 1
+        self.open, self.began, self.how, self.waiting, self.stages = True, began, how, waiting, []
+
+    def mark(self, stage: str, seconds: float, note: str = "") -> None:
+        if self.open:
+            self.stages.append((stage, seconds, note))
+
+    def timed(self, stage: str, note: str = ""):
+        timer, started = self, time.time()
+
+        class _Stage:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                timer.mark(stage, time.time() - started, note)
+        return _Stage()
+
+    def finish(self) -> None:
+        if not self.open:
+            return
+        self.open = False
+        parts = " · ".join(f"{name} {seconds:.1f}s" + (f" ({note})" if note else "") for name, seconds, note
+                           in self.stages)
+        busy = []
+        if control_active():
+            busy.append("computer task running")
+        if code_task is not None and code_task.state not in ("completed", "error", "stopped"):
+            busy.append("program task running")
+        print(f"Turn {self.count} ({self.how}, {current_turn['language']}): {parts} · total "
+              f"{time.time() - self.began:.1f}s" + (f" [{'; '.join(busy)}]" if busy else "") +
+              (f" [{self.waiting}]" if self.waiting else ""), flush=True)
+
+
+turn_timer = TurnTimer()
+last_transcription = {"started": 0.0, "seconds": 0.0, "engine": ""}   # the speech just heard (see transcribe)
+
+HEBREW_CHAT_PROMPT = (   # (for talk in English too: see answer_in_users_language)
+    "You are Jervis, a friendly voice assistant on the user's computer, talking with the user in {name}. Answer in "
+    "natural, correct {name}, speaking about yourself in the masculine, briefly - one to three sentences - unless "
+    "the user asks for more. You can't see the screen, the user's messages or files from here: never claim you did, "
+    "opened, played or changed anything.")
+
+
+def answer_in_users_language(messages: list, english: str):
+    """Plain talk — no tool to use, no numbers to verify, no picture — answered in one call by the bilingual model
+    DictaLM, without swapping models on an 8 GB GPU (each swap: a reload of several seconds, and the coder model's
+    long prompt re-read; measured up to 150 s when part of it had to run on the CPU):
+      - in Hebrew, from the Hebrew as said, in place of translate -> chat model -> translate back;
+      - in English, when DictaLM is the model loaded right now (a Hebrew conversation) and the chat model isn't.
+    None: the usual path answers (commands, tools, maths, pictures, the online AI, or no DictaLM)."""
+    if not local_llm_only():
+        return None
+    model = local_llm.role_model("hebrew") or ""
+    if "dictalm" not in model.lower():   # another model's Hebrew is worse than a translated answer
+        return None
+    hebrew_turn = current_turn["translated"] and current_turn["language"] in language.LANGUAGES
+    if not hebrew_turn and not (current_turn["language"] == "en" and local_llm.is_loaded(model)
+                                and not local_llm.is_loaded(local_llm.role_model("chat") or "")):
+        return None
+    if select_tools(english)[0] or reasoning.looks_quantitative(english) or images.context_note():
+        return None
+    lang = language.LANGUAGES[current_turn["language"]] if hebrew_turn else None
+    recent = [m for m in messages[1:-1] if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)
+              and m.get("content") != PRIVATE_PLACEHOLDER][-6:]
+    talk = ([{"role": "system", "content": HEBREW_CHAT_PROMPT.format(name=lang.name if lang else "English")}] +
+            recent + [{"role": "user", "content": current_turn["original"] if lang else english}])
+    try:
+        response = local_llm.chat(role="hebrew" if lang else "translate", messages=talk, max_tokens=300,
+                                  temperature=0.5)
+    except Exception as e:
+        print(f"The bilingual model couldn't answer ({str(e)[:100]}); answering the usual way.", flush=True)
+        return None
+    reply = (response.choices[0].message.content or "").strip()
+    if lang:
+        return reply if re.search(f"[{lang.letters}]", reply) else None
+    return reply if reply and not osal.has_hebrew(reply) else None
+
+
+def _same_kind(original, text: str):
+    """`text` as the same kind of input as `original` (an image's caption, a phone's voice input...)."""
+    if type(original) is str or not isinstance(original, str):
+        return text
+    out = str.__new__(type(original), text)
+    out.__dict__.update(getattr(original, "__dict__", {}))
+    return out
+
+
+def _answer_now(reply, typed) -> None:
+    broadcast("ai", reply)
+    reply_to_phone_if_needed(typed, str(reply))
+    speak(spoken_version(reply))
+
+
+def understand_language(text, typed=None):
+    """The request in English for the rest of Jervis, or None when Jervis has already answered it himself (he asked
+    whether he understood it right, or to hear it again). English passes through untouched."""
+    global pending_translation
+    current_turn.update(language="en", original=str(text), translated=False)
+    pending, pending_translation = pending_translation, None
+    if pending and time.time() - pending["at"] > CONFIRM_SECONDS:
+        pending = None
+    previous = last_request["text"] if time.time() - last_request["at"] < 10 * 60 else ""
+    try:
+        heard = language.to_english(str(text), previous)
+    except Exception:   # never lose a request to a bug here: it goes on as said
+        traceback.print_exc()
+        return text
+    if heard.status != "same":
+        print(heard.log_line(), flush=True)
+    current_turn.update(language=heard.language, original=heard.original, translated=heard.translated)
+    turn_timer.mark("understand", heard.seconds, heard.method or heard.status)
+    switch_to = language.turn_language(str(text))
+    if switch_to:
+        language.set_reply_language(switch_to)
+        stt_local.prefer(switch_to)   # that language's speech model on the GPU from now on (the other one leaves)
+    if pending:   # the answer to "did I understand you right?"
+        answer = " ".join(re.sub(r"[^a-z' ]", " ", (heard.english or "").lower()).split())
+        answer = re.sub(r"\s+(?:thanks|thank you|please)$", "", answer)
+        if _YES.fullmatch(answer):
+            print(f"Confirmed: {pending['english']!r}", flush=True)
+            last_request.update(text=pending["english"], at=time.time())
+            return _same_kind(pending["input"], pending["english"])
+        if _NO.fullmatch(answer):
+            _answer_now(language.phrase("Okay, I didn't do anything. Say it again in other words?"), typed)
+            return None
+        # anything else is a new request
+    if heard.status == "unclear":
+        _answer_now(language.phrase("Sorry, I didn't catch that. Could you say it again?"), typed)
+        return None
+    if heard.status == "confirm":
+        pending_translation = {"english": heard.english, "input": text, "at": time.time()}
+        shown, spoken = language.confirm_question(heard)
+        question = SpokenReply(shown)
+        question.spoken = spoken
+        _answer_now(question, typed)
+        return None
+    if heard.status == "unavailable" and heard.error:
+        # The translator failed (timed out, stopped): say so now. Handing the untranslated words on would only queue
+        # more calls to the same struggling local AI (that once made one sentence take two minutes).
+        _answer_now(language.phrase("Sorry, my local AI didn't answer in time. Please try again in a moment.",
+                                    heard.language), typed)
+        return None
+    if heard.status == "unavailable":
+        # No translator (still downloading, or the local AI isn't running): as before, the words go on as they
+        # were said — the Hebrew command rules, the online AI and the local Hebrew model still understand much of it.
+        return text
+    if heard.method != "answer":
+        last_request.update(text=heard.english, at=time.time())
+    return _same_kind(text, heard.english) if heard.translated else text
+
+
 def handle_command(text, typed: bool = False):
     """A reply when Jervis handled `text` as a command (or asked what it meant), SAY_NOTHING for background speech,
     None for conversation (the chat model answers it, as before)."""
-    global pending_clarify
+    global pending_clarify, last_turn_typed
+    last_turn_typed = typed
     if isinstance(text, ImageCaption):
         return handle_direct_command(text)
     pending, pending_clarify = pending_clarify, None
@@ -5022,6 +5648,7 @@ def main_loop():
     print("Jervis background listener is ready. Say 'Wake Up Jervis'.")
 
     while True:
+        turn_timer.finish()   # the last request's timing line, now that Jervis is back to listening
         while not announcements.empty():  # timers that finished: say so, awake or asleep
             message = announcements.get()
             broadcast("ai", message)
@@ -5036,6 +5663,8 @@ def main_loop():
             text = typed
             send_status("thinking")
             print(f"Typed: {text}")
+            waiting = typed_inputs.qsize()
+            turn_timer.start("typed", time.time(), f"{waiting} more typed lines waiting" if waiting else "")
         else:
             if mic_muted.is_set():
                 send_status("muted")
@@ -5047,18 +5676,27 @@ def main_loop():
             if not awake:
                 send_status("sleeping")
                 text = listen(passive=True)
-                if text and is_wake_command(text):
-                    awake = True
-                    show_fullscreen()
+                if not (text and is_wake_command(text)):
+                    continue
+                awake = True
+                show_fullscreen()
+                command = after_wake_phrase(text)
+                if not command:   # just "Hey Jervis": greet, and listen for the request
                     greeting = time_greeting()
                     broadcast("ai", greeting)
                     speak(greeting)
-                continue
+                    continue
+                # "Hey Jervis, create a house" in one breath: the request is handled right away, not dropped
+                text = command
+                send_status("thinking")
+            else:
+                text = listen()
+                if not text:
+                    continue
 
-            text = listen()
-            if not text:
-                continue
-
+        if not typed:   # from the end of the speech: recognising it is part of the wait
+            turn_timer.start("spoken", last_transcription["started"] or time.time())
+            turn_timer.mark("stt", last_transcription["seconds"], last_transcription["engine"])
         if not isinstance(text, ImageCaption):  # already shown together with the image itself, in handle_client
             broadcast("user", text)
         if not typed:
@@ -5071,9 +5709,15 @@ def main_loop():
                 speak(here)
                 continue
 
+        english = understand_language(text, typed)   # Hebrew -> English (or a question back, then None)
+        if english is None:
+            continue
+        text = english
+
         turn_started = time.time()
         try:
-            direct_result = handle_command(text, typed=bool(typed))
+            with turn_timer.timed("command"):
+                direct_result = handle_command(text, typed=bool(typed))
         except Exception:
             # A bug in one command must never take the whole assistant down.
             traceback.print_exc()
@@ -5083,14 +5727,17 @@ def main_loop():
             send_status("idle")
             continue
         if direct_result:
-            broadcast("ai", direct_result)
-            reply_to_phone_if_needed(typed, str(direct_result))
+            with turn_timer.timed("reply-translate"):
+                shown = localized(direct_result)   # in the user's language; the AI remembers the English
+            broadcast("ai", shown)
+            reply_to_phone_if_needed(typed, str(shown))
             remember_turn(messages, text, str(direct_result), turn_started, private=isinstance(direct_result, PrivateReply))
-            speak(spoken_version(direct_result))
+            with turn_timer.timed("speak"):
+                speak(spoken_version(shown))
             continue
 
         if is_shutdown_command(text):
-            goodbye = farewell_reply(text)
+            goodbye = localized(farewell_reply(text))
             broadcast("ai", goodbye)
             reply_to_phone_if_needed(typed, goodbye)
             speak(goodbye)
@@ -5103,7 +5750,14 @@ def main_loop():
         if image_note:
             messages.append({"role": "system", "content": image_note})
         try:
-            reply = tidy_math(ask_jervis(messages, text))
+            asked = time.time()
+            direct = answer_in_users_language(messages, text)   # Hebrew talk: no swap, no translation back
+            if direct is not None:
+                turn_timer.mark("answer", time.time() - asked, "bilingual model, no swap")
+            else:
+                with turn_timer.timed("answer", "chat"):
+                    direct = ask_jervis(messages, text)
+            reply = tidy_math(direct)
             if len(reply) > 40:
                 last_llm_reply = {"text": reply, "at": time.time(), "question": text}
                 note_suggestions(reply)
@@ -5111,9 +5765,12 @@ def main_loop():
             traceback.print_exc()
             reply = "Sorry, something went wrong. Please try again."
         messages.append({"role": "assistant", "content": reply})
-        broadcast("ai", reply)
-        reply_to_phone_if_needed(typed, reply)
-        speak(spoken_version(reply))
+        with turn_timer.timed("reply-translate"):
+            shown = localized(reply)
+        broadcast("ai", shown)
+        reply_to_phone_if_needed(typed, str(shown))
+        with turn_timer.timed("speak"):
+            speak(spoken_version(shown))
 
 
 def greet_after_voice_launch() -> None:
@@ -5210,8 +5867,16 @@ if __name__ == "__main__":
     threading.Thread(target=telemetry_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()
     threading.Thread(target=_install_blender_bridge, daemon=True, name="blender-startup-script").start()
-    if LLM_BACKEND in ("ollama", "auto"):   # load the local model now, so the first question doesn't wait for it
-        threading.Thread(target=local_llm.warm_up, args=("chat",), daemon=True, name="model-warm-up").start()
+    def warm_up():   # the speech models, then the local AI model needed first, so the first sentence doesn't wait
+        if not AUDIO_OFF or TEST_AUDIO:
+            stt_local.prefer(language.reply_language(), background=False)   # the language last spoken
+            stt_local.preload()   # first: the AI model's GPU plan has to count the speech models' memory
+        if LLM_BACKEND in ("ollama", "auto"):
+            local_llm.warm_up(local_ai.first_role())
+    threading.Thread(target=warm_up, daemon=True, name="warm-up").start()
+    if stt_local.BILINGUAL:   # the Hebrew voice (CPU, ~3 s to load): ready before the first Hebrew answer
+        import hebrew_voice
+        threading.Thread(target=hebrew_voice.preload, daemon=True, name="hebrew-voice-preload").start()
     if os.getenv("JERVIS_SHOW_WINDOW") == "1":  # started with run.py: show the window right away, not only after "Hey Jervis"
         launch_ui()
 

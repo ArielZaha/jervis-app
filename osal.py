@@ -85,12 +85,38 @@ Add-Type -AssemblyName System.Speech
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
 if ($env:JERVIS_VOLUME) { $s.Volume = [int]$env:JERVIS_VOLUME }
 if ($env:JERVIS_HEBREW -eq '1') {
+  $found = $false
   foreach ($v in $s.GetInstalledVoices()) {
-    if ($v.Enabled -and $v.VoiceInfo.Culture.Name -like 'he*') { $s.SelectVoice($v.VoiceInfo.Name); break }
+    if ($v.Enabled -and $v.VoiceInfo.Culture.Name -like 'he*') { $s.SelectVoice($v.VoiceInfo.Name); $found = $true; break }
+  }
+  if (-not $found) {
+    # Windows' Hebrew voice (Microsoft Asaf) comes with the Hebrew language pack, and is only visible to the newer
+    # speech API (Windows.Media.SpeechSynthesis), not to System.Speech: speak through that one.
+    Add-Type -AssemblyName System.Runtime.WindowsRuntime
+    $null = [Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media.SpeechSynthesis, ContentType = WindowsRuntime]
+    $null = [Windows.Storage.Streams.DataReader, Windows.Storage.Streams, ContentType = WindowsRuntime]
+    $voice = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices | ? { $_.Language -like 'he*' } | Select-Object -First 1
+    if (-not $voice) { [Console]::Error.WriteLine('No Hebrew voice is installed.'); exit 3 }
+    $asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | ? { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+    function Await($op, [Type]$t) { $task = $asTask.MakeGenericMethod($t).Invoke($null, @($op)); $task.Wait(-1) | Out-Null; $task.Result }
+    $w = New-Object Windows.Media.SpeechSynthesis.SpeechSynthesizer
+    $w.Voice = $voice
+    try { if ($env:JERVIS_VOLUME) { $w.Options.AudioVolume = [double]$env:JERVIS_VOLUME / 100 } } catch { }
+    $stream = Await ($w.SynthesizeTextToStreamAsync($env:JERVIS_TEXT)) ([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
+    $reader = New-Object Windows.Storage.Streams.DataReader($stream.GetInputStreamAt(0))
+    $n = [uint32]$stream.Size
+    Await ($reader.LoadAsync($n)) ([uint32]) | Out-Null
+    $bytes = New-Object byte[] $n
+    $reader.ReadBytes($bytes)
+    if ($env:JERVIS_SPEECH_OUT) { [IO.File]::WriteAllBytes($env:JERVIS_SPEECH_OUT, $bytes); exit 0 }
+    $player = New-Object System.Media.SoundPlayer (New-Object IO.MemoryStream (, $bytes))
+    $player.PlaySync()
+    exit 0
   }
 } elseif ($env:JERVIS_VOICE) {
   try { $s.SelectVoice($env:JERVIS_VOICE) } catch { }
 }
+if ($env:JERVIS_SPEECH_OUT) { $s.SetOutputToWaveFile($env:JERVIS_SPEECH_OUT) }
 $s.Speak($env:JERVIS_TEXT)
 """
 _WIN_VOICES = r"""
@@ -111,6 +137,22 @@ def _cleanup_after(proc, path: str) -> None:
     threading.Thread(target=runner, daemon=True).start()
 
 
+class _Finished:
+    """Speech that's already done (written to a file for a test): the shape of a finished speaking process."""
+    returncode = 0
+
+    def poll(self):
+        return 0
+
+    def wait(self, timeout=None):
+        return 0
+
+    def terminate(self):
+        pass
+
+    kill = terminate
+
+
 def speech_process(text: str, volume: int = 100):
     """Start speaking `text` at `volume` (0-100) and return the running process (so it can be stopped), or None if
     this machine can't speak at all."""
@@ -125,6 +167,15 @@ def speech_process(text: str, volume: int = 100):
         proc = subprocess.Popen(["afplay", "-v", f"{max(0, volume) / 100:.2f}", path])
         _cleanup_after(proc, path)
         return proc
+    if IS_WIN and has_hebrew(text):   # the neural Hebrew voice when it's downloaded (hebrew_voice.py)
+        try:
+            import hebrew_voice
+            if hebrew_voice.available():
+                out = os.getenv("JERVIS_SPEECH_OUT")
+                playing = hebrew_voice.speak(text, volume, out_path=out)
+                return playing if playing is not None else _Finished()
+        except Exception as e:
+            print(f"The Hebrew voice failed ({type(e).__name__}: {e}); using Windows' voice.", flush=True)
     if IS_WIN:
         env = {**os.environ, "JERVIS_TEXT": text, "JERVIS_HEBREW": "1" if has_hebrew(text) else "0",
                "JERVIS_VOLUME": str(max(0, min(100, volume)))}
@@ -220,6 +271,20 @@ def open_path(path: str) -> None:
 
 
 # ---------- clipboard ----------
+def get_clipboard():
+    """The clipboard's text, or None if it holds no text (or can't be read) — so it can be put back afterwards."""
+    try:
+        if IS_MAC:
+            return subprocess.run(["pbpaste"], capture_output=True, timeout=5).stdout.decode("utf-8", "replace")
+        if IS_WIN:
+            code, out, _err = run_powershell("$t = Get-Clipboard -Raw -Format Text; if ($null -ne $t) { "
+                                             "[Console]::Out.Write($t) }", {}, timeout=15)
+            return out if code == 0 and out else None
+    except Exception:
+        return None
+    return None
+
+
 def set_clipboard(text: str) -> None:
     """Copy text to the clipboard (any language)."""
     if IS_MAC:

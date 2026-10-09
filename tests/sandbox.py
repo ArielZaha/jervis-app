@@ -103,6 +103,35 @@ def _fake_http(method):
 
 _saved = []
 
+# ---- a fake Spotify app: what its search shows, what its player plays ----
+spotify_catalogue = {}   # normalized search -> [{"uri", "kind", "title", "artists"}], in Spotify's order
+spotify_player = {"playing": False, "title": "", "artist": ""}
+spotify_refuses = set()   # URIs whose Play button "does nothing" (to test a failed start)
+
+
+def spotify_results(query: str) -> list:
+    import spotify_match
+    return spotify_catalogue.get(spotify_match.normalize(query), [])
+
+
+def _fake_ui_search(query, wait=12.0):
+    actions.append(f"spotify search page {query}")
+    return [dict(r, position=i, query=query, button=("play", r["uri"])) for i, r in enumerate(spotify_results(query))]
+
+
+def _fake_press(button):
+    actions.append(f"spotify press play {button[1]}")
+    if button[1] in spotify_refuses:
+        return True
+    for results in spotify_catalogue.values():
+        for r in results:
+            if r["uri"] == button[1]:
+                title = r["title"] if r["kind"] != "artist" else "Their Top Song"
+                artist = ", ".join(r["artists"]) if r["kind"] != "artist" else r["title"]
+                spotify_player.update(playing=True, title=title, artist=artist)
+                return True
+    return False
+
 
 def install() -> None:
     """Replace every way of acting on the computer with a recorder. Call before importing app; uninstall() after."""
@@ -130,7 +159,12 @@ def install() -> None:
     _saved[0].extend((spotify_local, n, getattr(spotify_local, n))
                      for n in ("_mac_bring_forward", "_win_bring_forward", "_mac_keys", "_mac_type", "_osa", "running",
                                "installed", "_mac_can_press_keys", "_mac_ask_for_accessibility", "open_search", "_glide", "cursor",
-                               "_window_bounds"))
+                               "_window_bounds", "ui_available", "ui_search", "_press", "ui_now_playing"))
+    # Spotify's results and player, faked: a test fills spotify_catalogue {search: [results]} (see spotify_results)
+    spotify_local.ui_available = lambda: True
+    spotify_local.ui_search = _fake_ui_search
+    spotify_local._press = _fake_press
+    spotify_local.ui_now_playing = lambda: dict(spotify_player)
     spotify_local._mac_bring_forward = spotify_local._win_bring_forward = lambda: actions.append("spotify front") or True
     spotify_local._mac_keys = lambda *keys: actions.append("spotify keys " + "+".join(keys))
     spotify_local._mac_type = lambda text: actions.append(f"spotify type {text}")
@@ -169,3 +203,6 @@ def uninstall() -> None:
 
 def reset() -> None:
     actions.clear()
+    spotify_catalogue.clear()
+    spotify_refuses.clear()
+    spotify_player.update(playing=False, title="", artist="")

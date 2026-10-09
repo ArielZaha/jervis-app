@@ -114,16 +114,17 @@ LOCAL_VISION_MAX_DIMENSION = 768    # a small local model: the work grows with t
 
 def _local_vision_call(image_paths: list, prompt: str, max_tokens: int) -> str:
     import local_llm
-    model = (os.getenv("OLLAMA_VISION_MODEL") or "qwen2.5vl:3b").strip()
-    encoded = []
-    for p in image_paths:
-        data, _mime = _encode_for_transport(Image.open(p), LOCAL_VISION_MAX_DIMENSION)
-        encoded.append(base64.b64encode(data).decode("ascii"))
+    import vision
+    # The best vision model installed (Qwen2.5-VL 7B before 3B), with pictures sent the way it sees them best
+    # (~1 MP: Ollama scales smaller ones up anyway — a 768 px picture gained nothing and cost the same).
+    model = vision.model() or (os.getenv("OLLAMA_VISION_MODEL") or "qwen2.5vl:3b").strip()
+    encoded = [vision.prepare(vision.load(p))[0] for p in image_paths]
     try:
-        response = requests.post(f"{local_llm.URL}/api/chat", timeout=300, json={
-            "model": model, "stream": False, "keep_alive": "10m",
-            "messages": [{"role": "user", "content": prompt, "images": encoded}],
-            "options": {"num_predict": max_tokens, "temperature": 0.2}})
+        with local_llm.gpu_slot(model, 8192) as fit:   # sized to fit next to the speech models (local_llm.gpu_slot)
+            response = requests.post(f"{local_llm.URL}/api/chat", timeout=300, json={
+                "model": model, "stream": False, "keep_alive": "10m",
+                "messages": [{"role": "user", "content": prompt, "images": encoded}],
+                "options": {"num_predict": max_tokens, "temperature": 0.2, "num_ctx": 8192, **fit}})
     except requests.Timeout:
         raise ImageError("Looking at the picture took too long on this computer. Closing other apps frees memory "
                          "and helps; a Groq key in Settings makes it fast.")

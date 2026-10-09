@@ -16,6 +16,20 @@ const PORT_BUSY_EXIT_CODE = 76; // the port was taken between choosing it and us
 const CRASH_WINDOW_MS = 2 * 60 * 1000;
 const MAX_CRASHES = 5;          // this many crashes within CRASH_WINDOW_MS: stop retrying and explain
 
+// Windows reports a native crash as an NTSTATUS exit code; name the common ones so the log says what happened.
+const NTSTATUS = {
+  0xC0000005: 'access violation: a native library crashed',
+  0xC0000409: 'stack buffer overrun',
+  0xC00000FD: 'stack overflow',
+  0xC0000135: 'a required DLL is missing',
+  0xC0000139: 'a DLL entry point is missing',
+};
+
+function describeExitCode(code) {
+  const name = typeof code === 'number' ? NTSTATUS[code >>> 0] : undefined;
+  return name ? ` = 0x${(code >>> 0).toString(16).toUpperCase()}, ${name}` : '';
+}
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -118,9 +132,14 @@ class Backend {
       return;
     }
     this.child = child;
-    const forward = (stream) => stream.on('data', (chunk) => { if (!this.app.isPackaged) process.stdout.write(chunk); });
-    forward(child.stdout);
-    forward(child.stderr);
+    child.stderrTail = '';
+    const forward = (stream, keep) => stream.on('data', (chunk) => {
+      if (!this.app.isPackaged) process.stdout.write(chunk);
+      // what it said last on stderr goes in the log if it crashes (an installed app has no console to show it)
+      if (keep) child.stderrTail = (child.stderrTail + chunk.toString()).slice(-4000);
+    });
+    forward(child.stdout, false);
+    forward(child.stderr, true);
     child.on('error', (error) => this.failed(`Jervis's engine could not start: ${error.message}`));
     child.on('exit', (code, signal) => this.exited(child, code, signal));
     waitForPort(this.port, 120000).then((up) => {
@@ -132,7 +151,11 @@ class Backend {
     if (this.child !== child) return;
     this.child = null;
     if (this.stopping) return;
-    this.log(`The backend exited (code ${code}, signal ${signal}).`);
+    this.log(`The backend exited (code ${code}${describeExitCode(code)}, signal ${signal}).`);
+    if (code !== 0 && code !== RESTART_EXIT_CODE && child.stderrTail.trim()) {
+      this.log(`Its last error output:
+${child.stderrTail.trim()}`);
+    }
     if (code === RESTART_EXIT_CODE) { this.spawn(); return; }
     if (code === PORT_BUSY_EXIT_CODE) {
       freePort().then((port) => { this.port = port; this.onState('port-changed'); this.spawn(); });
@@ -154,7 +177,8 @@ class Backend {
     this.onState('failed', message);
   }
 
-  restart() {
+  restart(reason = 'unknown') {
+    this.log(`Restarting the backend (${reason}).`);   // a deliberate restart: the old engine's exit isn't logged
     this.crashes = [];
     if (this.attached) return;
     if (this.child) {

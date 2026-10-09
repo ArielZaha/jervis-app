@@ -256,6 +256,323 @@ def play(query: str) -> str:
                             "on the one you want.")
 
 
+class NotFound(SpotifyLocalError):
+    """Nothing Spotify returned is close to what was asked; `closest` is the nearest result (or None)."""
+
+    def __init__(self, message, closest=None, searched=()):
+        super().__init__(message)
+        self.closest, self.searched = closest, list(searched)
+
+
+# ---------- Windows: Spotify's search results, read and chosen ----------
+# Spotify's Windows app exposes its page to UI Automation (a Chromium document): every search result is there with
+# its title, what it is, its artists, the link to it (with its exact ID) and its own Play button. So Jervis reads
+# the results, picks the one that was meant (spotify_match, by rules), presses THAT result's Play button, and then
+# checks the player's "Now playing: <song> by <artist>" really is it. (Spotify's Mac app shows no content to
+# accessibility: there the Quick Search below is all there is.)
+_PLAY_WORDS = ("play", "הפעל", "נגן")
+_PLAYER = ("now playing bar", "player controls", "סרגל ההשמעה")
+
+
+def _ui():
+    try:
+        import uiautomation as auto
+        return auto
+    except Exception:
+        return None
+
+
+def ui_available() -> bool:
+    return IS_WIN and _ui() is not None
+
+
+def _ui_root():
+    auto = _ui()
+    windows = _win_windows()
+    return auto.ControlFromHandle(windows[0][0]) if auto and windows else None
+
+
+class _Node:
+    """A control as it was when read (its type and name kept), the control itself behind it for acting on."""
+
+    def __init__(self, control, kind, name):
+        self.control, self.ControlTypeName, self.Name = control, kind, name
+
+    def __getattr__(self, attr):
+        return getattr(self.control, attr)
+
+
+def _ui_nodes(root, max_depth=70) -> list:
+    """The page as [(control, depth, parent index)], in reading order. A part of the page that changes while it's
+    read (the playing song's row animates; results arrive) is skipped, not the whole page."""
+    nodes = []
+
+    def visit(c, depth, parent):
+        try:
+            node = _Node(c, c.ControlTypeName, c.Name or "")
+        except Exception:
+            return
+        nodes.append((node, depth, parent))
+        here = len(nodes) - 1
+        if depth >= max_depth:
+            return
+        try:
+            kids = c.GetChildren()
+        except Exception:
+            return
+        for k in kids:
+            visit(k, depth + 1, here)
+
+    visit(root, 0, -1)
+    return nodes
+
+
+def _link_value(c) -> str:
+    try:
+        return c.GetValuePattern().Value or ""
+    except Exception:
+        return ""
+
+
+def results_from_nodes(nodes, query="") -> list:
+    """Every playable result on the page: {"uri", "kind", "title", "artists", "position", "query", "button"} — a
+    result is the smallest part of the page holding a Play button and a link to a track, album, playlist, artist
+    or show (the player bar at the bottom is not a result)."""
+    import spotify_match
+    links = {}   # node index -> (kind, uri, name)
+    for i, (c, _d, _p) in enumerate(nodes):
+        if c.ControlTypeName == "HyperlinkControl":
+            got = spotify_match.uri_of(_link_value(c))
+            if got:
+                links[i] = (got[0], got[1], (c.Name or "").strip())
+    # which links each node holds (its own subtree)
+    held = {i: [] for i in range(len(nodes))}
+    for i in sorted(links):
+        p = i
+        while p != -1:
+            held[p].append(i)
+            p = nodes[p][2]
+    in_player = set()
+    for i, (c, _d, _p) in enumerate(nodes):
+        if (c.Name or "").strip().lower() in _PLAYER:
+            j = i + 1
+            while j < len(nodes) and nodes[j][1] > nodes[i][1]:
+                in_player.add(j)
+                j += 1
+    out, seen = [], set()
+    for i, (c, _d, _p) in enumerate(nodes):
+        name = (c.Name or "").strip()
+        if c.ControlTypeName != "ButtonControl" or i in in_player or \
+                not name.lower().startswith(_PLAY_WORDS) or name.lower().startswith(("playlist", "player")):
+            continue
+        p = nodes[i][2]
+        while p != -1 and not held[p]:
+            p = nodes[p][2]
+        if p == -1:
+            continue
+        mine = [links[k] for k in held[p]]
+        primary = next((l for l in mine if l[0] not in ("artist", "user")), None) or mine[0]
+        if primary[1] in seen:
+            continue
+        seen.add(primary[1])
+        artists = [l[2] for l in mine if l[0] == "artist" and l[1] != primary[1]]
+        out.append({"uri": primary[1], "kind": primary[0], "title": primary[2], "artists": list(dict.fromkeys(artists)),
+                    "position": len(out), "query": query, "button": c})
+    return out
+
+
+def _ui_find(root, kind: str, **match):
+    """One control by type and name, found by UI Automation itself (fast), or None."""
+    auto = _ui()
+    try:
+        c = getattr(auto, kind)(searchFromControl=root, searchDepth=45, **match)
+        return c if c.Exists(0.2, 0.05) else None
+    except Exception:
+        return None
+
+
+def _ui_search_box_text(root) -> str:
+    box = _ui_find(root, "ComboBoxControl", SubName="play?") or _ui_find(root, "EditControl", SubName="play?")
+    try:
+        return (box.GetValuePattern().Value or "") if box else ""
+    except Exception:
+        return ""
+
+
+def _ui_results(root, query: str) -> list:
+    """The results on the page: from its results list when Spotify shows one, else from the whole page."""
+    grid = _ui_find(root, "DataGridControl", Name="Search results") or         _ui_find(root, "GroupControl", SubName="Search") or root
+    try:
+        return results_from_nodes(_ui_nodes(grid), query)
+    except Exception as e:   # the page changed under us (it re-renders as results arrive): read it again
+        print(f"Spotify page changed while reading it ({type(e).__name__}); reading again", flush=True)
+        return []
+
+
+_last_page = None   # the first results of the last search read (a page that hasn't changed yet looks like this)
+
+
+def ui_search(query: str, wait: float = 15.0) -> list:
+    """Spotify's results for `query` (its search page, opened by its own spotify:search: link — nothing typed)."""
+    from urllib.parse import quote
+    import spotify_match
+    os.startfile(f"spotify:search:{quote(query)}")  # type: ignore[attr-defined]
+    global _last_page
+    want = spotify_match.normalize(query)
+    deadline, last, results = time.time() + wait, None, []
+    time.sleep(0.6)
+    while time.time() < deadline:
+        root = _ui_root()
+        if root is None:
+            time.sleep(0.4)
+            continue
+        box = spotify_match.normalize(_ui_search_box_text(root).replace("+", " "))
+        if box and box != want:   # still the page before
+            time.sleep(0.4)
+            continue
+        results = _ui_results(root, query)
+        ids = [r["uri"] for r in results[:6]]
+        # the page shows this search (its box says so — or, with the box not readable while the window comes up,
+        # its results are new and have settled) and it has (mostly) loaded
+        if results and ((box == want and (ids == last or len(results) >= 4)) or
+                        (not box and ids == last and ids != _last_page)):
+            _last_page = ids
+            return results
+        last = ids
+        time.sleep(0.4)
+    return results
+
+
+def ui_now_playing() -> dict:
+    """{"playing": bool, "title", "artist"} from Spotify's player bar ("Now playing: <song> by <artist>")."""
+    root = _ui_root()
+    out = {"playing": False, "title": "", "artist": ""}
+    if root is None:
+        return out
+    auto = _ui()
+    bar = auto.GroupControl(searchFromControl=root, searchDepth=40, Name="Now playing bar")
+    if not bar.Exists(1.0, 0.1):
+        return out
+    for c, _d in auto.WalkControl(bar, maxDepth=6):
+        name = (c.Name or "").strip()
+        m = re.match(r"^Now playing:\s*(?P<t>.+?)\s+by\s+(?P<a>.+)$", name)
+        if m and not out["title"]:
+            out["title"], out["artist"] = m.group("t"), m.group("a")
+        if c.ControlTypeName == "ButtonControl" and name.lower() in ("pause", "השהה", "השהיה"):
+            out["playing"] = True
+    return out
+
+
+def _press(button) -> bool:
+    try:
+        button.GetInvokePattern().Invoke()
+        return True
+    except Exception:
+        try:
+            button.Click(simulateMove=False, waitTime=0.2)
+            return True
+        except Exception:
+            return False
+
+
+def play_request(request: str, intent: dict = None) -> dict:
+    """Play what `request` asks for, exactly: search Spotify (as said, then other spellings/scripts while nothing
+    fits), rank every result (spotify_match), press the chosen result's own Play button, and check the player shows
+    it. Returns {"uri", "kind", "title", "artists", "score", "verdict", "now"}; raises NotFound when nothing fits,
+    SpotifyLocalError when it couldn't be started (saying what really happened)."""
+    import spotify_match
+    intent = intent or spotify_match.parse(request)
+    if not intent["text"]:
+        raise SpotifyLocalError("Tell me what to play.")
+    if not installed():
+        raise SpotifyLocalError("Spotify isn't installed on this computer. Get it from spotify.com and sign in, "
+                                "then ask me again.")
+    if not ui_available():   # (a Mac): Spotify's own Quick Search, top result
+        name = play(" ".join(filter(None, [intent.get("title") or intent["text"], intent.get("artist")])))
+        return {"uri": None, "kind": "track", "title": name, "artists": [], "score": None, "verdict": "quick search",
+                "now": name}
+    if not _win_bring_forward():
+        raise SpotifyLocalError("I couldn't bring Spotify up, so I didn't play anything. Open Spotify and ask me "
+                                "again.")
+    found, searched, pick, page = [], [], None, None
+    for q in spotify_match.queries(intent):
+        results = ui_search(q)
+        searched.append(q)
+        found += results
+        page = q
+        pick = spotify_match.choose(intent, found)
+        print(f"Spotify search {q!r}: {len(results)} results; best so far "
+              f"{spotify_match.describe(pick['best']) if pick['best'] else '-'} ({pick['score']:.2f})", flush=True)
+        if spotify_match.settled(intent, pick):
+            break
+    if not pick or pick["verdict"] == "none":
+        closest = pick["best"] if pick else None
+        raise NotFound(f"I couldn't find {intent['text']} on Spotify." +
+                       (f" The closest was {spotify_match.describe(closest)}." if closest else ""), closest, searched)
+    best = dict(pick["best"], score=pick["score"], verdict=pick["verdict"])
+    if best["query"] != page:   # it was on an earlier search's page: show that one again
+        best["button"] = None
+    return _press_and_check(best)
+
+
+def play_exact(cand: dict) -> dict:
+    """Play exactly this result (by its URI) — one offered earlier and accepted with a "yes"."""
+    if not ui_available():
+        raise SpotifyLocalError("I can only play an exact Spotify result on Windows, or with Spotify keys set up.")
+    if not _win_bring_forward():
+        raise SpotifyLocalError("I couldn't bring Spotify up, so I didn't play anything.")
+    return _press_and_check(dict(cand, button=None, verdict="confident", score=None))
+
+
+def _press_and_check(best: dict) -> dict:
+    """Press `best`'s own Play button (finding it again by its URI on its search's page if needed) and check the
+    player shows it playing. The result as played, or SpotifyLocalError saying what really happened."""
+    import spotify_match
+    if best.get("button") is None:
+        again = [r for r in ui_search(best["query"]) if r["uri"] == best["uri"]]
+        if not again:
+            raise SpotifyLocalError(f"Spotify stopped showing {spotify_match.describe(best)}, so I didn't play it.")
+        best = dict(best, button=again[0]["button"])
+    def its(now):   # is the player on this result? (a track by its title, an artist by who's playing)
+        if not now.get("title"):
+            return False
+        if best["kind"] == "track":
+            return spotify_match.similarity(now["title"], best["title"]) > 0.8
+        if best["kind"] == "artist":
+            return spotify_match.similarity(best["title"], now["artist"]) > 0.7 or \
+                spotify_match.normalize(best["title"]) in spotify_match.normalize(now["artist"])
+        return False
+
+    def done(now):
+        out = {k: best.get(k) for k in ("uri", "kind", "title", "artists", "score", "verdict", "query")}
+        out["now"] = f"{now['title']} by {now['artist']}"
+        return out
+
+    before = ui_now_playing()
+    if before["playing"] and its(before):
+        return done(before)   # already playing it: its Play button would only pause it
+    if not _press(best["button"]):
+        raise SpotifyLocalError(f"I found {spotify_match.describe(best)} but Spotify didn't let me press play on it.")
+    now, pressed_again, steady = {}, False, 0
+    for k in range(30):   # up to ~9 s: Spotify (and a computer busy with a local AI) can be slow to start
+        time.sleep(0.3)
+        now = ui_now_playing()
+        started = now["playing"] and now["title"] and (
+            its(now) or (best["kind"] not in ("track", "artist") and
+                         (now["title"] != before.get("title") or not before.get("playing"))))
+        steady = steady + 1 if started else 0
+        if steady >= 2:   # playing, and still playing a moment later (not a flicker before a pause)
+            return done(now)
+        if k == 8 and not started and not now["playing"] and not pressed_again:
+            # nothing new, and paused: Spotify took the press as pause (it thought this was what was playing,
+            # or the previous one was) — once more starts it
+            pressed_again = True
+            _press(best["button"])
+    raise SpotifyLocalError(f"I pressed play on {spotify_match.describe(best)}, but Spotify " +
+                            (f"is playing {now['title']} by {now['artist']} instead." if now.get("playing") and
+                             now.get("title") else "didn't start playing it."))
+
+
 def _close_quick_search() -> None:
     """Leave Spotify tidy: Quick Search stays open after playing from it."""
     try:

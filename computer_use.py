@@ -25,6 +25,8 @@ import threading
 import time
 from dataclasses import dataclass, field
 
+import pointer_motion
+
 MAX_STEPS = 25
 MAX_STALE = 8        # steps in a row that get nowhere (nothing changed, or the answer was unusable): stuck, stop
 MAX_REPEATS = 2      # the same action may change nothing this many times; after that it's refused
@@ -360,6 +362,7 @@ class ControlSession:
         # there and BlenderComputerTask (when the free-form AI creates something new itself).
         self.blender_objects = []    # [{"name": "Cube.001", "kind": "cube"}], creation order
         self.blender_focus = None    # the object the last Blender command worked on: what "it" means next
+        self.blender_focus_group = None   # every part of the last multi-part build ("it" after "add a tree")
         self.last_deterministic_text = None   # the last recognized blender_commands text, for "do that again"
         self.last_undo = None   # {"description", "code"}: how to reverse the last deterministic action, for "undo"
         self.started_at = time.time()
@@ -535,6 +538,16 @@ class ComputerTask:
                     return self._finish("error", "Windows is blocking my key presses and clicks: the screen may be "
                                                  "locked, or the app in front runs as administrator. You have control "
                                                  "again.")
+                except pointer_motion.PointerTakenOver:
+                    # The user grabbed the mouse while Jervis was moving it: nothing was clicked. Pause like any
+                    # other takeover; on "continue" the screen is read again before anything else happens.
+                    self.history.append((description, "Not done: the user moved the mouse first."))
+                    self.pause("You moved the mouse, so I paused. Say “continue” when you want me to go on.")
+                    if not self._checkpoint():
+                        return self._finish("stopped", "Stopped. You have control again.")
+                    last_change = "The user used the computer while you were paused; look at the screen again."
+                    self._expected_cursor = None
+                    continue
                 after = self._settle(observation)
                 last_change = self._change_description(kind, outcome, observation, after)
                 self.history.append((description, last_change))
@@ -809,6 +822,8 @@ class ComputerTask:
             self.log(f"Computer control action failed: {type(e).__name__}: {e}")
             if type(e).__name__ == "InputRefused":   # nothing more can work: see winctl.InputRefused
                 raise InputBlocked() from e
+            if isinstance(e, pointer_motion.PointerTakenOver):
+                raise
             return f"That action failed ({type(e).__name__}: {str(e)[:120]})."
         return ""
 

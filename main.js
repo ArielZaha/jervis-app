@@ -195,7 +195,7 @@ function applyStartAtLogin() {
     setStartAtLogin(true);                   // refresh the app's location
   }
 }
-ipcMain.on('restart-backend', () => backend && backend.restart());
+ipcMain.on('restart-backend', (_event, reason) => backend && backend.restart(String(reason || 'asked by the window')));
 
 // ---------- Computer control: the overlay, the emergency shortcut, and getting the window out of the way ----------
 // While Jervis uses the mouse and keyboard, a glowing edge and a bar with Pause and Stop sit on top of everything.
@@ -322,7 +322,7 @@ function createTray() {
   tray.setToolTip('Jervis: say “Hey Jervis”');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show Jervis', click: showWindow },
-    { label: 'Restart Jervis’s engine', click: () => backend && backend.restart() },
+    { label: 'Restart Jervis’s engine', click: () => backend && backend.restart('tray menu') },
     { type: 'separator' },
     { label: 'Quit Jervis (stops listening for “Hey Jervis”)', click: () => { quitting = true; app.quit(); } },
   ]));

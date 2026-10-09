@@ -34,6 +34,9 @@ def clean(sandboxed, monkeypatch):
         app.announcements.get_nowait()
     sent = []
     monkeypatch.setattr(app, "send_ui_update_once", lambda payload: sent.append(payload))
+    # Never reach a real Blender that happens to be open on this machine (tests that need one patch it).
+    monkeypatch.setattr(app.blender_control.BlenderBridge, "ping", lambda self, timeout=3: False)
+    monkeypatch.setattr(app.blender_control, "blender_running", lambda: False)
     monkeypatch.setattr(app, "computer_environment", FakeScreen)
     monkeypatch.setattr(app.computer_use, "SETTLE_TIMEOUT", 0.05)
     monkeypatch.setattr(app.computer_use, "time", SimpleNamespace(time=time.time, sleep=lambda s: None))
@@ -150,18 +153,27 @@ def test_stop_words_do_nothing_when_jervis_is_not_in_control():
     assert app.handle_control_voice("yes") is None
 
 
-def test_a_second_task_waits_for_the_first(monkeypatch):
+def test_a_new_task_replaces_one_still_running(monkeypatch):
+    """A stuck task used to answer "Still working on that" to everything said for minutes."""
     monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
     gate = threading.Event()
     monkeypatch.setattr(app, "_ask_ai_for_control", lambda m, t: (gate.wait(5), ai()(m, t))[1])
-    app.start_computer_task("first")
+    app.start_computer_task("click the first button")
     for _ in range(200):
         if app.control_active():
             break
         time.sleep(0.02)
-    assert "Still working on that" in app.start_computer_task("second")
-    app.computer_task.stop()
-    gate.set()
+    first = app.computer_task
+    threading.Timer(0.2, gate.set).start()   # the first task is mid-AI-call; it stops as soon as that returns
+    assert "Still working on that" not in app.start_computer_task("click the second button")
+    assert first.state == "stopped"
+
+
+def test_a_task_still_being_set_up_is_not_replaced(monkeypatch):
+    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    app.computer_task = app._SettingUp()
+    assert "Still working on that" in app.start_computer_task("click save")
+    app.computer_task = None
 
 
 def test_window_buttons_answer_and_stop(monkeypatch):
@@ -307,9 +319,9 @@ def test_a_one_off_step_does_not_leave_a_lingering_session(monkeypatch, clean):
     assert not app.session_active()
 
 
-def test_a_follow_up_said_while_still_busy_gets_the_busy_message(monkeypatch, clean):
-    """A free-text follow-up during an active session must still reach start_computer_task (and its "Still working
-    on that" reply) even while a task is running — not silently fall through to the general chat AI."""
+def test_a_follow_up_said_while_busy_replaces_the_running_task(monkeypatch, clean):
+    """A free-text follow-up during an active session must reach start_computer_task even while a task is running
+    (not fall through to the general chat AI), and replace the running task rather than wait behind it."""
     monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
     gate = threading.Event()
     monkeypatch.setattr(app, "_ask_ai_for_control", lambda m, t: (gate.wait(5), ai()(m, t))[1])
@@ -318,8 +330,27 @@ def test_a_follow_up_said_while_still_busy_gets_the_busy_message(monkeypatch, cl
         if app.control_active():
             break
         time.sleep(0.02)
-    assert "Still working on that" in app.handle_direct_command("create a chair")
-    gate.set()
+    first = app.computer_task
+    threading.Timer(0.2, gate.set).start()
+    assert app.handle_direct_command("create a chair") == "Okay."
+    assert first.state == "stopped"
+
+
+@pytest.mark.parametrize("noise", ["for Blendale. Oh my god, that's a hot deal.", "Yes, it's also a chamago, you know",
+                                   "and I will see you in the next video.", "I told her.", "The metal very cool."])
+def test_background_speech_during_a_session_never_becomes_a_task(noise):
+    assert not app.looks_like_session_goal(noise)
+
+
+def test_okay_thanks_during_a_session_just_says_okay(monkeypatch, clean):
+    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
+    app.handle_direct_command("take control of my computer")
+    for _ in range(200):
+        if app.session_active():
+            break
+        time.sleep(0.02)
+    assert app.handle_direct_command("Okay, okay, okay, okay.") == "Okay."
+    assert app.computer_task is None
 
 
 # ---------- routing a Blender goal to BlenderComputerTask (see computer_use.BlenderComputerTask) ----------
@@ -403,7 +434,8 @@ def test_a_common_blender_command_is_handled_deterministically_without_the_ai(mo
 
 
 def test_a_vague_blender_remark_asks_for_clarification_without_the_ai(monkeypatch, clean):
-    """"it's sticky" must never be handed to the AI to invent a technical fix for — see blender_commands.looks_concrete."""
+    """"make the cube totally" must never be handed to the AI to invent a technical fix for — see
+    blender_commands.looks_concrete. (A remark with no action at all, like "it's sticky", isn't a command.)"""
     monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "on")
     bridge = _FakeBlenderBridge()
     monkeypatch.setattr(app.blender_control, "ensure_bridge", lambda session, confirm: bridge)
@@ -419,13 +451,14 @@ def test_a_vague_blender_remark_asks_for_clarification_without_the_ai(monkeypatc
         time.sleep(0.02)
     while not app.announcements.empty():   # drain the "created a cube" announcement before the next command
         app.announcements.get_nowait()
-    reply = app.handle_direct_command("it's sticky")
+    assert not app.looks_like_session_goal("it's sticky")
+    reply = app.handle_direct_command("Make the cube totally.")
     for _ in range(200):
         if not app.announcements.empty():
             break
         time.sleep(0.02)
     spoken = app.announcements.get(timeout=1)
-    assert "more specifically" in spoken or "more specifically" in (reply or "")
+    assert "not sure what you'd like" in spoken or "not sure what you'd like" in (reply or "")
 
 
 def test_blender_context_survives_a_momentary_focus_steal(monkeypatch, clean):

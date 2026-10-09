@@ -34,9 +34,69 @@ switch to Spotify's online interface instead (Premium).
 
 ## Which AI answers
 
-- **By default, the AI on your computer:** `llama3.2` through Ollama for answers and Whisper (`base.en`, via
-  faster-whisper) for speech. After the first start both work offline. On computers with 16 GB of memory he also
-  installs `qwen2.5vl:3b`, so he can look at pictures and the screen (Settings, AI can turn it on or off).
+- **By default, the AI on your computer:** `llama3.2` through Ollama for answers and Whisper (via faster-whisper)
+  for speech, English and Hebrew (see **Hebrew** below). After the first start both work offline. On computers with
+  16 GB of memory he also installs `qwen2.5vl:3b`, so he can look at pictures and the screen (Settings, AI can turn it
+  on or off).
+- **A stronger local model, when installed:** each job gets the best installed model (`local_llm.model_for`):
+  planning, code and computer control use `qwen2.5-coder:7b` (else `qwen2.5:7b`, `llama3.1:8b`, `qwen3:8b`...), and
+  chat uses the same one, since an 8 GB GPU holds one 7B model at a time and swapping costs ~4 s (the Settings
+  default `OLLAMA_MODEL=llama3.2` doesn't count as a choice; any other value does). Hebrew is translated by DictaLM
+  (below). Override with `JERVIS_AGENT_MODEL` / `JERVIS_CHAT_MODEL` / `JERVIS_HEBREW_MODEL` /
+  `JERVIS_TRANSLATE_MODEL` / `JERVIS_NLU_MODEL` in `.env`.
+  Every call names its context size (16k; 4k for DictaLM so it stays on the GPU), so Ollama never reloads a
+  model between chat and commands, and never picks its own 32k-64k default (llama3.2 at 64k: 10 GB, partly on CPU).
+- **Understanding what you mean** (`nlu.py`): speech → text → a deterministic rewrite (Hebrew and mixed commands —
+  "תיצור קובייה", "תעשה אותה פי שתיים יותר גבוהה", "open Spotify ותפעיל את השיר הזה" — and known speech slips like
+  "open blend ever", "spot if I", "make the cube girl") → the command handlers. What they still don't recognise, if
+  it reads like a command (or is a short follow-up while working in Blender), goes to the local model as a
+  **structured intent** from a closed list (`open_app`, `object_resize`, `undo`, `clarify`...; never code), checked
+  against what was actually said, and turned back into the canonical English command for the same handlers.
+  Unclear ("make it", "take it to a level") gets one short question, and the answer completes it ("taller").
+  Chit-chat never becomes an action. `python nlu_eval.py [--heldout|--fresh] [models...]` scores models on Jervis's
+  own language test set (English, Hebrew, mixed, speech slips, follow-ups, noise).
+- **Hebrew** (`language.py`, `stt_local.py`): speak Hebrew, English, or both in one sentence ("תפתח Blender
+  ותיצור detailed house") — no setting to switch.
+  - *Hearing:* on an NVIDIA GPU, Whisper `small` tells the language of each sentence (no mistakes on 60 real
+    recordings), Whisper large-v3-turbo writes English, and **ivrit.ai's Whisper large-v3** (Apache-2.0) writes Hebrew,
+    mixed-in English words included. Only the model for the language you're speaking stays on the GPU (Hebrew: 1.8 GB,
+    English: 1.6 GB); switching language loads the other one in the background (a few seconds; meanwhile the loaded
+    one still answers). Measured on real recorded Hebrew (FLEURS): 15.8% word errors (20.6% with background noise),
+    vs 17.3% / 26.0% for ivrit.ai's turbo, for ~0.2 s more on a short command. `JERVIS_HEBREW_SPEECH=turbo` (Settings,
+    advanced) picks the turbo. Recordings are resampled properly (libswresample) before Whisper hears them. Without a
+    usable GPU: `small` (Hebrew, weaker) + `base.en`. Settings, Voice, "Languages I speak: English only" goes back to
+    `base.en` alone.
+  - *Understanding:* a Hebrew request is translated into English before anything else sees it — the everyday
+    commands by `nlu.py`'s rules (instant), the rest by **DictaLM 2.0** (Dicta, Apache-2.0, 4.4 GB, ~0.5 s) — so every
+    command, the Blender and code agents, chat and its tools, follow-ups and corrections work exactly as in English.
+    File names, paths and code never go through the model. A translation is checked before anything acts on it: one
+    that lost an English word or a number, gained or lost a "delete/close/send" or a "don't", or invented a name, is
+    said back ("רק לוודא שהבנתי: ... לעשות את זה?") and only done after "כן"; garbled speech gets "say it again".
+    Translations are plain one-line answers (twice as fast as JSON, ~0.25 s); a translation that contains words that
+    are neither English (CMUdict) nor in what was said is treated as unsure.
+  - *Answering:* replies are translated back by DictaLM (code blocks, paths, numbers and program output untouched;
+    English kept if a translation fails its checks) and spoken by a **natural Hebrew voice**: the Piper voice "Shaul"
+    with the phonikud diacritizer and pronunciation (`hebrew_voice.py`, ~0.2 s a sentence on the CPU, 380 MB
+    downloaded once with the Hebrew models). Heard back by Whisper it comes through with 3.3% letter errors, vs 6.0%
+    for Windows' Asaf, which stays the fallback (and `JERVIS_HEBREW_VOICE=windows` picks it). English words in a Hebrew
+    sentence are said through CMUdict, with an accent. Licenses: the voice is CC BY-NC (non-commercial use only),
+    phonikud CC BY 4.0, CMUdict BSD. He answers in the language you last spoke (Settings, Voice, "Jervis answers in"
+    can fix it).
+  - *On an 8 GB GPU* (`local_llm.gpu_slot`): Ollama can't see the GPU memory other programs use (the speech
+    models' ~1.8 GB, Discord, a game), loaded whole models anyway, and Windows moved the overflow to system RAM —
+    answers became 20-50x slower (minutes, in a real session). Now, before a model loads, Jervis unloads his other
+    model, measures what's really free (`nvidia-smi`) and asks for only the layers that fit (the rest run on the CPU:
+    slower, never stuck); one model loads at a time. Plain talk (no tools, numbers or pictures) is answered by the
+    bilingual DictaLM in one call — Hebrew from the Hebrew, English while DictaLM is the model loaded — so a Hebrew
+    conversation doesn't swap models; the agent's coder model is loaded only for commands, building and code (a swap
+    of ~4-7 s). The two translation directions share one prompt, so it stays cached between them. A translator that
+    fails is reported at once (in Hebrew) instead of queuing more calls. `JERVIS_GPU_FIT=off` /
+    `JERVIS_GPU_MARGIN_MB` adjust it. "היי ג'רביס" still wakes him.
+  - *Timing:* every request leaves one line in `logs/jervis.log` — `Turn 7 (spoken, he): stt 0.8s · understand 1.8s
+    (model) · command 0.0s · reply-translate 1.1s · speak 2.3s · total 6.0s [program task running]` — never the words;
+    every model call logs its load, prompt and generation time, and every GPU plan how many layers fit.
+- **Exact numbers:** for a question with numbers in it ("3 apples plus 2 dozen, minus 7?"), the model writes a tiny
+  calculation that `reasoning.py` runs (plain arithmetic only), and the answer is told the exact result.
 - **Optional, faster:** paste a free key from <https://console.groq.com> into Settings, AI. He then answers with
   `openai/gpt-oss-20b` on Groq and falls back to the local AI by himself when Groq can't be reached or is rate limited.
   The real reason for any failed AI call is written to `logs/ai_errors.log` in his data folder.
@@ -61,13 +121,143 @@ for the screen to settle and checks what changed before the next step.
   model). With a Groq key, the list of buttons and fields in the window (not a picture of the screen) goes to Groq
   along with the request either way.
 
+- **Moves like a hand:** the pointer glides to its target (a short, smooth arc that speeds up and slows down,
+  `pointer_motion.py`) instead of jumping, and only clicks once it has arrived. Grab the mouse during a glide and he
+  stops at once, without clicking, and pauses.
+
 On macOS, turn on Jervis in *System Settings > Privacy & Security > Accessibility*; macOS asks the first time.
 
+**Write where your cursor is** (`write_here.py`). Put the cursor in a document, an email, a chat box or a code
+editor and say "write me a story about someone who discovers a secret island" (or "type a short reply here"). He
+writes exactly the text asked for, brings that window back (the app puts its own caret back), checks the cursor is
+still in an editable, non-password field, types it (short text) or pastes it (long text and code — your clipboard is
+put back afterwards), then **reads the field back** to check the text really arrived. A plain "write me a story"
+typed into Jervis's own window stays a chat answer; "write it here", or saying it while you're in a text app, types it.
+
+**Questions about your screen** (`screen_reader.py`): "what's on my screen?", "what does this error say?", "explain
+this error". He reads the window you're working in through the accessibility interface (app, window, dialogs,
+buttons, fields and their text — password fields never) and answers from that; only a window that shows almost nothing
+that way (a 3D viewport, a game) is looked at by the local vision model. Reading only: nothing is clicked or typed.
+
 How far he gets depends on the AI. With `gpt-oss-20b` on Groq (a free key), multi-step tasks work well: "set the
-font size in TextEdit to 18" took one step. The default local `llama3.2` (3B) handles short, simple tasks but often
-misses when it's done or wanders, so with the local AI a task is capped at 12 steps, repeats that change nothing are
-refused, and he stops when he's stuck. A larger local model (Settings, AI, *Local AI model*, e.g. `qwen2.5:7b` on a
-16 GB computer) is a middle ground.
+font size in TextEdit to 18" took one step. Locally, the controls use the strongest installed model (see *Which AI
+answers*); a 3B model like `llama3.2` handles short, simple tasks but often misses when it's done or wanders. With the
+local AI a task is capped at 20 steps, repeats that change nothing are refused, and he stops when he's stuck.
+
+## Building things in apps: the agent (Blender, Minecraft)
+
+"Open Blender and build a small house with a red roof", then "add a tree next to it", "make it two times bigger",
+"color the roof green", "undo". Simple commands ("create a cube", "make it red", "rotate it 45 degrees") run
+instantly with no AI (`blender_commands.py`). Anything else goes to the agent (`agent_core.py`), all local and free:
+
+1. **Plan:** one call to the local model returns the steps, each with code, plus checks for the whole request.
+2. **Act** through the most reliable channel the app has: Blender runs the code itself through its scripting bridge
+   (`blender_bridge.py`, loaded by Blender on every start), using a small forgiving building kit (`blender_kit.py`:
+   `box`, `roof`, `cylinder`, `color`, `move`, `top`...) instead of raw `bpy`.
+3. **Observe and verify:** the real scene is read back and every check is evaluated in plain code: does it exist,
+   is it the right color, does it rest on what it should. Things floating in the air are set down, and new things
+   built inside existing ones are moved beside them, automatically.
+4. **Repair:** a failed step is undone and the model gets the exact error, the failed checks and the real state, and
+   tries again. If something is still missing at the end, one fix-up step targets exactly that.
+5. **Report only what was verified** ("I checked it in Blender: 9 of 9 checks passed"), or say plainly what didn't
+   work. Clearing the scene or deleting things you didn't ask about is refused, and "undo" puts everything back.
+
+Builds that worked cleanly the first time are remembered (`agent_memory.json`) as examples for similar requests.
+
+**Modeling quality, not just "it exists".** The kit is a procedural modeling toolkit, so the model can build things the
+way an artist would rather than stacking primitives: `blob()` (rocks, foliage clusters, bushes), `tube()` along a
+curving `path()` (trunks, branches, curved legs), `lathe()` (vases, columns), `extrude_shape()`, `frame()`,
+`opening()`/`hollow()` (real window and door holes), `taper`/`bend`/`roughen`, bevels and subdivision, seeded variation
+(`rng`, `points_on_sphere`...), construction helpers that get the geometry right (`legs_under()`, `supports()`), and
+textured procedural materials (`bark`, `wood`, `leaves`, `stone`, `brick`, `roof tiles`, `plaster`, `glass`...). After a
+build Jervis **inspects** how each part was actually made and judges it, then **refines** it:
+- *Malformed* (fixed during verification, any quality level): legs not under the seat, parts below the ground, a
+  chair that would tip over, a trunk that doesn't reach the ground, a roof off its walls.
+- *Too primitive* (one or two improvement rounds): a cylinder-and-sphere "tree", too few parts, razor-sharp boxes,
+  flat colours where wood or stone belongs, identical copies, separate things built inside each other, proportions
+  that aren't those of the thing asked for. A build far from real-world size (a bench the size of a shoe) is rescaled.
+- *Quality level* comes from your words: "simple"/"quick"/"low poly" stays fast; "detailed", "realistic",
+  "beautiful", "polished"... gets more parts, more tokens and more refinement.
+- *Scenes* ("a park with a bench, two trees and some rocks") are laid out first, then each thing is built and
+  inspected on its own. An improvement round that breaks anything is undone, so refining only makes things better.
+
+**Finished assets** (`blender_assets.py`). A local 7B model writing geometry code from scratch produces blockouts:
+asked for "a detailed house" it built a box, a door and a roof, and every check passed. So the things people ask for
+most are modelled once, properly, and the AI only chooses which one and its options (one quick structured call):
+`house()` (styles cottage, brick, modern, farmhouse, cabin; 1-3 floors; foundation, walls with real openings, framed
+glazed windows with sills and lintels, a panelled door with a handle and steps, corner boards, a tiled roof with real
+thickness and courses, ridge cap, fascia and gutters, chimney with cap and pots, shutters, a porch with railings, a
+stone path), `tree()` (oak, pine, palm, birch), `island()` (natural coastline, beach sloping into turquoise
+shallows, grassy hills and rocky slopes, shore rocks, the sea, and trees growing on it), `water()`, `rock()`,
+`bush()` and `fence()`. Options are kept only when your own words support them (the model once gave a palm tree
+"autumn leaves" nobody asked for). Then:
+- "make the windows bigger", "give it two floors", "add more trees to the island" rebuild that asset with the option
+  changed (and "undo" brings back the very same objects);
+- "add a small cabin **on** the island" finds free, level ground on its terrain; "a fence **next to** the house"
+  goes just clear of its footprint; on sloping ground a house's foundation reaches down to the ground;
+- "make the house white" paints its walls (not its windows), "make the roof green" the roof and its ridge;
+- "no, the roof" (after "make it bigger") puts the house back and makes the roof bigger instead; "the door too"
+  does the same to the door;
+- "... and save it" is always carried out and checked on disk (a new scene gets a new file name in Documents — an
+  earlier file is never overwritten).
+Things nobody modelled (a castle, a car, a chair) still go to the general planner with the kit, which can also use the
+assets as parts. `tests/test_blender_assets_real.py` builds every asset in a real, headless Blender.
+
+**A picture, rebuilt in 3D — then directed in words.** Attach a photo and say "recreate this in Blender" (or "turn
+this picture into a 3D scene"):
+1. *Seeing* (`vision.py`, `image_analysis.py`, `visual_scene.py`): a local vision model, Qwen2.5-VL 7B (the 3B where
+   the GPU is smaller; a text model is never asked to pretend), is asked focused questions — the whole scene, where
+   each thing is (boxes), each important thing up close — and its answers are checked against the pixels themselves
+   (night is measured, not believed; colours are measured; lit windows are counted). The camera is reconstructed
+   (lens, horizon, pitch, height from things of known size) and every grounded thing is projected onto the ground in
+   metres. Every value says how it is known — visible, estimated, inferred or unknown — and what the picture can't
+   show (the far side of a house) is inferred and said to be.
+2. *Meaning* (`semantics.py`): what each thing is (a shop is commercial and lit at night, a palm sways, an ocean rolls
+   in waves, a pool only ripples) and data-driven behaviour rules that add only what the scene justifies.
+3. *Rebuilding* (`reconstruct.py`): finished assets chosen and configured from what was seen — `villa()`,
+   `storefront()`, `room()`, `road()`, `shore()`, `ground()`, `hills()`, `forest()` (`blender_places.py`), furniture,
+   lamps, lanterns and parasols (`blender_props.py`), and the existing houses, pools, trees, cars — laid out
+   consistently, the camera set up like the photo's, the light and weather matched, everything tagged with its meaning.
+   Each step is checked like any other build.
+4. *Checking by eye* (`visual_critique.py`): the scene is rendered, compared with the photo (where each thing lands,
+   colours, the sky, brightness), the biggest mismatch fixed, rendered again — a fix is kept only if it helps — and the
+   biggest difference left is said, not hidden.
+
+Then the scene is edited, never rebuilt (`scene_edit.py`, `blender_world.py`, `scene_state.py`): "add fog", "make the
+fog thicker", "put fog near the ground", "make it sunset / night" (sun, sky, exposure, windows, signs and street lamps
+together), "add rain" (rain and wet surfaces), "make the ocean calmer", "make the waterfall faster", "make the trees
+move more", "stop the animation", "turn on the house lights", "add lights along the path", "make the windows darker",
+"make the grass greener", "move the camera closer", "show the house from behind", "give me a low-angle shot", "use a
+wider lens", "switch to the other camera", "move the villa back" (what belongs to it moves with it), "make it
+cinematic", "make it look more like the photo". Things are found by meaning and position — "the pool", "the left
+palm", "that tree", "those chairs". The photo is kept as the reference, but the scene as it is now is what every edit
+starts from: "make it sunrise" stays sunrise.
+
+**Adding an app** means writing one adapter (see `agent_blender.py`, and `agent_minecraft.py`, which types chat
+commands and reads the game's own log to verify them): how to act, how to read the state, and what each check
+means. The planning, verification and repair loop is shared. Then route requests to it in `app.py` (see
+`handle_minecraft_command`). The Minecraft adapter has tests with a simulated game but hasn't been run against the real
+game yet; it needs cheats on (Open to LAN, "Allow Cheats").
+
+## Programming
+
+"Write a Python program that prints the first 15 prime numbers", then "make it also print their sum", "run it again"
+(`agent_code.py`). The code is never assumed to work: the local coding model writes the program (non-interactive,
+ending with its own self-checks), Jervis **runs** it in its own folder (*projects* in his data folder) with a time
+limit, **inspects** the exit code, any traceback, the self-checks and the expected output, and on a failure gives the
+model the real error to **fix** it and runs it again (up to three fixes). He reports only what was verified ("it ran
+and its self-checks passed; it printed ...") and shows the code in the window. Code that deletes files, starts
+programs or uses the network runs only after you say yes. Python and JavaScript run when installed.
+
+## Listening
+
+- Say the request with the wake phrase in one breath — "Hey Jervis, create a house in Blender" — and it's done
+  right away (it used to wake up and drop the request).
+- However the name is heard ("hey Gravis", "okay Gervis", "Jarvis"), after a greeting it's Jervis; inside a sentence
+  ("customer service", a friend called Travis) it's just a word.
+- A sentence cut off by a pause ("put a palm tree next to the..." "...house") is waited on for a few seconds and
+  joined, instead of acting on half a command.
+- Tests can play WAV recordings to the real listening loop instead of the microphone (`JERVIS_TEST_AUDIO`).
 
 ## Phone control
 
@@ -115,13 +305,18 @@ your own relay instead (see `relay/README.md`). Either way, everything beyond th
 encrypted with a key only your phone and this computer ever have — a relay only ever moves opaque, encrypted bytes
 between them, never anything it can read (see `phone_crypto.py` if you want the details).
 
+*"The phone page couldn't be loaded" (fixed):* the installed engine was built without `phone_client.html`,
+`phone_sw.js` and `confirm.html`, so the page every phone (and the Connect window) asks for answered with an error.
+They're now packaged, `jervis-backend --selftest` checks every bundled file, and `tests/test_packaging.py` fails if
+code reads a file the build doesn't include.
+
 ## What works where
 
 | Feature | macOS | Windows |
 |---|---|---|
 | Voice, wake phrase, timers, notifications, AI answers, window | yes | yes |
 | Computer control (mouse and keyboard) | yes (Accessibility permission) | yes |
-| Speaking (Hebrew too) | built-in voices | built-in voices (add the Hebrew voice in Windows Settings > Time & language > Speech) |
+| Speaking (Hebrew too) | built-in voices | built-in voices; Hebrew: the natural voice above (Windows' Hebrew voice as fallback) |
 | Open any app | yes | yes (everything in the Start menu) |
 | Websites, Netflix / Stremio / YouTube playback | yes | yes |
 | Pause / resume | exact, no toggling | toggles play/pause with the media key |
@@ -140,6 +335,16 @@ between them, never anything it can read (see `phone_crypto.py` if you want the 
 - **Windows** needs no special permissions. Word must be installed for Word documents. Because Windows has no
   scripting interface for browsers, Jervis controls them like a person would (finds the window, presses shortcuts), so
   keep the tab you want controlled as the active tab of its window.
+
+## When something goes wrong
+
+If the engine stops by itself, the window says "Jervis's engine keeps stopping" and the details are in the log
+(*Settings, Diagnostics*). A crash inside a native library (audio, speech, the AI runtime) used to leave nothing in
+the log; now every thread's stack is written to `logs/crash.log` as it happens and copied into `logs/jervis.log` on the
+next start, and the window's own log (`logs/window.log`) keeps the last error output of the engine with a readable
+exit code. (The crash behind "the engine keeps stopping" since September: two threads starting the audio system at the
+same moment — the Settings device list and the microphone — crash PortAudio. All audio-system use now goes through one
+lock, `microphones.py`.)
 
 ## Run from source, test, build
 

@@ -437,9 +437,16 @@ def test_without_take_control_spotify_is_played_quickly(monkeypatch):
     import spotify_local
     monkeypatch.setattr(app, "sp", None)
     monkeypatch.setattr(spotify_local, "time", SimpleNamespace(sleep=lambda s: None, time=time.time))
+    import sandbox as sb
+    sb.spotify_catalogue["jane"] = [{"uri": "spotify:track:jane1", "kind": "track", "title": "Jane!",
+                                     "artists": ["Janis Ian"]}]
     result, actions = route("play Jane! on spotify")
-    assert "type Jane!" in plain(actions)             # typed at once, no pointer moves
-    assert not any(a.startswith("pointer to") for a in actions)
+    if sys.platform == "darwin":
+        assert "type Jane" in plain(actions)          # Quick Search, typed at once
+    else:   # its search page, and that result's own Play button
+        assert "spotify search page Jane" in actions and "spotify press play spotify:track:jane1" in actions
+        assert result == 'Playing "Jane!" by Janis Ian on Spotify.'
+    assert not any(a.startswith("pointer to") for a in actions)   # quick: no pointer moves
 
 
 # ---- weather: a question opens the weather window ----
@@ -553,3 +560,76 @@ def test_take_control_asks_which_version_before_permission_and_carries_on(monkey
 def test_scroll_goals_are_exact_steps():
     assert [n for n, _ in app.scripted_steps_for("scroll down")] == ["Scrolling down"]
     assert [n for n, _ in app.scripted_steps_for("scroll to the top")] == ["Scrolling up"]
+
+
+# ---------- the clock: answered from this computer's own clock, never by the model ----------
+@pytest.mark.parametrize("said", ["what time is it", "What time is it?", "what's the time", "tell me the time",
+                                  "Jervis, what time is it now", "מה השעה"])
+def test_time_questions_are_answered_from_the_clock(said):
+    reply = app.handle_command(said, typed=True)
+    assert reply and any(ch.isdigit() for ch in reply) and ":" in reply
+
+
+@pytest.mark.parametrize("said", ["what's the date", "what day is it today", "what's today's date", "מה התאריך היום"])
+def test_date_questions_are_answered_from_the_clock(said):
+    import datetime
+    reply = app.handle_command(said, typed=True)
+    assert reply and str(datetime.date.today().year) in reply
+
+
+@pytest.mark.parametrize("said", ["I don't have time for this", "what time does the store open",
+                                  "set a timer for 5 minutes and tell me the time"])
+def test_sentences_that_only_mention_time_are_not_clock_questions(said):
+    assert app.handle_clock_question(said) is None
+
+
+def test_the_chat_model_is_told_todays_date():
+    import datetime
+    sent = app.trim_for_ai([{"role": "system", "content": "You are Jervis."}, {"role": "user", "content": "hi"}])
+    assert str(datetime.date.today().year) in sent[0]["content"]
+    assert datetime.date.today().strftime("%A") in sent[0]["content"]
+
+
+# ---------- writing where the cursor is (write_here.py) ----------
+def _cursor_in(monkeypatch, editable):
+    import write_here
+    started = []
+    monkeypatch.setattr(write_here, "find_target", lambda: write_here.Target(
+        hwnd=7, app="notepad", title="notes.txt - Notepad", control="DocumentControl", editable=editable))
+    monkeypatch.setattr(app, "start_computer_task", lambda goal, scripted=None, **kw: started.append((goal, scripted))
+                        or "On it.")
+    return started
+
+
+def test_with_the_cursor_in_a_document_write_me_a_story_is_typed_there(monkeypatch):
+    started = _cursor_in(monkeypatch, editable=True)
+    app.handle_command("write me a story about someone who discovers a secret island", typed=False)
+    assert started and started[0][1] and "cursor" in started[0][1][0][0]
+
+
+def test_typed_into_jervis_with_a_text_app_behind_it_stays_a_chat_answer(monkeypatch):
+    started = _cursor_in(monkeypatch, editable=None)
+    assert app.handle_write_here("write me a poem about the sea") is None or not app.last_turn_typed
+    app.last_turn_typed = True
+    assert app.handle_write_here("write me a poem about the sea") is None
+    app.last_turn_typed = False
+    assert not started or started[-1][0] == "write me a poem about the sea"
+
+
+def test_explicit_write_here_types_even_from_jervis_window(monkeypatch):
+    started = _cursor_in(monkeypatch, editable=None)
+    app.last_turn_typed = True
+    try:
+        app.handle_write_here("type a short thank-you note here")
+    finally:
+        app.last_turn_typed = False
+    assert started
+
+
+# ---------- "Hey Jervis, create a house" in one breath ----------
+@pytest.mark.parametrize("heard,command", [("Hey jervis. Create a detailed house in Blender.", "Create a detailed house in Blender"),
+                                           ("okay jervis make it red", "Make it red"),
+                                           ("Hey jervis.", ""), ("hey jervis are you there", ""),
+                                           ("wake up jervis", "")])
+def test_a_request_said_with_the_wake_phrase_is_not_dropped(heard, command):
+    assert app.after_wake_phrase(heard) == command

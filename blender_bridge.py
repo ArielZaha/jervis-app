@@ -54,14 +54,19 @@ def _write_json_atomic(path: str, data: dict) -> None:
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f)
-    for attempt in range(8):
+    # Up to ~2 s: a replace onto a file the other side has open fails with "access denied" (WinError 5) or "in use"
+    # (32), and with both sides polling every 50-100 ms, 8 quick tries (0.4 s) once weren't enough. The jitter keeps
+    # the two pollers from staying in step.
+    import random
+    deadline = time.time() + 2.0
+    while True:
         try:
             os.replace(tmp, path)   # atomic on Windows too (since Python 3.3)
             return
         except OSError:
-            if attempt == 7:
+            if time.time() >= deadline:
                 raise
-            time.sleep(0.05)
+            time.sleep(0.02 + random.random() * 0.04)
 
 
 def _read_request():
@@ -77,23 +82,35 @@ def _read_request():
 
 
 def poll():
-    """One timer tick: process a new request if there is one. Returns the next delay (bpy.app.timers' contract)."""
+    """One timer tick: process a new request if there is one. Returns the next delay (bpy.app.timers' contract).
+    Never raises: Blender silently unregisters a timer whose callback raises, which would leave the bridge dead
+    until Blender restarts (a Windows file lock on the response file is enough to cause that)."""
     global _last_id
-    request = _read_request()
-    if request and request.get("id") != _last_id:
-        _last_id = request.get("id")
-        _write_json_atomic(RESPONSE_FILE, process_one(request, _namespace))
+    try:
+        request = _read_request()
+        if request and request.get("id") != _last_id:
+            _last_id = request.get("id")
+            response = process_one(request, _namespace)
+            try:
+                _write_json_atomic(RESPONSE_FILE, response)
+            except OSError:
+                time.sleep(0.2)
+                _write_json_atomic(RESPONSE_FILE, response)
+    except Exception:
+        traceback.print_exc()
     return POLL_SECONDS
 
 
 def install() -> None:
     """Called once, at Blender startup — from `--python blender_bridge.py`, or from the copy Jervis puts in Blender's
     startup scripts folder (see blender_control.install_startup_script): prepare the namespace and start polling."""
+    import sys
     import bpy
     # Both ways can run in the same Blender (startup copy + --python): two pollers would run every request twice.
-    if bpy.app.driver_namespace.get("jervis_bridge_running"):
+    # The flag lives on `sys` because Blender resets bpy.app.driver_namespace when it loads the startup file.
+    if getattr(sys, "jervis_bridge_running", False):
         return
-    bpy.app.driver_namespace["jervis_bridge_running"] = True
+    sys.jervis_bridge_running = True
     os.makedirs(BRIDGE_DIR, exist_ok=True)
     try:
         os.remove(RESPONSE_FILE)   # a response left over from a previous run must never look like a fresh answer

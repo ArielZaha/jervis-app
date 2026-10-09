@@ -256,7 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
     logs.addEventListener('click', () => ipcRenderer.invoke('open-path', 'logs'));
     const restart = make('button', 'ghost', 'Restart Jervis’s engine');
     restart.type = 'button';
-    restart.addEventListener('click', () => ipcRenderer.send('restart-backend'));
+    restart.addEventListener('click', () => ipcRenderer.send('restart-backend', 'Settings, Restart button'));
     tools.append(folder, logs, restart);
     system.append(tools);
     if (appInfo) system.append(make('small', 'set-version', `Jervis ${appInfo.version}${appInfo.packaged ? '' : ' (running from source)'}`));
@@ -299,7 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let engineState = 'starting';
   let micMessage = '';
   function refreshBanner() {
-    if (engineState === 'failed') showBanner(lastEngineDetail || 'Jervis’s engine stopped.', 'bad', 'Restart', () => ipcRenderer.send('restart-backend'));
+    if (engineState === 'failed') showBanner(lastEngineDetail || 'Jervis’s engine stopped.', 'bad', 'Restart', () => ipcRenderer.send('restart-backend', 'Restart on the error banner'));
     else if (engineState === 'restarting') showBanner(lastEngineDetail || 'Restarting Jervis’s engine…', 'warn');
     else if (micMessage) showBanner(micMessage, 'warn', 'Settings', openSettings);
     else showBanner('');

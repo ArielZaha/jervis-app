@@ -420,7 +420,7 @@ def front_app_window():
         for hwnd, title in winctl.list_windows():
             exe = winctl.window_process_name(hwnd)
             if exe and exe not in OWN_PROCESSES and title != "Program Manager":
-                title = re.sub(r"[‎‏‪-‮⁦-⁩]", "", title).strip()   # invisible direction marks
+                title = re.sub(r"[\u200e\u200f\u202a-\u202e\u2066-\u2069]", "", title).strip()   # invisible direction marks
                 friendly =re.split(r"\s[-–—|]\s", title)[-1].strip() if " - " in title or " – " in title else ""
                 return hwnd, title, friendly or exe.removesuffix(".exe").title() or title
     except Exception:

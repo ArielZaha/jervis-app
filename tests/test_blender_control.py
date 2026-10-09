@@ -145,3 +145,14 @@ def test_ensure_bridge_launches_fresh_without_asking_when_blender_is_not_running
     asked = []
     result = blender_control.ensure_bridge(session, confirm=lambda q: asked.append(q))
     assert result == "bridge" and launched and not asked
+
+
+def test_the_bridge_is_installed_into_every_blender_versions_startup_folder(tmp_path):
+    (tmp_path / "4.3").mkdir()
+    (tmp_path / "config").mkdir()   # not a version folder: left alone
+    assert blender_control.install_startup_script(root=str(tmp_path), versions=("4.5",)) == 2
+    for version in ("4.3", "4.5"):
+        script = tmp_path / version / "scripts" / "startup" / blender_control.STARTUP_SCRIPT_NAME
+        assert "def register()" in script.read_text(encoding="utf-8")
+    assert not (tmp_path / "config" / "scripts").exists()
+    assert blender_control.install_startup_script(root=str(tmp_path), versions=("4.5",)) == 2   # idempotent

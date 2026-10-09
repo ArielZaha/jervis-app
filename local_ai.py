@@ -43,7 +43,12 @@ ASSETS = {
 DOWNLOAD_URL = "https://github.com/ollama/ollama/releases/download/{version}/{name}"
 USER_OLLAMA_URL = "http://127.0.0.1:11434"
 MANAGED_PORT = 11435            # Jervis's own copy: never the port an Ollama the user runs is on
-APPROX_MODEL_BYTES = {"llama3.2": 2_019_393_189, "qwen2.5vl:3b": 3_200_000_000, "qwen2.5:7b": 4_683_087_332}
+APPROX_MODEL_BYTES = {"llama3.2": 2_019_393_189, "qwen2.5vl:3b": 3_200_000_000, "qwen2.5vl:7b": 6_000_000_000,
+                      "qwen2.5:7b": 4_683_087_332,
+                      local_llm.DICTALM: 4_369_000_000}
+# Hebrew (language.py) runs a second 7B model, DictaLM, when it's needed; under this much memory it would make the whole
+# computer swap, and Hebrew falls back to the command rules and the online AI instead.
+MIN_RAM_FOR_HEBREW = 11 * 1024 ** 3   # "12 GB" machines report a little less
 # The vision model needs room next to the text model and everything else the user has open: on an 8 GB computer
 # it makes the whole machine swap (measured: a screenshot took over 5 minutes on an 8 GB M3). 16 GB is comfortable.
 MIN_RAM_FOR_VISION = 15 * 1024 ** 3   # "16 GB" machines report a little less
@@ -94,6 +99,13 @@ def system_ollama():
     return next((c for c in candidates if c and os.path.exists(c)), None)
 
 
+def default_vision_model() -> str:
+    """Qwen2.5-VL 7B where a graphics card can hold it (8 GB): it locates things in a picture well enough to rebuild
+    it in 3D; the 3B places them worse and breaks its answers' JSON. Elsewhere the 3B, which fits next to the rest."""
+    memory = local_llm.gpu_memory()
+    return "qwen2.5vl:7b" if memory and memory[0] >= 7500 else "qwen2.5vl:3b"
+
+
 def wants_vision() -> bool:
     """Whether to use the local vision model: Settings can force it on or off; otherwise only with 16 GB or more."""
     choice = (os.getenv("JERVIS_LOCAL_VISION") or "auto").strip().lower()
@@ -102,8 +114,32 @@ def wants_vision() -> bool:
     return psutil.virtual_memory().total >= MIN_RAM_FOR_VISION
 
 
+def first_role() -> str:
+    """The local model Jervis needs first: the translator for someone who speaks Hebrew to him, else chat."""
+    try:
+        import language
+        if language.reply_language() != "en" and local_llm.role_model("translate"):
+            return "translate"
+    except Exception:
+        pass
+    return "chat"
+
+
+def _bilingual() -> bool:
+    import stt_local
+    return stt_local.BILINGUAL
+
+
+def wants_hebrew() -> bool:
+    """Whether to set up Hebrew (its translation model): with Hebrew speech on (the default) and enough memory."""
+    if not _bilingual() or (os.getenv("JERVIS_TRANSLATE_MODEL") or "").strip().lower() == "off":
+        return False
+    return psutil.virtual_memory().total >= MIN_RAM_FOR_HEBREW
+
+
 class LocalAI:
-    STEPS = [("engine", "AI engine"), ("models", "AI models"), ("speech", "Speech recognition"), ("check", "Final check")]
+    STEPS = [("engine", "AI engine"), ("models", "AI models"), ("speech", "Speech recognition"), ("language", "Hebrew"),
+             ("check", "Final check")]
 
     def __init__(self, report=None):
         self.report = report or (lambda state: None)
@@ -112,7 +148,7 @@ class LocalAI:
         self.managed_binary = None
         self.models_dir = None
         self.text_model = os.getenv("OLLAMA_MODEL") or local_llm.DEFAULT_MODEL
-        self.vision_model = os.getenv("OLLAMA_VISION_MODEL") or "qwen2.5vl:3b"
+        self.vision_model = os.getenv("OLLAMA_VISION_MODEL") or default_vision_model()
         self.use_vision = True
         self.ready = threading.Event()
         self._lock = threading.Lock()
@@ -170,6 +206,8 @@ class LocalAI:
             self._ensure_models()
             current = "speech"
             self._ensure_speech()
+            current = "language"
+            self._ensure_hebrew()
             current = "check"
             self._final_check()
         except SetupError as e:
@@ -398,7 +436,7 @@ class LocalAI:
             self._pull(model, f"Downloading model {index} of {len(missing)} ({model})")
         self._step("models", "done", "Models ready.")
 
-    def _pull(self, model: str, label: str) -> None:
+    def _pull(self, model: str, label: str, step: str = "models") -> None:
         for attempt in range(3):
             totals, completed = {}, {}
             try:
@@ -424,7 +462,7 @@ class LocalAI:
                             total = sum(totals.values())
                             got = sum(completed.values())
                             detail = f"{label}… {_mb(got)} of {_mb(total)}" if total else f"{label}…"
-                            self._step("models", "active", detail, (got / total) if total else None)
+                            self._step(step, "active", detail, (got / total) if total else None)
                         if event.get("status") == "success":
                             return
             except SetupError:
@@ -435,6 +473,37 @@ class LocalAI:
         raise SetupError(f"The model {model} keeps failing to download.",
                          "Check your connection, then press Try again (it continues where it stopped).")
 
+    # ---------- 3b. Hebrew ----------
+    def _ensure_hebrew(self) -> None:
+        """DictaLM 2.0 (Dicta; Apache-2.0; 4.4 GB) translates Hebrew requests into English for Jervis, and his answers
+        back (language.py). A failed download doesn't stop the rest: English works without it."""
+        if not wants_hebrew():
+            self._step("language", "skipped", "English only." if not _bilingual() else
+                       "Hebrew needs a computer with 12 GB of memory or more.")
+            return
+        self._ensure_hebrew_voice()
+        if self._has(self._installed(), local_llm.DICTALM):
+            self._step("language", "done", "Hebrew ready.")
+            return
+        try:
+            self._check_disk(int(APPROX_MODEL_BYTES[local_llm.DICTALM] * 1.1))
+            self._pull(local_llm.DICTALM, "Downloading the Hebrew model", step="language")
+        except SetupError as e:
+            print(f"Hebrew model not downloaded: {e.message}", flush=True)
+            self._step("language", "skipped", "Couldn't download the Hebrew model yet; I'll try again next start.")
+            return
+        self._step("language", "done", "Hebrew ready.")
+
+    def _ensure_hebrew_voice(self) -> None:
+        """The natural Hebrew voice (hebrew_voice.py, ~380 MB). Without it, Windows' Hebrew voice speaks."""
+        try:
+            import hebrew_voice
+            if not hebrew_voice.downloaded():
+                hebrew_voice.ensure(lambda detail, fraction: self._step("language", "active", detail, fraction))
+            threading.Thread(target=hebrew_voice.preload, daemon=True, name="hebrew-voice-preload").start()
+        except Exception as e:   # no internet right now...: Windows' voice meanwhile, and the next start tries again
+            print(f"Hebrew voice not downloaded yet: {type(e).__name__}: {str(e)[:120]}", flush=True)
+
     # ---------- 3. speech recognition ----------
     def _ensure_speech(self) -> None:
         try:
@@ -444,23 +513,41 @@ class LocalAI:
         if stt_local is None or not stt_local.available():
             self._step("speech", "skipped", "Using online speech recognition.")
             return
-        self._step("speech", "active", "Downloading the speech model…")
+        self._step("speech", "active", "Downloading the speech models…")
         try:
             stt_local.ensure_model(lambda detail, fraction: self._step("speech", "active", detail, fraction))
         except Exception as e:
             print(f"Local speech recognition unavailable: {e}", flush=True)
             self._step("speech", "skipped", "Using online speech recognition for now.")
             return
-        self._step("speech", "done", "Speech recognition ready (works offline).")
+        try:   # the speech model for the language last spoken (only that one, beside the small detector)
+            import language
+            stt_local.prefer(language.reply_language(), background=False)
+        except Exception:
+            pass
+        stt_local.preload()   # before the AI model loads: its GPU plan must count the speech models' memory
+        print(f"Speech recognition: {stt_local.engine_summary()}", flush=True)
+        self._step("speech", "done", "Speech recognition ready (" +
+                   ("English and Hebrew, " if stt_local.BILINGUAL else "") + "works offline).")
 
     # ---------- 4. a real question ----------
     def _final_check(self) -> None:
         self._step("check", "active", "Asking the AI a test question (the first answer takes longest)…")
+        # Ask the model that will really answer, loaded the way the real calls load it (local_llm picks the model
+        # per job and names the context size). Asking the Settings default here instead loaded a second model with
+        # Ollama's own 32-64k context on every start, which pushed the real one out of an 8 GB GPU: the first
+        # question afterwards waited ~45 s for it to load again.
+        # The one needed first: for someone speaking Hebrew that's the translator, not the chat model (on an 8 GB GPU
+        # loading the other one first only means swapping it out again on the first sentence).
+        role = first_role()
+        model = local_llm.role_model(role) or local_llm.model_for("chat") or self.text_model
+        num_ctx = local_llm._context_for(model, local_llm.ROLE_CONTEXT.get(role))
         try:
-            response = requests.post(f"{self.url}/api/chat", json={
-                "model": self.text_model, "stream": False, "keep_alive": "30m",
-                "messages": [{"role": "user", "content": "Reply with just the word: ready"}],
-                "options": {"num_predict": 8}}, timeout=300)
+            with local_llm.gpu_slot(model, num_ctx) as fit:
+                response = requests.post(f"{self.url}/api/chat", json={
+                    "model": model, "stream": False, "keep_alive": local_llm.KEEP_ALIVE,
+                    "messages": [{"role": "user", "content": "Reply with just the word: ready"}],
+                    "options": {"num_predict": 8, "num_ctx": num_ctx, **fit}}, timeout=300)
             response.raise_for_status()
             answer = (response.json().get("message") or {}).get("content", "").strip()
         except (requests.RequestException, ValueError) as e:

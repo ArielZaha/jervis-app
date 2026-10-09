@@ -10,6 +10,7 @@ import time
 
 import app_launcher
 import blender_bridge
+import paths
 
 LAUNCH_SECONDS = 60
 RUN_TIMEOUT = 20
@@ -57,6 +58,12 @@ class BlenderBridge:
 STARTUP_SCRIPT_NAME = "jervis_bridge.py"
 
 
+def bridge_script() -> str:
+    """The bridge's source file: shipped next to a packaged Jervis, or this folder's own copy."""
+    bundled = paths.resource("blender_bridge.py")
+    return bundled if os.path.exists(bundled) else os.path.abspath(blender_bridge.__file__)
+
+
 def _blender_config_root() -> str:
     if sys.platform == "win32":
         return os.path.join(os.environ.get("APPDATA", ""), "Blender Foundation", "Blender")
@@ -79,7 +86,7 @@ def install_startup_script(root: str = None, versions=()) -> int:
             match = re.search(r"\d+\.\d+", name)
             if match:
                 found.add(match.group(0))
-    with open(blender_bridge.__file__, "r", encoding="utf-8") as f:
+    with open(bridge_script(), "r", encoding="utf-8") as f:
         source = f.read()
     installed = 0
     for version in found:
@@ -99,8 +106,20 @@ def install_startup_script(root: str = None, versions=()) -> int:
     return installed
 
 
+_bridge_seen = [0.0]
+
+
 def blender_running() -> bool:
-    return bool(app_launcher.app_windows("Blender"))
+    """A Blender window is open — or a Blender answers on the bridge (minimised elsewhere, a window title the search
+    doesn't know, or no window at all)."""
+    if app_launcher.app_windows("Blender"):
+        return True
+    if time.time() - _bridge_seen[0] < 10:
+        return True
+    if BlenderBridge().ping(timeout=0.6):
+        _bridge_seen[0] = time.time()
+        return True
+    return False
 
 
 def _blender_display_name() -> str:
@@ -123,6 +142,12 @@ def launch_with_bridge(confirm_seconds: float = LAUNCH_SECONDS):
     two at once would collide on them. If one is already open, this brings it forward and tries to attach to
     whatever bridge it already has instead — None if it has none (the caller, ensure_bridge, asks before
     restarting; a plain "open Blender" just leaves it focused either way)."""
+    if BlenderBridge().ping(timeout=1.5):   # already open and reachable (whatever its window looks like)
+        windows = app_launcher.app_windows("Blender")
+        if windows:
+            import winctl
+            winctl.focus(windows[0][0])
+        return BlenderBridge()
     if blender_running():
         windows = app_launcher.app_windows("Blender")
         if windows:
@@ -140,7 +165,7 @@ def launch_with_bridge(confirm_seconds: float = LAUNCH_SECONDS):
         return None
     before = app_launcher._window_handles()
     try:
-        subprocess.Popen([exe, "--python", os.path.abspath(blender_bridge.__file__)])
+        subprocess.Popen([exe, "--python", bridge_script()])
     except OSError:
         return None
     opened = app_launcher._wait_for_app_window("Blender", before, confirm_seconds)
@@ -162,6 +187,13 @@ def ensure_bridge(session, confirm):
     bridge, or None if Blender couldn't be reached (caller falls back to plain mouse/keyboard control)."""
     if session.blender and session.blender.ping():
         return session.blender
+    # A bridge that answers is a Blender that's ready, whatever its window looks like (minimised, on another
+    # desktop, a title the window search doesn't recognise, or no window at all): launching another one would make
+    # two Blenders share the same request files.
+    probe = BlenderBridge()
+    if probe.ping(timeout=1.5):
+        session.blender = probe
+        return probe
     if not blender_running():
         session.blender = launch_with_bridge()
         return session.blender
