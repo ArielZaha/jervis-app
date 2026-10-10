@@ -43,57 +43,75 @@ def parse_request(text: str, expecting: bool = False):
     """None if this isn't about graphing, else one of:
     {"action": "close"}, {"action": "ask"} (no equation given), {"action": "unsupported"} (not a function of x),
     {"action": "unclear"} (a word or symbol that isn't math), {"action": "graph", "a", "b", "c"} (a quadratic or a line),
-    {"action": "function", "ast": tree} (anything else), {"action": "several", "requests": [...], "unread": n} (more than
-    one function asked for at once: "graph y = x^2 and g = x + 1").
+    {"action": "function", "ast": tree} (anything else), {"action": "several", "requests": [...], "names": [...],
+    "unread": n, "unreadText": "..."} (more than one function asked for at once: "graph y = x^2 and g = x + 1").
     expecting: Jarvis has just asked for the equation, so a message that is only a formula is the answer to that."""
     # "compare y = x^2 and y = 2x": the two of them on one graph
     text = re.sub(r"^(\s*(?:(?:hey |ok |okay )?(?:jarvis|jervis)[, ]+)?(?:(?:please|can you|could you)\s+)*)compare\s+(?:the\s+)?"
                   r"(?:(?:graphs?|functions?|curves?|lines?)\s+(?:of\s+)?)?", r"\1graph ", text or "", flags=re.I)
+    # "the two functions: …", "these 2 graphs": how many there are is not part of any of them
+    text = _HOW_MANY.sub(lambda m: f" the {m.group(1)} ", text)
     request = _parse_one(text)
+    n = functions.normalize(text)
+    listed = _LIST_BREAK.sub(" and ", text)       # "f(x) = x^2, g(x) = 2x + 1; h(x) = 3": a list is several too
+    several = _parse_several(listed) if _BETWEEN.search(functions.normalize(listed)) else None
+    whole = bool(several) and not several["unread"] and len(several["requests"]) > 1   # every part read, two or more
     if request is None:
+        asked = bool(_VERB.search(n)) or expecting or bool(re.match(r"^y\s*=", n))
+        if whole and asked:       # "y = 2x + 7 and g = 4x^2 graph", "the two functions …, draw them"
+            return several
         # A formula on its own, with no "graph" or "draw": the answer to "tell me the equation", or plainly a function
-        # written out ("y = 2x + 3", "y = x^2 and y = x + 1").
-        n = functions.normalize(text)
+        # written out ("y = 2x + 3").
         if n and not _VERB.search(n) and (expecting or re.match(r"^y\s*=", n)) and "x" in functions._tokenize(n):
-            answer = parse_request(f"graph {text}")
-            if answer and answer["action"] in ("graph", "function", "several"):
+            answer = _parse_one(f"graph {text}")
+            if answer and answer["action"] in ("graph", "function"):
                 return answer
         return None
-    several = _parse_several(text) if _BETWEEN.search(functions.normalize(text)) else None
-    if several and (request["action"] in ("unclear", "unsupported") or (not several["unread"] and len(several["requests"]) > 1)):
+    if several and (request["action"] in ("unclear", "unsupported") or whole):
         return several   # "sine of x and cosine of x" is two curves, not one multiplied by the other
     return request
 
 
 # what stands between two functions asked for together, and the words around them that aren't part of either
-_BETWEEN = re.compile(r"\s+(?:and|&|vs\.?|versus|against|together with|along with|with|compared (?:to|with))\s+")
-_TOGETHER = re.compile(r"\b(?:(?:on|in) (?:the )?same (?:graph|axes|axis|plane|plot|picture|chart|screen|window)|together|side by side|"
-                       r"both|the (?:two )?(?:functions|graphs|curves|lines)(?: of)?|two functions)\b")
+_BETWEEN = re.compile(r"\s+(?:and also|and then|and|&|vs\.?|versus|against|together with|along with|as well as|with|compared (?:to|with))\s+")
+_LIST_BREAK = re.compile(r"\s*[;\n]\s*(?:and\s+)?|,\s+(?:and\s+)?")
+_HOW_MANY = re.compile(r"\b(?:(?:the|these|those|following|next)\s+)*(?:two|three|four|both|2|3|4)\s+(functions|graphs|curves|lines|equations|parabolas)\b", re.I)
+_TOGETHER = re.compile(r"\b(?:(?:on|in) (?:the |one |a )?(?:same |single )?(?:graph|axes|axis|plane|plot|picture|chart|screen|window)|together|side by side|"
+                       r"both|at once|at the same time|please|them|too)\b")
+# words a part may begin with that are not its formula: "the line 2x + 7", "also the function y = x^2"
+_PART_LEAD = re.compile(r"^(?:(?:the|a|an|this|that|these|those|my|me|other|another|first|second|third|also|then|both|of|for|is|are|function|functions|"
+                        r"graph|graphs|line|lines|parabola|parabolas|curve|curves|equation|equations|straight|called|named|following|one)\b\s*)+")
 
 
 def _parse_several(text: str):
     """"graph y = x^2 and g = x + 1": each function between the "and"s, read on its own. A function under another
-    name ("g = …", "h(x) = …") is still a function of x."""
+    name ("g = …", "h(x) = …") is still a function of x, and so is a plain number ("y = 3": a flat line)."""
     n = functions.normalize(text)
     verb = _VERB.search(n)
-    if not verb:
-        return None
-    parts = [p.strip() for p in _BETWEEN.split(" " + _TOGETHER.sub(" ", n[verb.end():]) + " ") if p.strip()]
-    if len(parts) < 2:
-        return None
-    found, names, unread = [], [], 0
-    for part in parts[:4]:
-        named = re.match(r"^(?:then\s+|also\s+)?([a-df-wz])\s*(?:\(\s*x\s*\))?\s*=\s*(?=[^=]*$)", part)
-        one = _parse_one(f"graph {'y = ' + part[named.end():] if named else part}")
+    if verb:      # the order first ("graph … and …") or last ("… and …, draw them"): the functions are on the other side of it
+        after, before = n[verb.end():], n[:verb.start()]
+        n = after if "x" in functions._tokenize(after) else before
+    parts = [p.strip() for p in _BETWEEN.split(" " + _TOGETHER.sub(" ", n) + " ")]
+    found, names, unread = [], [], []
+    for part in parts[:6]:
+        part = _PART_LEAD.sub("", part).strip()
+        if not re.search(r"\d|(?<![a-z])x(?![a-z])", part):
+            continue      # "a graph", "the functions": words around the list, not one of the functions
+        named = re.match(r"^([a-df-wz])\s*(?:\(\s*x\s*\))?\s*=\s*(?=[^=]*$)", part)
+        body = part[named.end():] if named else part
+        flat = re.fullmatch(r"(?:y\s*=\s*)?(-?\s*\d+(?:\.\d+)?)", body)      # a constant: the flat line y = 3
+        one = request_from_tree(["num", float(flat.group(1).replace(" ", ""))]) if flat else _parse_one(f"graph {'y = ' + body if named else body}")
         if one and one["action"] in ("graph", "function"):
             found.append(one)
             names.append(named.group(1) if named else "")
         else:
-            unread += 1
+            unread.append(part)
+    if not found or len(found) + len(unread) < 2:
+        return None
     # the names they were given ("g = x + 1"); the rest are f, g, h, k in order
     free = [letter for letter in NAMES if letter not in names]
     names = [name if name and names.index(name) == i else free.pop(0) for i, name in enumerate(names)]
-    return {"action": "several", "requests": found, "names": names, "unread": unread} if found else None
+    return {"action": "several", "requests": found[:4], "names": names[:4], "unread": len(unread), "unreadText": unread[0] if unread else ""}
 
 
 NAMES = "fghkpqrs"
@@ -352,10 +370,11 @@ def build(request: dict) -> tuple:
     return info, describe(info)
 
 
-def describe_several(infos: list, unread: int) -> str:
-    """What Jarvis says when only one of the functions asked for together could be read."""
+def describe_several(infos: list, unread: int, unread_text: str = "") -> str:
+    """What Jarvis says when only one of the functions asked for together could be read: which one, and which not."""
     name = infos[0].get("plain") or "the function"
-    return (f"I could only read one of those as a function of x, so I drew {name}. "
+    missed = f" The part I couldn't read was “{unread_text}”." if unread_text else ""
+    return (f"I could only read one of those as a function of x, so I drew {name}.{missed} "
             "Give me the other one again, like: graph y equals x plus 1.")
 
 
