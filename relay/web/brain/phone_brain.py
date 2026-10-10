@@ -110,6 +110,7 @@ class Brain:
         self.pending_places_at = 0.0     # asked "which two places?": an answer ("Israel and USA") in the next two messages is them
         self.pending_places_left = 0
         self.pending_graph_at = 0.0      # asked for the equation: for a few minutes a formula on its own is the answer
+        self.last_pair = {"info": None, "at": 0.0}   # the two functions drawn together last, for "where do they meet?"
         self.last_route = {"a": None, "b": None, "at": 0.0}   # for "which countries does it fly over?"
         self.pending_choice = None       # {"request", "name", "options", "known", "at"}: "Which Valencia do you mean?"
         self.drawn = {"graph": 0, "globe": 0, "planet": 0}
@@ -225,6 +226,8 @@ class Brain:
     def _graph(self, text: str):
         request = graphs.parse_request(text, expecting=time.time() - self.pending_graph_at < 3 * 60)
         if request is None:
+            if self.last_pair["info"] and time.time() - self.last_pair["at"] < 30 * 60:
+                return graphs.pair_followup(text, self.last_pair["info"])
             return None
         if request["action"] == "last":
             if self.last_function["tree"] is not None and time.time() - self.last_function["at"] < 60 * 60:
@@ -254,15 +257,19 @@ class Brain:
         if action == "unclear":
             return "I couldn't read that as a function of x. Try something like: graph sine of x, or graph x cubed minus 3x."
         self.pending_graph_at = 0.0
-        if action == "several":   # "graph y = x^2 and g = x + 1": one graph each
-            infos = []
-            for one in request["requests"]:
-                info, _ = graphs.build(one)
+        if action == "several":
+            self._remember(request["requests"][-1]["ast"])
+            if len(request["requests"]) < 2:
+                info, _ = graphs.build(request["requests"][0])
                 self._show({"type": "graph", "data": info})
                 self.drawn["graph"] += 1
-                infos.append(info)
-            self._remember(request["requests"][-1]["ast"])
-            return graphs.describe_several(infos, request["unread"])
+                return graphs.describe_several([info], request["unread"])
+            # both on the same axes, everything about each, and how they relate
+            pair = graphs.build_pair(request["requests"], request.get("names"))
+            self.last_pair.update(info=pair, at=time.time())
+            self._show({"type": "graph", "data": pair})
+            self.drawn["graph"] += 1
+            return graphs.describe_pair(pair, request["unread"])
         info, described = graphs.build(request)
         self._show({"type": "graph", "data": info})
         self.drawn["graph"] += 1

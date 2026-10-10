@@ -686,8 +686,10 @@
   @keyframes visOut { to { opacity: 0; transform: scale(.97); } }
   .vis-card { flex: 1; min-width: 0; display: flex; flex-direction: column;
     padding: calc(var(--sat) + 10px) calc(var(--sar) + 14px) calc(var(--sab) + 12px) calc(var(--sal) + 14px); }
-  .vis-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
-  .vis-heading { flex: 1; min-width: 0; }
+  /* the buttons on a row of their own, so the title below has the whole width ("f(x) = x²  and  g(x) = x + 1") */
+  .vis-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 10px; margin-bottom: 12px; }
+  .vis-heading { order: 2; flex: 1 1 100%; min-width: 0; }
+  .vis-actions { margin-left: auto; }
   .vis-kicker { margin: 0 0 4px; font: 700 11px/1.2 var(--display); letter-spacing: .2em; text-transform: uppercase; color: var(--accent); }
   .vis-heading h2 { margin: 0; font: 600 18px/1.3 var(--display); letter-spacing: .01em; overflow-wrap: anywhere; }
   .vis-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
@@ -1430,7 +1432,8 @@
   function inline(raw) {
     let out = "", last = 0;
     raw.replace(/\$([^\s$](?:[^$\n]*[^\s$])?)\$/g, (whole, body, at) => {
-      if (!/[\\^_={}]/.test(body)) return whole;   // "$5 and $10" is money
+      // "$5 and $10" is money; "$x^2$", "$(0, 1)$" and a bare number like "$-0.618$" are maths
+      if (!/[\\^_={}]/.test(body) && !/^[-+−(]?[\d.,\s()xy/*+\-−]+$/.test(body)) return whole;
       out += inlineFormat(escapeHtml(raw.slice(last, at))) + `<span class="tex">${tex(body)}</span>`;
       last = at + whole.length;
       return whole;
@@ -1456,13 +1459,18 @@
         const lines = trimmed.split("\n");
         if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(trimmed)) { out.push("<hr>"); continue; }
         if (lines.some((l) => /^\s*(?:#{1,4}\s|\$\$.*\$\$\s*$|>\s)/.test(l))) {   // a worked answer: steps, maths, the boxed result
+          let list = null;   // its facts, listed
+          const endList = () => { if (list) { out.push(`<ul>${list.join("")}</ul>`); list = null; } };
           for (const l of lines) {
             let m;
+            if ((m = /^\s*[-*•]\s+(.*)$/.exec(l))) { (list = list || []).push(`<li>${inline(m[1])}</li>`); continue; }
+            endList();
             if ((m = /^\s*#{1,4}\s+(.*)$/.exec(l))) out.push(`<h4>${inline(m[1])}</h4>`);
             else if ((m = /^\s*\$\$(.*)\$\$\s*$/.exec(l))) out.push(`<div class="tex tex-block">${tex(m[1])}</div>`);
             else if ((m = /^\s*>\s?(.*)$/.exec(l))) out.push(`<blockquote${/\$.+\$/.test(m[1]) ? ' class="answer"' : ""}>${inline(m[1])}</blockquote>`);   // the boxed result
             else if (l.trim()) out.push(`<p>${inline(l)}</p>`);
           }
+          endList();
         } else if (lines.every((l) => /^\s*[-*•]\s+/.test(l))) {
           out.push("<ul>" + lines.map((l) => `<li>${inline(l.replace(/^\s*[-*•]\s+/, ""))}</li>`).join("") + "</ul>");
         } else if (lines.every((l) => /^\s*\d+[.)]\s+/.test(l))) {
@@ -2573,7 +2581,7 @@
   const VISUAL_KINDS = {
     graph: { show: "showGraph", reopen: "reopenGraph", hide: "hideGraph", close: "graphClose", name: "Graph",
              icon: drawn('<path d="M3.5 3.5v17h17"/><path d="M6.5 17c2.4 0 3-10 5.4-10s3 7.5 6.6 7.5"/>'),
-             title: (d) => d.plain || d.equation || "Graph" },
+             title: (d) => (d.kind === "pair" ? d.functions.map((f) => f.label).join("  ·  ") : d.plain || d.equation || "Graph") },
     globe: { show: "showGlobe", reopen: "reopenGlobe", hide: "hideGlobe", close: "earthClose", name: "Globe",
              icon: drawn('<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5c-2.6-2.4-3.9-5.2-3.9-8.5s1.3-6.1 3.9-8.5z"/>'),
              title: (d) => d.title || (d.a && d.b ? `${d.a.name} → ${d.b.name}` : "Globe") },
