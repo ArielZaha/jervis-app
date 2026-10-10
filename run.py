@@ -46,7 +46,7 @@ def move_to_plain_folder() -> None:
     # .git is excluded: it's not needed to run Jarvis, it's large, and git marks its object files
     # read-only on Windows, which makes a second copy (overwriting a .git left by the first) fail
     # with "Permission denied" and abort the whole move.
-    skip_names = ("venv", "node_modules", "__pycache__", "transcripts", "images", ".electron-cache", ".git")
+    skip_names = ("venv", "node_modules", "__pycache__", "transcripts", "images", ".electron-cache", ".tmp", ".git")
     skip = shutil.ignore_patterns(*skip_names, "*.zip")
     try:
         os.makedirs(target, exist_ok=True)
@@ -132,6 +132,20 @@ def electron_cache_dirs() -> list:
     return dirs
 
 
+def plain_temp_env() -> dict:
+    """Windows, a user name with non-English letters: Windows' own temp folder (C:\\Users\\<name>\\AppData\\Local\\Temp)
+    has those letters too, and Electron's installer downloads and unpacks through it, whatever folder Jarvis is in.
+    Gives the installer a temp folder with a plain path, inside Jarvis's own folder."""
+    if not IS_WIN:
+        return {}
+    temp = os.environ.get("TEMP") or os.environ.get("TMP") or ""
+    if temp and is_plain_path(temp):
+        return {}
+    plain = os.path.join(ROOT, ".tmp")
+    os.makedirs(plain, exist_ok=True)
+    return {"TEMP": plain, "TMP": plain}
+
+
 def clear_electron_caches() -> None:
     for d in electron_cache_dirs():
         shutil.rmtree(d, ignore_errors=True)
@@ -149,7 +163,8 @@ def install_electron(npm: str) -> bool:
     back to."""
     cache_dir = os.path.join(ROOT, ".electron-cache")
     base = {**os.environ, "PATH": os.path.dirname(npm) + os.pathsep + os.environ.get("PATH", ""),
-            "ELECTRON_CACHE": cache_dir}  # a cache folder with a plain path — honored some of the time, not always
+            "ELECTRON_CACHE": cache_dir,  # a cache folder with a plain path — honored some of the time, not always
+            **plain_temp_env()}
     say("Installing the window (Electron), first run only. This downloads about 100 MB...")
     clear_electron_caches()
     run([npm, "install", "--no-audit", "--no-fund", "--foreground-scripts"], env=base)
@@ -167,7 +182,7 @@ def install_electron(npm: str) -> bool:
         if electron_installed():
             return True
         tail = "\n".join((result.stdout + "\n" + result.stderr).strip().splitlines()[-12:])
-        say("What npm said:\n" + tail)
+        say("What npm said:\n" + (tail or "(nothing: it reported no error, yet Electron's program isn't there)"))
     # Last resort: seen on a real machine where every attempt above genuinely downloaded a good zip (each one
     # logged "Cache hit"/"Cache miss" then a real download, never a network failure) — node install.js's own
     # extraction of it just silently failed every time, no error, nothing in node_modules/electron/dist at all,

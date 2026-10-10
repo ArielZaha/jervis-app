@@ -48,3 +48,4 @@ models/
 # Build logs
 *.log
 .jervis-netflix-profile/
+.tmp/
