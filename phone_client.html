@@ -2037,6 +2037,16 @@
   // The app that loads from the computer's own address can't open while the computer is off or asleep (there's
   // nothing to load it from). The one at the relay's secure address always opens: this is the way over to it.
   const alwaysOnUrl = () => (!SERVED_BY_RELAY && !window.isSecureContext ? secureInstallUrl() : "");
+  // Offered only once that address really serves this app: a relay still on an older version would show its old
+  // pairing page instead. One of this app's own icons is asked for there (older relays don't have it).
+  let alwaysOnReady = false;
+  function checkAlwaysOn() {
+    const url = alwaysOnUrl();
+    if (!url || alwaysOnReady) return;
+    const probe = new Image();
+    probe.onload = () => { alwaysOnReady = true; if (!$("chooseView").hidden) $("alwaysOnBtn").hidden = false; };
+    probe.src = new URL(url).origin + "/icons/icon-192.png?check=" + Date.now();
+  }
   function openAlwaysOn() {
     const url = alwaysOnUrl();
     if (!url) return;
@@ -2224,7 +2234,8 @@
     $("choosePhone").disabled = !phoneReady;
     $("choosePhoneSub").textContent = phoneReady ? "Jarvis does it here, on your phone"
       : "Connect to your computer once first, to set Jarvis up on the phone";
-    $("alwaysOnBtn").hidden = !alwaysOnUrl();
+    $("alwaysOnBtn").hidden = !(alwaysOnUrl() && alwaysOnReady);
+    checkAlwaysOn();
     showView("chooseView");
   }
   function choose(mode) {
