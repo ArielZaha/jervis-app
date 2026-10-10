@@ -779,6 +779,9 @@ kbd { padding: 1px 6px; border: 1px solid rgb(var(--accent-rgb) / .4); border-ra
 }
 .graph-facts span { font-family: var(--mono); font-size: 9.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--faint); }
 .graph-facts b { font-family: var(--mono); font-size: 13px; font-weight: 500; color: #fff; white-space: nowrap; }
+/* a sentence about two functions ("f is higher between…"), not a number: a row of its own, wrapping */
+.graph-facts li.wide { flex: 1 1 100%; }
+.graph-facts li.wide b { white-space: normal; line-height: 1.5; }
 @media (prefers-reduced-motion: reduce) { .graph-layer, .graph-card { animation: none; } }
 
 /* Full screen: the traffic lights are gone, so the top bar needs no room for them. */

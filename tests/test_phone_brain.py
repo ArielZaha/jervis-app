@@ -221,11 +221,11 @@ def test_anything_else_is_left_alone_with_its_typos_fixed():
     assert phone_brain.Brain().handle("what's the capital of France?") == {"text": "what's the capital of France?"}
 
 
-def test_two_functions_at_once_come_back_as_two_pictures(both):
+def test_two_functions_at_once_come_back_as_one_shared_graph(both):
     computer, phone = both("create a graph y=x^2 and g = x+ 1")
-    assert phone[0] == computer[0] and phone[0].startswith("I drew 2 graphs")
-    out = phone_brain.Brain().handle("graph sine of x and cosine of x")
-    assert [v["data"]["plain"] for v in out["visuals"]] == ["y = sin(x)", "y = cos(x)"] and out["visual"] == out["visuals"][-1]
+    assert phone[0] == computer[0] and phone[1] == computer[1] and phone[1]["data"]["kind"] == "pair"
+    computer, phone = both("where do they meet?")
+    assert phone[0] == computer[0] == "They meet at $(-0.618,\\ 0.382)$, $(1.618,\\ 2.618)$."
 
 
 def test_the_equation_given_after_being_asked_for_it_is_drawn():

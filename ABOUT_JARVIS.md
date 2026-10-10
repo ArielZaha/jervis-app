@@ -124,6 +124,12 @@ Jarvis always prefers *your own* playlist over a stranger's playlist with the sa
 - **Graphs of any function of x:** "graph sine of x over x", "plot y = x^2 - 4", "graph tan x". A window draws the
   curve with its roots, highs and lows, intercepts and asymptotes marked. Move over it to read any point.
 - **Both at once:** "what is 2x + 6 = 0, draw the graph" gives the worked answer and the graph.
+- **Two functions on one graph:** "graph y = x^2 and y = x + 1", "compare sine of x and cosine of x", "plot 2x + 1 vs
+  2x - 3". Both are drawn on the same axes, each in its own colour, with the points where they meet marked and the
+  area they enclose shaded. Jarvis tells you everything about each function, and how they relate: where they meet,
+  which one is higher and where, the area between them, and what is special about the pair (parallel, perpendicular,
+  tangent, the same shape moved, mirror images). Then ask "where do they meet?", "which one is higher?", "what's the
+  area between them?".
 - Follow-ups work: "show the steps", "what's the vertex?", "draw the function".
 
 ### The Earth, in 3D

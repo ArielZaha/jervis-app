@@ -2664,12 +2664,15 @@ def handle_image_generation(text: str):
 
 
 pending_graph_ask = {"at": 0.0}   # Jarvis asked for the equation: for a few minutes a formula on its own is the answer
+last_pair = {"info": None, "at": 0.0}   # the two functions drawn together last, for "where do they meet?"
 
 
 def handle_graph_command(text: str):
     global graphs_drawn
     request = graphs.parse_request(text, expecting=time.time() - pending_graph_ask["at"] < 3 * 60)
     if request is None:
+        if last_pair["info"] and time.time() - last_pair["at"] < 30 * 60:
+            return graphs.pair_followup(text, last_pair["info"])   # "which one is higher?", "what's the area between them?"
         return None
     if request["action"] == "last":
         if last_function["tree"] is not None and time.time() - last_function["at"] < 60 * 60:
@@ -2697,15 +2700,19 @@ def handle_graph_command(text: str):
     if request["action"] == "unclear":
         return "I couldn't read that as a function of x. Try something like: graph sine of x, or graph x cubed minus 3x."
     pending_graph_ask["at"] = 0.0
-    if request["action"] == "several":   # "graph y = x^2 and g = x + 1": one graph each, kept side by side in the window
-        infos = []
-        for one in request["requests"]:
-            info, _ = graphs.build(one)
+    if request["action"] == "several":
+        remember_function(request["requests"][-1]["ast"])
+        if len(request["requests"]) < 2:   # only one of them could be read: that one, and a word about the other
+            info, _ = graphs.build(request["requests"][0])
             send_ui_update_once({"type": "graph", "data": info})
             graphs_drawn += 1
-            infos.append(info)
-        remember_function(request["requests"][-1]["ast"])
-        return graphs.describe_several(infos, request["unread"])
+            return graphs.describe_several([info], request["unread"])
+        # "graph y = x^2 and g = x + 1": both on the same axes, everything about each, and how they relate
+        pair = graphs.build_pair(request["requests"], request.get("names"))
+        last_pair.update(info=pair, at=time.time())
+        send_ui_update_once({"type": "graph", "data": pair})
+        graphs_drawn += 1
+        return graphs.describe_pair(pair, request["unread"])
     info, described = graphs.build(request)
     send_ui_update_once({"type": "graph", "data": info})
     graphs_drawn += 1

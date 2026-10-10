@@ -62,12 +62,11 @@ def test_a_squared_that_lost_its_raised_two_is_still_a_square(jarvis):
     assert drawn[0]["data"]["plain"] == "y = 2x² + 2x + 6767" and "parabola" in reply     # not the line y = 6x + 6767
 
 
-def test_two_functions_at_once_get_a_graph_each(jarvis):
+def test_two_functions_at_once_share_one_graph(jarvis):
     reply, drawn = jarvis("create a graph y=x^2 and g = x+ 1")
-    assert [d["data"]["plain"] for d in drawn] == ["y = x²", "y = x + 1"]
-    assert reply.startswith("I drew 2 graphs, one for each function: y = x² and y = x + 1.") and "arrows" in reply
-    reply, drawn = jarvis("graph sine of x and cosine of x")
-    assert [d["data"]["plain"] for d in drawn] == ["y = sin(x)", "y = cos(x)"]
+    assert len(drawn) == 1 and drawn[0]["data"]["kind"] == "pair"
+    assert [f["label"] for f in drawn[0]["data"]["functions"]] == ["f(x) = x²", "g(x) = x + 1"]
+    assert reply.startswith("Here are both on one graph. f is a parabola and g is a straight line. They meet at two points")
 
 
 def test_one_readable_function_out_of_two_is_drawn_and_the_other_asked_for(jarvis):

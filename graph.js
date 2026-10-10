@@ -1,5 +1,7 @@
 // Jarvis graph window: draws y = ax^2 + bx + c (or a line) as a glowing curve on a fine grid, with the vertex, the roots,
-// the y-intercept and the axis of symmetry marked, a crosshair that follows the mouse, and "Save image".
+// the y-intercept and the axis of symmetry marked, a crosshair that follows the mouse, and "Save image". Two (or more)
+// functions asked for together share the axes: each in its own colour with its name, the points where they meet marked,
+// and what they enclose between them shaded (kind "pair", see graphs.build_pair).
 // The picture is drawn by one function (render) that is used for the live canvas and for the exported PNG.
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -8,6 +10,7 @@
 
   const CYAN = [79, 216, 255], VIOLET = [165, 139, 255], MAGENTA = [255, 92, 214], GOLD = [255, 209, 102], GREEN = [61, 242, 192];
   const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  const PAIR_COLORS = [CYAN, MAGENTA, GREEN, VIOLET];   // f, g, h, k
   const MINUS = '−';
   const REVEAL_SECONDS = 1.5;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -167,56 +170,77 @@
     ctx.textAlign = 'center'; ctx.fillText('y', ax0, pad.t - 16);
     }
 
-    // the curve, clipped to the plot
+    // The curves, clipped to the plot. One function: a glowing gradient curve over its own shading. Two or more on the
+    // same axes: each in its own colour, and what the first two enclose between their meeting points shaded.
+    const paired = d.kind === 'pair';
+    const curves = paired ? d.functions : [d];
+    const appear = Math.min(1, S.since / 0.6);   // key points (and that shading) come in once the curves are complete
     ctx.save();
     ctx.beginPath(); ctx.rect(pad.l, pad.t - 4, pw + 6, ph + 8); ctx.clip();
     const steps = Math.max(260, Math.round(pw / 1.5));
     const shown = Math.max(1, Math.round(steps * S.t));
-    // The curve is cut into pieces wherever it is undefined or jumps across the frame (asymptotes, tan x, 1/x).
-    const segments = [];
-    let piece = [];
-    let prev = null;
-    for (let i = 0; i <= shown; i++) {
-      const x = v.xmin + ((v.xmax - v.xmin) * i) / steps;
-      const y = value(x);
-      if (!Number.isFinite(y)) { if (piece.length) segments.push(piece); piece = []; prev = null; continue; }
-      const sy = Math.max(-1e5, Math.min(1e5, py(y)));
-      if (prev !== null && Math.abs(sy - prev) > ph * 1.6) { if (piece.length) segments.push(piece); piece = []; }
-      piece.push([px(x), sy]);
-      prev = sy;
-    }
-    if (piece.length) segments.push(piece);
-    const all = segments.flat();
-    if (!all.length) { ctx.restore(); return; }
-    const stroke = ctx.createLinearGradient(pad.l, 0, w - pad.r, 0);
-    stroke.addColorStop(0, rgba(CYAN, 1)); stroke.addColorStop(0.5, rgba(VIOLET, 1)); stroke.addColorStop(1, rgba(MAGENTA, 1));
-    const fill = ctx.createLinearGradient(0, pad.t, 0, h - pad.b);
-    fill.addColorStop(0, rgba(VIOLET, 0.26)); fill.addColorStop(1, rgba(CYAN, 0.02));
     const closeY = Math.min(Math.max(ay0, pad.t), h - pad.b);
-    ctx.fillStyle = fill;
-    segments.forEach((seg) => {
-      if (seg.length < 2) return;
+    if (paired && curves.length === 2 && S.since > 0 && d.relation && d.relation.area != null && d.meet.length >= 2) {
+      const lo = d.meet[0].x, hi = d.meet[d.meet.length - 1].x, n = 180;
+      ctx.save(); ctx.globalAlpha = appear * 0.2; ctx.fillStyle = rgba(VIOLET, 1);
       ctx.beginPath();
-      seg.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      ctx.lineTo(seg[seg.length - 1][0], closeY); ctx.lineTo(seg[0][0], closeY); ctx.closePath();
-      ctx.fill();
-    });
-    const path = () => { ctx.beginPath(); segments.forEach((seg) => seg.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)))); };
-    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    path(); ctx.strokeStyle = stroke; ctx.globalAlpha = 0.22; ctx.lineWidth = 12; ctx.stroke();
-    ctx.globalAlpha = 1; path(); ctx.lineWidth = 3.2; ctx.shadowColor = rgba(VIOLET, 0.95); ctx.shadowBlur = 18; ctx.stroke();
-    ctx.shadowBlur = 0; path(); ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.stroke();
-    const pts = all;
-    if (S.t < 1) {   // the bright head that draws the curve
-      const [hx, hy] = pts[pts.length - 1];
-      const head = ctx.createRadialGradient(hx, hy, 0, hx, hy, 16);
-      head.addColorStop(0, 'rgba(255,255,255,.95)'); head.addColorStop(0.3, rgba(CYAN, 0.6)); head.addColorStop(1, rgba(CYAN, 0));
-      ctx.fillStyle = head; ctx.fillRect(hx - 16, hy - 16, 32, 32);
+      for (let i = 0; i <= n; i++) { const x = lo + ((hi - lo) * i) / n; i ? ctx.lineTo(px(x), py(valueOf(curves[0], x))) : ctx.moveTo(px(x), py(valueOf(curves[0], x))); }
+      for (let i = n; i >= 0; i--) { const x = lo + ((hi - lo) * i) / n; ctx.lineTo(px(x), py(valueOf(curves[1], x))); }
+      ctx.closePath(); ctx.fill(); ctx.restore();
     }
+    let drawn = 0;
+    curves.forEach((curve, index) => {
+      // A curve is cut into pieces wherever it is undefined or jumps across the frame (asymptotes, tan x, 1/x).
+      const segments = [];
+      let piece = [];
+      let prev = null;
+      for (let i = 0; i <= shown; i++) {
+        const x = v.xmin + ((v.xmax - v.xmin) * i) / steps;
+        const y = valueOf(curve, x);
+        if (!Number.isFinite(y)) { if (piece.length) segments.push(piece); piece = []; prev = null; continue; }
+        const sy = Math.max(-1e5, Math.min(1e5, py(y)));
+        if (prev !== null && Math.abs(sy - prev) > ph * 1.6) { if (piece.length) segments.push(piece); piece = []; }
+        piece.push([px(x), sy]);
+        prev = sy;
+      }
+      if (piece.length) segments.push(piece);
+      const pts = segments.flat();
+      if (!pts.length) return;
+      drawn++;
+      const color = paired ? PAIR_COLORS[index % PAIR_COLORS.length] : CYAN;
+      const path = () => { ctx.beginPath(); segments.forEach((seg) => seg.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)))); };
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      if (paired) {
+        path(); ctx.strokeStyle = rgba(color, 1); ctx.globalAlpha = 0.2; ctx.lineWidth = 11; ctx.stroke();
+        ctx.globalAlpha = 1; path(); ctx.lineWidth = 3; ctx.shadowColor = rgba(color, 0.95); ctx.shadowBlur = 16; ctx.stroke();
+        ctx.shadowBlur = 0; path(); ctx.lineWidth = 1.1; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.stroke();
+      } else {
+        const stroke = ctx.createLinearGradient(pad.l, 0, w - pad.r, 0);
+        stroke.addColorStop(0, rgba(CYAN, 1)); stroke.addColorStop(0.5, rgba(VIOLET, 1)); stroke.addColorStop(1, rgba(MAGENTA, 1));
+        const fill = ctx.createLinearGradient(0, pad.t, 0, h - pad.b);
+        fill.addColorStop(0, rgba(VIOLET, 0.26)); fill.addColorStop(1, rgba(CYAN, 0.02));
+        ctx.fillStyle = fill;
+        segments.forEach((seg) => {
+          if (seg.length < 2) return;
+          ctx.beginPath();
+          seg.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+          ctx.lineTo(seg[seg.length - 1][0], closeY); ctx.lineTo(seg[0][0], closeY); ctx.closePath();
+          ctx.fill();
+        });
+        path(); ctx.strokeStyle = stroke; ctx.globalAlpha = 0.22; ctx.lineWidth = 12; ctx.stroke();
+        ctx.globalAlpha = 1; path(); ctx.lineWidth = 3.2; ctx.shadowColor = rgba(VIOLET, 0.95); ctx.shadowBlur = 18; ctx.stroke();
+        ctx.shadowBlur = 0; path(); ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.stroke();
+      }
+      if (S.t < 1) {   // the bright head that draws the curve
+        const [hx, hy] = pts[pts.length - 1];
+        const head = ctx.createRadialGradient(hx, hy, 0, hx, hy, 16);
+        head.addColorStop(0, 'rgba(255,255,255,.95)'); head.addColorStop(0.3, rgba(color, 0.6)); head.addColorStop(1, rgba(color, 0));
+        ctx.fillStyle = head; ctx.fillRect(hx - 16, hy - 16, 32, 32);
+      }
+    });
     ctx.restore();
+    if (!drawn) return;
 
-    // key points appear once the curve is complete
-    const appear = Math.min(1, S.since / 0.6);
     const placed = [];
     const tag = (text, x, y, color, prefer) => {
       if (compact) return;
@@ -249,7 +273,43 @@
       return true;
     };
     if (S.since > 0) {
-      if (d.kind === 'function') {
+      if (paired) {
+        // each function's own points (where it crosses the x-axis, its turning points): small, in its colour
+        ctx.save(); ctx.globalAlpha = appear;
+        curves.forEach((c, index) => {
+          const marks = (c.roots || []).slice(0, 8).map((r) => [r, 0]);
+          if (c.vertex) marks.push(c.vertex);
+          (c.extrema || []).slice(0, 6).forEach((e) => marks.push([e.x, e.y]));
+          ctx.fillStyle = rgba(PAIR_COLORS[index % PAIR_COLORS.length], 1);
+          marks.forEach(([x, y]) => {
+            const sx = px(x), sy = py(y);
+            if (sx < pad.l - 2 || sx > w - pad.r + 2 || sy < pad.t - 2 || sy > h - pad.b + 2) return;
+            ctx.beginPath(); ctx.arc(sx, sy, compact ? 1.6 : 3.2, 0, Math.PI * 2); ctx.fill();
+          });
+        });
+        ctx.restore();
+        // where they meet: the points the pair is about
+        (d.meet || []).forEach((p, i) => {
+          const short = (value) => num(Math.round(value * 1000) / 1000);   // three decimals say where; the list below has the rest
+          if (dot(px(p.x), py(p.y), GOLD, i) && i < 6) tag(`(${short(p.x)}, ${short(p.y)})`, px(p.x), py(p.y), GOLD, i % 2 ? 'below' : 'above');
+        });
+        if (!compact) {   // which colour is which
+          ctx.save(); ctx.globalAlpha = appear;
+          ctx.font = '600 12px "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
+          const widest = Math.max(...curves.map((c) => ctx.measureText(c.label).width));
+          const bw = widest + 54, bh = 14 + curves.length * 20, bx = w - pad.r - bw + 4, by = pad.t - 2;
+          ctx.fillStyle = 'rgba(6,12,26,.86)'; ctx.strokeStyle = rgba(CYAN, 0.4); ctx.lineWidth = 1;
+          ctx.fillRect(bx, by, bw, bh); ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+          ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+          curves.forEach((c, index) => {
+            const y = by + 17 + index * 20, color = PAIR_COLORS[index % PAIR_COLORS.length];
+            ctx.strokeStyle = rgba(color, 1); ctx.lineWidth = 3; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(bx + 12, y); ctx.lineTo(bx + 34, y); ctx.stroke();
+            ctx.fillStyle = '#fff'; ctx.fillText(c.label, bx + 44, y + 0.5);
+          });
+          ctx.restore();
+        }
+      } else if (d.kind === 'function') {
         // vertical and horizontal asymptotes
         ctx.save(); ctx.globalAlpha = appear * 0.7; ctx.setLineDash([3, 7]); ctx.strokeStyle = rgba(MAGENTA, 0.85); ctx.lineWidth = 1.2;
         ctx.beginPath();
@@ -280,8 +340,30 @@
       }
     }
 
-    // crosshair that follows the mouse
-    if (S.hover != null && S.since > 0) {
+    // crosshair that follows the mouse: with two functions, a line down through both, and each one's value there
+    if (S.hover != null && S.since > 0 && paired) {
+      const x = unx(S.hover), cx = px(x);
+      if (x >= v.xmin && x <= v.xmax) {
+        ctx.save(); ctx.setLineDash([4, 5]); ctx.strokeStyle = rgba(CYAN, 0.55); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(cx, pad.t); ctx.lineTo(cx, h - pad.b); ctx.stroke(); ctx.restore();
+        const parts = [`x = ${num(Math.round(x * 100) / 100)}`];
+        curves.forEach((c, index) => {
+          const y = valueOf(c, x), cy = py(y);
+          if (!Number.isFinite(y)) return;
+          parts.push(`${c.name} = ${num(Math.round(y * 100) / 100)}`);
+          if (cy < pad.t || cy > h - pad.b) return;
+          ctx.fillStyle = '#fff'; ctx.shadowColor = rgba(PAIR_COLORS[index % PAIR_COLORS.length], 1); ctx.shadowBlur = 12;
+          ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+        });
+        const text = parts.join('   ');
+        ctx.font = '600 11.5px "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
+        const tw = ctx.measureText(text).width + 18;
+        const tx = Math.min(Math.max(cx + 14, pad.l), w - pad.r - tw), ty = h - pad.b - 34;
+        ctx.fillStyle = 'rgba(6,12,26,.92)'; ctx.strokeStyle = rgba(CYAN, 0.9);
+        ctx.fillRect(tx, ty, tw, 24); ctx.strokeRect(tx + 0.5, ty + 0.5, tw - 1, 23);
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(text, tx + 9, ty + 12.5);
+      }
+    } else if (S.hover != null && S.since > 0) {
       const x = unx(S.hover), y = value(x);
       const cx = px(x), cy = py(y);
       if (Number.isFinite(y) && x >= v.xmin && x <= v.xmax && cy >= pad.t && cy <= h - pad.b) {
@@ -328,6 +410,7 @@
   }
 
   function chips(d) {
+    if (d.kind === 'pair') return d.chips;   // worked out with the rest, in graphs.build_pair
     const list = [];
     const some = (values, format, limit) => values.slice(0, limit).map(format).join('  ,  ') + (values.length > limit ? `  +${values.length - limit}` : '');
     if (d.kind === 'function') {
@@ -361,7 +444,8 @@
     data = history[index];
     view = computeView(data);
     const d = data;
-    $('graphKicker').textContent = d.kind === 'line' ? 'Straight line' : d.kind === 'function' ? `${d.kindName} function` : 'Parabola';
+    $('graphKicker').textContent = d.kind === 'pair' ? (d.functions.length === 2 ? 'Two functions' : `${d.functions.length} functions`)
+      : d.kind === 'line' ? 'Straight line' : d.kind === 'function' ? `${d.kindName} function` : 'Parabola';
     const title = $('graphTitle');
     title.replaceChildren();
     try {
@@ -377,6 +461,7 @@
       const a = document.createElement('span'); a.textContent = label;
       const b = document.createElement('b'); b.textContent = text;
       li.append(a, b);
+      if (text.length > 44) li.className = 'wide';   // a sentence, not a number: a row of its own
       facts.append(li);
     });
     $('graphSave').textContent = 'Save image';
