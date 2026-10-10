@@ -8,7 +8,8 @@
 // and the kept copy is used only when the network doesn't answer in time (a sleeping relay, no signal).
 
 const SHELL = "jarvis-shell-v1";
-const SHELL_FILES = ["/agent.js", "/manifest.webmanifest", "/apple-touch-icon.png", "/icons/icon-192.png"];
+const SHELL_FILES = ["/agent.js", "/manifest.webmanifest", "/apple-touch-icon.png", "/icons/icon-192.png",
+                     "/vendor/fonts/orbitron-latin.woff2"];   // the display face: the app looks itself offline too
 const NETWORK_WAIT = 3500;   // ms before the kept copy is used instead
 
 self.addEventListener("install", (event) => {
@@ -18,15 +19,19 @@ self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim(
 
 const OFFLINE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#05070f"><title>Jarvis</title><style>
-html,body{height:100%;margin:0;background:#05070f;color:#e9eefb;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+<meta name="theme-color" content="#02040a"><title>Jarvis</title><style>
+@font-face{font-family:Orbitron;src:url(/vendor/fonts/orbitron-latin.woff2) format("woff2");font-weight:400 900}
+html,body{height:100%;margin:0;background:#02040a;color:#e8f4ff;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;
-padding:24px calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left))}
-.orb{width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#8fe7ff,#4fd8ff 40%,#a58bff);
-box-shadow:0 0 40px #4fd8ff55;animation:b 2.4s ease-in-out infinite}
-@keyframes b{50%{transform:scale(.92);opacity:.7}}h1{font-size:20px;margin:8px 0 0;font-weight:650}
-p{margin:0;color:#8f9bb8;max-width:280px;font-size:15px}button{margin-top:10px;border:0;border-radius:999px;
-padding:13px 26px;font:600 15px system-ui,sans-serif;background:#e9eefb;color:#05070f}
+padding:24px calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));
+background:radial-gradient(120% 56% at 50% -12%,rgb(120 135 172/.2),transparent 64%),#02040a}
+.orb{width:96px;height:96px;border-radius:50%;border:1px solid rgb(120 135 172/.3);border-top-color:#7887ac;
+animation:t 9s linear infinite;margin-bottom:10px}@keyframes t{to{transform:rotate(360deg)}}
+h1{font:600 21px/1.25 Orbitron,system-ui,sans-serif;letter-spacing:.02em;margin:0}
+p{margin:0;color:#8fa3c4;max-width:290px;font-size:15.5px}button{margin-top:12px;border:0;min-height:52px;
+padding:0 28px;font:600 16px system-ui,sans-serif;background:#4fd8ff;color:#021019;
+clip-path:polygon(11px 0,100% 0,100% calc(100% - 11px),calc(100% - 11px) 100%,0 100%,0 11px)}
+@media (prefers-reduced-motion:reduce){.orb{animation:none}}
 </style></head><body><div class="orb"></div><h1>You're offline</h1>
 <p>Jarvis will reconnect as soon as your phone is back online.</p>
 <button onclick="location.reload()">Try again</button>

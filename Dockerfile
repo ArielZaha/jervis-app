@@ -19,5 +19,8 @@ COPY sphere_gl.js ./
 COPY relay/web/graph.js relay/web/earth.js relay/web/planet.js ./
 COPY vendor/earth ./vendor/earth
 COPY vendor/planets ./vendor/planets
+# the phone app's code scanner (pairing inside the app) and its display font
+COPY vendor/jsqr ./vendor/jsqr
+COPY vendor/fonts ./vendor/fonts
 EXPOSE 8080
 CMD ["python", "server.py"]

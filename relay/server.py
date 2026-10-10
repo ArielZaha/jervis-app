@@ -70,7 +70,8 @@ MANIFEST_PATH = os.path.join(_HERE, "phone_manifest.webmanifest")
 AGENT_PATH = os.path.join(_HERE, "phone_agent.js")
 # The phone app's graphs, globe and planets: the computer window's own drawing code and imagery, copied in by the
 # Dockerfile. The same fixed list as phone_visuals.py (tests/test_phone_visuals.py checks they agree).
-VISUAL_SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js")
+VISUAL_SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js", "vendor/jsqr/jsQR.js")
+VISUAL_FONTS = ("vendor/fonts/orbitron-latin.woff2",)
 VISUAL_IMAGES = (
     "vendor/earth/blue_marble_5400.jpg", "vendor/earth/clouds_2048.jpg", "vendor/earth/night_lights_3600.jpg",
     "vendor/earth/earth_atmos_2048.jpg",
@@ -82,6 +83,7 @@ VISUAL_IMAGES = (
 VISUAL_FILES = {f"/{n}": (n, "text/javascript; charset=utf-8", "no-cache") for n in VISUAL_SCRIPTS}
 VISUAL_FILES.update({f"/{n}": (n, "image/png" if n.endswith(".png") else "image/jpeg", "public, max-age=604800")
                      for n in VISUAL_IMAGES})
+VISUAL_FILES.update({f"/{n}": (n, "font/woff2", "public, max-age=604800") for n in VISUAL_FONTS})
 ICON_DIR = os.path.join(_HERE, "phone_icons")
 # Same fixed list as phone_control.ICON_FILES (this file deploys on its own, so it can't import that module).
 ICON_FILES = frozenset({"icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png",
@@ -367,8 +369,9 @@ async def process_request(connection, request):
                     .replace("__COMPUTER_ID__", computer_id)
                     .replace("__LOCAL_ADDRESS__", context["localAddress"])
                     .replace("__SERVED_BY_RELAY__", "1")
-                    # Pairing never goes through the relay (see phone_control.py's module docstring) — this is
-                    # always empty here, never the computer's real pairing code.
+                    # The 6-digit pairing code never goes through the relay (see phone_control.py's module
+                    # docstring): this is always empty here. Pairing from this page uses the one-time key in the
+                    # computer's QR code instead, sealed end to end, which the relay only passes along.
                     .replace("__ACTIVE_PAIR_CODE__", ""))
         return _http_response(200, html.encode("utf-8"), "text/html; charset=utf-8")
 
