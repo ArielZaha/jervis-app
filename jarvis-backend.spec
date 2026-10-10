@@ -32,6 +32,7 @@ hiddenimports += ["tzdata", "forecast", "web_search"]
 # The phone app the backend serves to a paired phone (phone_control.serve_static reads these via paths.resource)
 datas += [(f, ".") for f in ("phone_client.html", "phone_sw.js", "confirm.html", "phone_manifest.webmanifest", "phone_agent.js")]
 datas += [("phone_icons", "phone_icons")]
+datas += [("geo_data", "geo_data")]   # country borders and populated places for the globe (geo.py): Natural Earth
 
 if sys.platform == "win32":
     for package in ("uiautomation", "comtypes", "pycaw"):

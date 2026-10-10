@@ -27,6 +27,18 @@
   }
   loadImage('vendor/planets/2k_saturn_ring_alpha.png', (t) => { ringAlpha = t; });
 
+  // Drawn on the GPU (sphere_gl.js) whenever possible: sharp at any size, correctly lit. The CPU painter is the fallback.
+  let gpu;
+  const gpuRenderer = () => {
+    if (gpu === undefined) gpu = window.createSphereRenderer ? window.createSphereRenderer() : null;
+    return gpu;
+  };
+  // The thin glow of each body's atmosphere (none for airless ones), and Earth's own extra layers.
+  const RIM = { sun: [1.0, 0.62, 0.22], venus: [0.75, 0.68, 0.45], earth: [0.35, 0.62, 1.0], mars: [0.6, 0.36, 0.22],
+                jupiter: [0.45, 0.42, 0.38], saturn: [0.45, 0.42, 0.34], uranus: [0.35, 0.6, 0.7], neptune: [0.3, 0.45, 0.9] };
+  const EARTH = { clouds: 'vendor/earth/clouds_2048.jpg', night: 'vendor/earth/night_lights_3600.jpg' };
+  const imageUrl = (d) => (d && d.texture ? `vendor/planets/${d.texture}` : '');
+
   function bilinear(map, u, v, channels) {
     const { data, w, h } = map;
     const fx = ((u % 1) + 1) % 1 * w - 0.5, fy = Math.max(0, Math.min(h - 1, v * h - 0.5));
@@ -73,7 +85,7 @@
     ctx.globalAlpha = 1;
   }
 
-  const LIGHT = normalize([0.4, 0.5, 0.85]);
+  const LIGHT = normalize([0.55, 0.42, 0.72]);
   function normalize(v) {
     const n = Math.hypot(v[0], v[1], v[2]);
     return [v[0] / n, v[1] / n, v[2] / n];
@@ -104,8 +116,9 @@
       const ny = (j + 0.5) / RES * 2 - 1;
       for (let i = 0; i < RES; i++) {
         const idx = (j * RES + i) * 4;
-        const nx = (i + 0.5) / RES * 2 - 1;
-        const dist = Math.hypot(nx, ny);
+        const sx = (i + 0.5) / RES * 2 - 1;
+        const nx = -sx;   // seen from outside: east to the right
+        const dist = Math.hypot(sx, ny);
         if (dist > 1 + edgePx) { buf[idx + 3] = 0; continue; }
         const py = -ny;
         const pz = Math.sqrt(Math.max(0, 1 - nx * nx - py * py));
@@ -125,7 +138,7 @@
           r = lum + (r - lum) * SAT; g = lum + (g - lum) * SAT; b = lum + (b - lum) * SAT;
           r = (r - 128) * CONTRAST + 128; g = (g - 128) * CONTRAST + 128; b = (b - 128) * CONTRAST + 128;
         }
-        const dot = nx * LIGHT[0] + py * LIGHT[1] + pz * LIGHT[2];
+        const dot = sx * LIGHT[0] + py * LIGHT[1] + pz * LIGHT[2];
         const t = Math.max(0, Math.min(1, (dot + 0.35) / 0.6));
         const light = 0.58 + 0.62 * t * t * (3 - 2 * t);
         const alpha = dist > 1 ? Math.max(0, (1 + edgePx - dist) / edgePx) : 1;
@@ -153,7 +166,7 @@
       let px = x * cLon - z * sLon, pz = x * sLon + z * cLon;
       const py = y * cLat - pz * sLat;
       pz = y * sLat + pz * cLat;
-      return [cx + px * R, cy - py * R, pz];
+      return [cx - px * R, cy - py * R, pz];
     };
     const steps = 96;
     for (let ring = 0; ring < 40; ring++) {
@@ -167,8 +180,9 @@
         const a = (s / steps) * Math.PI * 2;
         const x = Math.cos(a) * rMid, z = Math.sin(a) * rMid;   // a point on the ring, in the equatorial (y = 0) plane
         const q = project(x, 0, z);
-        const onFront = q[2] >= -0.001;
-        if (onFront !== front) { has = false; continue; }
+        // the two halves overlap a little where they meet, so no seam of background shows between them
+        const include = front ? q[2] >= -0.04 : q[2] < 0.04;
+        if (!include) { has = false; continue; }
         if (!has) { ctx.moveTo(q[0], q[1]); has = true; } else ctx.lineTo(q[0], q[1]);
       }
       ctx.strokeStyle = `rgba(214,196,168,${(profile[3] / 255) * 0.8})`;
@@ -207,7 +221,7 @@
     $('planetLayer').hidden = false;
     document.body.classList.add('scene-paused');
     openedAt = performance.now();
-    userLon = 0; userLat = 0.1; zoom = 1; autoSpin = 0;
+    userLon = 0; userLat = data.rings ? 0.36 : 0.1; zoom = 1; autoSpin = 0;   // tilted enough to see Saturn's rings open
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(frame);
   }
@@ -246,6 +260,12 @@
     canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const sphere = d.texture ? gpuRenderer() : null;
+    if (sphere) {
+      const draw = () => render(ctx, w, h, { t: 1, since: 1, spinLon: 0.6, lat: 0.15, zoom: 1, compact: true, planetData: d });
+      sphere.texture(imageUrl(d), draw);   // now if the image is in, else as soon as it is
+      return;
+    }
     const savedTex = texture, savedKey = textureKey;
     if (d.texture) {
       texture = null;
@@ -273,7 +293,7 @@
   function frame(now) {
     if (document.hidden) { raf = requestAnimationFrame(frame); return; }
     const canvas = $('planetCanvas');
-    const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+    const dpr = Math.min(gpuRenderer() ? 2 : 1.5, window.devicePixelRatio || 1);
     const w = canvas.clientWidth || 400, h = canvas.clientHeight || 400;
     const px = Math.round(w * dpr), py = Math.round(h * dpr);
     if (canvas.width !== px || canvas.height !== py) { canvas.width = px; canvas.height = py; }
@@ -304,9 +324,31 @@
     }
     ctx.globalCompositeOperation = 'source-over';
     if (d.rings) drawRings(ctx, cx, cy, R, cLon, sLon, cLat, sLat, false);
-    paintBody(ctx, cx, cy, R, cLon, sLon, cLat, sLat, S.compact, S.exportRes, (S.time || 0) * 1000, S.zoom, Boolean(S.live));
+    const sphere = d.texture ? gpuRenderer() : null;
+    if (sphere) {
+      const scale = ctx.canvas.width / w, earth = d.key === 'earth';
+      const out = sphere.draw(ctx.canvas.width, ctx.canvas.height, {
+        cx: cx * scale, cy: cy * scale, R: R * scale, cLon, sLon, cLat, sLat, light: LIGHT, day: imageUrl(d),
+        earth, clouds: earth ? EARTH.clouds : '', night: earth ? EARTH.night : '', emissive: d.colorKind === 'star',
+        cloudDrift: ((S.time || 0) * 0.006) / (2 * Math.PI), rim: RIM[d.key] || [0, 0, 0],
+      });
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(out, 0, 0); ctx.restore();
+    } else {
+      paintBody(ctx, cx, cy, R, cLon, sLon, cLat, sLat, S.compact, S.exportRes, (S.time || 0) * 1000, S.zoom, Boolean(S.live));
+    }
     if (d.rings) drawRings(ctx, cx, cy, R, cLon, sLon, cLat, sLat, true);
     ctx.globalCompositeOperation = 'lighter';
+    if (sphere) {   // a soft haze just outside the limb, in the body's own atmosphere colour
+      const c = (RIM[d.key] || [0, 0, 0]).map((v) => Math.round(v * 255));
+      if (c.some((v) => v > 0)) {
+        const haze = ctx.createRadialGradient(cx, cy, R * 0.995, cx, cy, R * 1.06);
+        haze.addColorStop(0, `rgba(${c},.38)`); haze.addColorStop(1, `rgba(${c},0)`);
+        ctx.fillStyle = haze;
+        ctx.beginPath(); ctx.arc(cx, cy, R * 1.06, 0, Math.PI * 2); ctx.arc(cx, cy, R * 0.995, 0, Math.PI * 2, true); ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      return;
+    }
     const rim = ctx.createRadialGradient(cx, cy, R * 0.86, cx, cy, R * 1.03);
     rim.addColorStop(0, rgba(CYAN, 0)); rim.addColorStop(1, rgba(CYAN, 0.35));
     ctx.fillStyle = rim;
@@ -322,12 +364,14 @@
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
+  // Set up now if the page has already loaded (the phone app loads this on demand), else once it has.
+  const whenReady = (fn) => (document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', fn) : fn());
+  whenReady(() => {
     const canvas = $('planetCanvas');
     const onDown = (x, y) => { dragging = true; lastX = x; lastY = y; };
     const onMove = (x, y) => {
       if (!dragging) return;
-      userLon += (x - lastX) * 0.0055;
+      userLon -= (x - lastX) * 0.0055 / Math.max(1, Math.sqrt(zoom));   // the surface follows the cursor
       userLat = Math.max(-1.3, Math.min(1.3, userLat + (y - lastY) * 0.0055));
       lastX = x; lastY = y;
       lastInteractAt = performance.now();

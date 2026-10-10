@@ -183,6 +183,20 @@ _STATIC = {   # path -> (file in the project, content type, cache) — a fixed l
 }
 for _icon in ("icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png", "favicon-64.png"):
     _STATIC[f"/icons/{_icon}"] = (f"phone_icons/{_icon}", "image/png", "public, max-age=86400")
+# The phone app's graphs, globe and planets (phone_visuals.py keeps the same list; a test checks they agree)
+VISUAL_SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js")
+VISUAL_IMAGES = (
+    "vendor/earth/blue_marble_5400.jpg", "vendor/earth/clouds_2048.jpg", "vendor/earth/night_lights_3600.jpg",
+    "vendor/earth/earth_atmos_2048.jpg",
+    "vendor/planets/2k_sun.jpg", "vendor/planets/2k_mercury.jpg", "vendor/planets/2k_venus_surface.jpg",
+    "vendor/planets/2k_mars.jpg", "vendor/planets/2k_jupiter.jpg", "vendor/planets/2k_saturn.jpg",
+    "vendor/planets/2k_saturn_ring_alpha.png", "vendor/planets/2k_uranus.jpg", "vendor/planets/2k_neptune.jpg",
+    "vendor/planets/2k_moon.jpg",
+)
+for _name in VISUAL_SCRIPTS:
+    _STATIC[f"/{_name}"] = (_name, "text/javascript; charset=utf-8", "no-cache")
+for _name in VISUAL_IMAGES:
+    _STATIC[f"/{_name}"] = (_name, "image/png" if _name.endswith(".png") else "image/jpeg", "public, max-age=604800")
 
 
 class PhoneDoor:
@@ -320,6 +334,118 @@ def keep_phone_door(config: dict) -> None:
         time.sleep(CHECK_JARVIS_EVERY)
 
 
+# ---------- the same, away from home: through the relay ----------
+# The phone's always-on app talks to Jarvis through a relay (relay/server.py), which only passes messages between "a
+# computer" and "a phone". While Jarvis is closed, this signs in there as this computer, so a paired phone can still
+# open Jarvis. The phone proves itself exactly as it does to Jarvis (phone_session.verify_attach_proof): an envelope
+# only that phone's own key could have sealed, naming itself and a recent time. Nothing else is ever answered.
+DEFAULT_RELAY = "wss://jervis-relay.onrender.com/"   # settings.py's default for JARVIS_RELAY_URL
+ATTACH_PROOF_WINDOW = 10 * 60                        # phone_session.ATTACH_PROOF_WINDOW
+
+
+def relay_address(config: dict) -> str:
+    """Jarvis's relay address (Settings, Computer control): the default unless the user changed or cleared it."""
+    try:
+        with open(_project_file(config, "settings.json"), encoding="utf-8") as f:
+            values = json.load(f).get("values", {})
+    except (OSError, ValueError):
+        values = {}
+    value = values.get("JARVIS_RELAY_URL", values.get("JE" + "RVIS_RELAY_URL"))
+    return DEFAULT_RELAY if value is None else str(value).strip()
+
+
+def computer_id(config: dict) -> str:
+    try:
+        with open(_project_file(config, "relay_identity.json"), encoding="utf-8") as f:
+            return str(json.load(f).get("computerId") or "")
+    except (OSError, ValueError):
+        return ""
+
+
+def proof_is_from_paired_phone(config: dict, device_id: str, proof) -> bool:
+    """True only for an attach proof sealed with that paired device's own key, minutes old at most."""
+    try:
+        import base64
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        with open(_project_file(config, "phone_devices.json"), encoding="utf-8") as f:
+            device = json.load(f).get("devices", {}).get(device_id or "")
+        if not device or not isinstance(proof, dict):
+            return False
+        pad = lambda t: t + "=" * (-len(t) % 4)
+        key = base64.urlsafe_b64decode(pad(device["key_b64"]))
+        plain = AESGCM(key).decrypt(base64.urlsafe_b64decode(pad(str(proof["n"]))),
+                                    base64.urlsafe_b64decode(pad(str(proof["ct"]))), None)
+        message = json.loads(plain.decode("utf-8"))
+        return (message.get("type") == "attach" and message.get("deviceId") == device_id
+                and abs(time.time() - float(message.get("ts")) / 1000) <= ATTACH_PROOF_WINDOW)
+    except Exception:   # a wrong key, a tampered or malformed proof, a missing file: all simply "no"
+        return False
+
+
+async def _relay_door(config: dict, url: str, ident: str, should_hold) -> None:
+    import websockets
+    async with websockets.connect(url, open_timeout=60, ping_interval=20, ping_timeout=30) as ws:
+        await ws.send(json.dumps({"type": "hello", "role": "computer", "computerId": ident}))
+        log.info("Relay door open: your phone can open Jarvis from anywhere.")
+        while True:
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=CHECK_JARVIS_EVERY)
+            except asyncio.TimeoutError:
+                if not should_hold():
+                    return   # Jarvis is up (or phone control was switched off): the relay is his now
+                continue
+            try:
+                data = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            kind = data.get("type")
+            if kind == "get_page_context":   # the relay serving the app's page: nothing to add while Jarvis is closed
+                await ws.send(json.dumps({"type": "page_context", "requestId": data.get("requestId"),
+                                          "vapidKey": "", "localAddress": ""}))
+                continue
+            payload = data.get("payload") if kind == "frame" else None
+            if not isinstance(payload, dict) or payload.get("type") not in ("auto_attach", "session_attach"):
+                continue
+            reply = lambda message: ws.send(json.dumps({"type": "frame", "connId": data.get("connId"), "payload": message}))
+            if not proof_is_from_paired_phone(config, str(payload.get("deviceId") or ""), payload.get("proof")):
+                log.info("Relay door: something that isn't a paired phone tried to open Jarvis; ignored.")
+                await reply({"type": "wake_refused", "message": "Jarvis isn't open on your computer."})
+                continue
+            if payload.get("wake") is not True:
+                # Only an app that was just opened on "On my computer" (or its "Open Jarvis" button) asks to wake:
+                # a background reconnect, or the phone's own Jarvis, must never open Jarvis here.
+                await reply({"type": "jarvis_closed"})
+                continue
+            log.info("Relay door: your paired phone asked for Jarvis; starting Jarvis.")
+            claimed = claim_launch(config)
+            await reply({"type": "waking"})
+            if claimed:
+                threading.Thread(target=launch_jarvis, args=(config, False), daemon=True).start()
+            return   # step aside: Jarvis signs in to the relay himself once he's up
+
+
+def keep_relay_door(config: dict, stop: threading.Event = None) -> None:
+    """Holds this computer's place on the relay exactly while Jarvis isn't running, as keep_phone_door does the port.
+    stop: set it to end the keeper (the tests do; Jarvis Wake itself runs it for as long as it lives)."""
+    stopped = lambda: stop is not None and stop.is_set()
+    should_hold = lambda: not (stopped() or jarvis_running(config) or recently_launched() or not phone_control_on(config))
+    try:
+        import cryptography  # noqa: F401   (without it a phone can't be verified: no relay door, the Wi-Fi one still works)
+        import websockets    # noqa: F401
+    except ImportError:
+        log.info("Relay door unavailable (run wake/install.sh once to add it); the Wi-Fi phone door still works.")
+        return
+    while not stopped():
+        try:
+            url, ident = relay_address(config), computer_id(config)
+            if url and ident and should_hold():
+                asyncio.run(_relay_door(config, url, ident, should_hold))
+                log.info("Relay door closed.")
+        except Exception as e:   # the relay asleep or unreachable, no internet: quietly try again
+            log.debug("Relay door: %r", e)
+        time.sleep(CHECK_JARVIS_EVERY * 2)
+
+
 # ---------- listening ----------
 def heard_wake_phrase(text: str) -> bool:
     words = " " + " ".join(text.replace("[unk]", " ").split()) + " "
@@ -439,6 +565,7 @@ def main() -> None:
         sys.exit(1)
     log.info("Jarvis Wake started (Jarvis: %s).", config["project"])
     threading.Thread(target=keep_phone_door, args=(config,), daemon=True, name="phone-door-keeper").start()
+    threading.Thread(target=keep_relay_door, args=(config,), daemon=True, name="relay-door-keeper").start()
     listener = Listener(config)
     while True:
         try:

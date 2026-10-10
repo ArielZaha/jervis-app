@@ -12,5 +12,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY relay/server.py .
 COPY phone_client.html phone_sw.js confirm.html phone_manifest.webmanifest phone_agent.js ./
 COPY phone_icons ./phone_icons
+# graphs, the 3D globe and planets on the phone (relay/server.py's VISUAL_FILES)
+COPY sphere_gl.js graph.js earth.js planet.js ./
+COPY vendor/earth ./vendor/earth
+COPY vendor/planets ./vendor/planets
 EXPOSE 8080
 CMD ["python", "server.py"]

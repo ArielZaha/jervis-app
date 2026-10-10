@@ -17,7 +17,7 @@ BODIES = {
     "venus": {"name": "Venus", "kind": "planet", "texture": "2k_venus_surface.jpg", "radius_km": 6052, "day_hours": -5832.5,
               "year_days": 225, "distance_million_km": 108.2, "moons": 0, "temp_c": "about 465°C, hot enough to melt lead",
               "color_kind": "rock", "fact": "It spins backward compared to most planets, and its day is longer than its year."},
-    "earth": {"name": "Earth", "kind": "planet", "texture": "../earth/earth_atmos_2048.jpg", "radius_km": 6371, "day_hours": 24,
+    "earth": {"name": "Earth", "kind": "planet", "texture": "../earth/blue_marble_5400.jpg", "radius_km": 6371, "day_hours": 24,
               "year_days": 365.25, "distance_million_km": 149.6, "moons": 1, "temp_c": "about 15°C on average",
               "color_kind": "earth", "fact": "It's the only known place with liquid water on its surface and life."},
     "mars": {"name": "Mars", "kind": "planet", "texture": "2k_mars.jpg", "radius_km": 3390, "day_hours": 24.66,
@@ -116,7 +116,7 @@ def describe(body: dict) -> str:
     lead = f"{body['name']} is {'a' if body['kind'][0] not in 'aeiou' else 'an'} {body['kind']}"
     if body["distance_million_km"]:
         lead += f", about {_say_number(body['distance_million_km'])} million kilometers from the Sun"
-    lead += ". " + body["fact"]
+    lead = lead[0].upper() + lead[1:] + ". " + body["fact"]   # "The Sun is a star", not "the Sun…"
     lines = [f"- **Radius:** {_say_number(body['radius_km'])} km ({_say_number(body['radius_km'] / 6371)}× Earth's)"]
     if body["distance_million_km"]:
         lines.append(f"- **Distance from the Sun:** {_say_number(body['distance_million_km'])} million km")

@@ -118,15 +118,14 @@ def list_upcoming(max_results: int = 5) -> list:
     return events
 
 
-def create_event(title: str, start: dt.datetime, end: dt.datetime, location: str = "", description: str = "") -> dict:
+def create_event(title: str, start: dt.datetime, end: dt.datetime, location: str = "", description: str = "",
+                 reminders=()) -> dict:
     """Create an event on the primary calendar. Returns {"title", "start", "end", "link"}."""
     service = get_service()
-    tz = start.astimezone().tzinfo
-    body = {
-        "summary": title,
-        "start": {"dateTime": start.isoformat(), "timeZone": str(tz)},
-        "end": {"dateTime": end.isoformat(), "timeZone": str(tz)},
-    }
+    # The offset in each time says the zone; a name like "IDT" isn't one Google accepts, so none is sent.
+    body = {"summary": title, "start": {"dateTime": start.isoformat()}, "end": {"dateTime": end.isoformat()}}
+    if reminders:
+        body["reminders"] = {"useDefault": False, "overrides": [{"method": "popup", "minutes": int(m)} for m in reminders]}
     if location:
         body["location"] = location
     if description:
@@ -136,3 +135,58 @@ def create_event(title: str, start: dt.datetime, end: dt.datetime, location: str
     except HttpError as e:
         raise CalendarUnavailable(f"Google Calendar wouldn't create the event: {e}")
     return {"title": title, "start": start, "end": end, "link": created.get("htmlLink", "")}
+
+
+# ---------- without the API: Google Calendar's own "new event" page, filled in from its link, then saved ----------
+_SAVE_SCRIPT = '''tell application "Google Chrome" to activate
+delay 0.3
+tell application "System Events" to keystroke "s" using command down'''
+
+
+def event_link(title: str, start: dt.datetime, end: dt.datetime, all_day: bool = False) -> str:
+    """Google Calendar's documented link that opens a new event with these details filled in."""
+    from urllib.parse import urlencode
+    if all_day:
+        dates = f"{start:%Y%m%d}/{end:%Y%m%d}"
+    else:
+        utc = dt.timezone.utc
+        dates = f"{start.astimezone(utc):%Y%m%dT%H%M%SZ}/{end.astimezone(utc):%Y%m%dT%H%M%SZ}"
+    return "https://calendar.google.com/calendar/render?" + urlencode({"action": "TEMPLATE", "text": title, "dates": dates})
+
+
+def create_event_in_browser(title: str, start: dt.datetime, end: dt.datetime, all_day: bool = False) -> bool:
+    """Open the filled-in event in the user's Google account and save it with Calendar's own shortcut (Command+S).
+    True once the page has left the event editor (saved); False if it couldn't be confirmed — the event is still
+    open and filled in, waiting for Save."""
+    import subprocess
+    import time
+    import google_accounts
+    google_accounts.open_page(event_link(title, start, end, all_day), f"calendar event {title}")
+    if os.name == "nt":
+        return False   # no way to see the tab's address on Windows: leave the Save click to the user
+    from youtube_browser import _mac_tabs
+
+    def front_url() -> str:
+        try:
+            front = [t for t in _mac_tabs() if t.window == 1 and t.active]
+        except Exception:
+            return ""
+        return front[0].url if front else ""
+
+    deadline = time.time() + 20
+    while time.time() < deadline and "eventedit" not in front_url():
+        time.sleep(0.5)
+    if "eventedit" not in front_url():
+        return False
+    time.sleep(2.5)   # the editor's fields fill in after the address changes
+    try:
+        subprocess.run(["osascript", "-e", _SAVE_SCRIPT], capture_output=True, timeout=15, check=True)
+    except (subprocess.SubprocessError, OSError):
+        return False
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        url = front_url()
+        if url and "eventedit" not in url and "calendar.google.com" in url:
+            return True
+        time.sleep(0.5)
+    return False

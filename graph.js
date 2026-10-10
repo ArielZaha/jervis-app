@@ -435,10 +435,14 @@
   };
   window.graphOpen = () => !$('graphLayer').hidden;
 
-  document.addEventListener('DOMContentLoaded', () => {
+  // Set up now if the page has already loaded (the phone app loads this on demand), else once it has.
+  const whenReady = (fn) => (document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', fn) : fn());
+  whenReady(() => {
     const canvas = $('graphCanvas');
     canvas.addEventListener('mousemove', (e) => { hoverX = e.clientX - canvas.getBoundingClientRect().left; });
     canvas.addEventListener('mouseleave', () => { hoverX = null; });
+    canvas.addEventListener('touchmove', (e) => { hoverX = e.touches[0].clientX - canvas.getBoundingClientRect().left; }, { passive: true });
+    canvas.addEventListener('touchend', () => { hoverX = null; });
     $('graphClose').addEventListener('click', window.hideGraph);
     $('graphPrev').addEventListener('click', () => window.reopenGraph('prev'));
     $('graphNext').addEventListener('click', () => window.reopenGraph('next'));

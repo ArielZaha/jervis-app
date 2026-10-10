@@ -14,6 +14,10 @@ sandbox.install()
 os.environ["GROQ_API_KEY"] = os.environ.get("HARNESS_GROQ_KEY", "")
 import app
 app.GROQ_KEY = os.environ["GROQ_API_KEY"]
+if os.environ.get("HARNESS_PLACES"):   # stand-in place lookups (the sandbox has no network): {"name": [lat, lon]}
+    _places = json.loads(os.environ["HARNESS_PLACES"])
+    app.earth.resolve = lambda name: ((lambda p: ({"name": name.title(), "country": "", "lat": p[0], "lon": p[1], "timezone": ""}, None)
+                                       if p else (None, None))(_places.get(name.lower())))
 threading.Thread(target=app.run_phone_server, daemon=True).start()
 if app.RELAY_URL:
     import relay_client
@@ -23,6 +27,7 @@ if app.RELAY_URL:
 def fake_main_loop():
     while True:
         text = app.typed_inputs.get()
+        app.turn_from_phone = isinstance(text, app.PhoneVoiceInput)
         try:
             app.broadcast("user", text)
             app.send_status("thinking")

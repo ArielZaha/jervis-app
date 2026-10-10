@@ -4,6 +4,7 @@ import os
 import platform
 import re
 import subprocess
+import time
 
 import google_accounts
 import osal
@@ -176,6 +177,12 @@ def reply_to_document(reply: str):
     return title, body or text
 
 
+def asks_to_write(text: str) -> bool:
+    """"Write a short story", "make me a poem", "draft an email to Dana": asks for something to be written."""
+    n = " ".join(re.sub(r"[^a-z0-9' ]", " ", (text or "").lower()).split())
+    return bool(_WRITE.search(n)) and not re.match(r"^(?:i |we |he |she |they |you )", n)
+
+
 def detect_request(text: str):
     """Return the app key when the sentence asks to write something into a document app, else None."""
     n = " ".join(re.sub(r"[^a-z0-9' ]", " ", (text or "").lower()).split())
@@ -197,6 +204,44 @@ def split_title(text: str):
     title = re.sub(r"^[#*\s]+|[*\s]+$", "", lines[0]).strip()[:80] or "Untitled"
     body = "\n".join(lines[1:]).strip()
     return title, body or title
+
+
+GDOCS_PASTED = "pasted"   # insert()'s answer for a Google Doc that has the text in it (else "": it's on the clipboard)
+_GDOCS_PASTE = '''tell application "Google Chrome" to activate
+delay 0.3
+tell application "System Events" to keystroke "v" using command down'''
+_NEW_DOC_URL = re.compile(r"docs\.google\.com/document/(?:u/\d+/)?d/")
+
+
+def _paste_into_new_google_doc(wait: float = 25.0) -> bool:
+    """Once the new document is open in the front browser tab and its editor has loaded, paste the clipboard into it."""
+    deadline = time.time() + wait
+    if osal.IS_WIN:
+        time.sleep(6)   # no tab list on Windows: give the editor time to load, then paste into the front window
+        try:
+            import winctl
+            winctl.press("ctrl", "v")
+            return True
+        except Exception:
+            return False
+    try:
+        from youtube_browser import _mac_tabs
+    except ImportError:
+        return False
+    while time.time() < deadline:
+        try:
+            front = [t for t in _mac_tabs() if t.window == 1 and t.active]
+        except Exception:
+            front = []
+        if front and _NEW_DOC_URL.search(front[0].url):
+            time.sleep(2.5)   # the address changes before the editor is ready to take text
+            try:
+                _run(_GDOCS_PASTE)
+                return True
+            except RuntimeError:
+                return False   # no Accessibility permission to type: the text is still on the clipboard
+        time.sleep(0.5)
+    return False
 
 
 def _run(script: str, *args: str) -> str:
@@ -272,11 +317,12 @@ def insert(app_key: str, title: str, body: str, context: str = "") -> str:
     if app_key == "notes":
         return _run(_NOTES, title, _notes_html(title, body))
     if app_key == "gdocs":
-        # Google prefills a new document from these URL parameters. The text is also copied, as a fallback.
+        # Google Docs has no way to fill a new document from its link (and no scripting interface): open a new one in
+        # the right Google account, wait for its editor, and paste the text in. It stays on the clipboard either way.
         osal.set_clipboard(full)
-        google_accounts.open_page(f"https://docs.google.com/document/create?title={quote(title)}&body={quote(body)}",
+        google_accounts.open_page(f"https://docs.google.com/document/create?title={quote(title)}",
                                   context or f"{title} {body[:200]}")
-        return ""
+        return GDOCS_PASTED if _paste_into_new_google_doc() else ""
     raise RuntimeError(f"I don't know how to write into {app_key}.")
 
 

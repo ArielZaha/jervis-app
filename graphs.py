@@ -67,6 +67,15 @@ def parse_request(text: str):
     is_math = ("x" in kept or "^" in kept or shape is not None or any(t in functions._FUNCTIONS or re.fullmatch(r"logb\d+|log10", t) for t in kept)
                or ("y" in kept and "=" in kept))
     if not is_math:
+        # "what is 2x + 6 = 0, draw the graph" / "y = x^2, plot it": the formula came first, then the order to draw it.
+        before = re.sub(r"(?:\s|[,.;:!?]|\b(?:and|then|also|now|so|please|can you|could you|would you)\b)*$", "", n[:verb.start()])
+        before = re.sub(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis)\s+)?(?:what(?:'s| is| are)(?: the answer (?:to|of))?|solve|calculate|"
+                        r"compute|find|work out|tell me)\b\s*", "", before).strip()
+        if before and not kept and (_STRONG_NOUN.search(rest) or re.search(r"\b(?:it|this|that|them)\b", rest)) \
+                and "x" in functions._tokenize(before):
+            request = parse_request(f"graph {before}")
+            if request and request["action"] in ("graph", "function"):
+                return {**request, "solve": before if "=" in before and not re.search(r"\by\b", before) else None}
         # "draw the function", "graph it", "plot that": no formula, so it means the one talked about last (the app knows which).
         if not kept and _is_command(n[:verb.start()]) and (_STRONG_NOUN.search(n) or re.search(r"\b(?:it|this|that|them)\b", rest)):
             return {"action": "last", "explicit": bool(_STRONG_NOUN.search(n))}

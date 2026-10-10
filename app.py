@@ -20,6 +20,7 @@ logbook.install()   # before anything prints, so startup problems end up in logs
 settings.load()     # before any module reads its configuration from the environment
 import platform
 import re
+import string
 import secrets
 import shutil
 import subprocess
@@ -27,7 +28,7 @@ import threading
 import time
 import traceback
 import webbrowser
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import hmac
 import random
@@ -65,10 +66,12 @@ import blender_control
 import computer_use
 import spotify_local
 import osal
+import apple_calendar
 import calendar_api
 import calendar_time
 import classroom
 import earth
+import geo
 import equations
 import forecast
 import functions
@@ -192,6 +195,8 @@ connected_clients = set()
 ws_loop = None
 ws_loop_ready = threading.Event()
 mic_muted = threading.Event()
+mute_changes = [0]   # bumped on every mute/unmute: a phrase whose recording or transcription spans one is dropped
+last_spoken = {"text": "", "at": 0.0}   # what Jarvis last said, and when he finished: his own voice isn't a request
 
 # Wake-word state: Jarvis stays passively listening (only checking for the
 # wake phrase) until woken, then behaves exactly as before until a shutdown
@@ -426,10 +431,19 @@ latest_ui_updates["speak_volume"] = {"type": "speak_volume",
                                      "data": {"volume": speak_volume(), "muted": speak_muted()}}
 
 
+# The window's graphs, globe and planets: the phone shows them too, with the same drawing code (see phone_visuals.py),
+# and opens them by itself when it's the phone that asked.
+PHONE_VISUALS = {"graph", "globe", "planet", "show_graph", "show_globe", "show_planet", "close_graph", "close_globe",
+                 "close_planet"}
+turn_from_phone = False   # main_loop: the request being handled right now came from the phone
+
+
 def send_ui_update_once(payload: dict) -> None:
     """Send a one-off message to the window (not replayed to windows that connect later)."""
     if ws_loop:
         asyncio.run_coroutine_threadsafe(_send_payload_async(payload), ws_loop)
+    if payload.get("type") in PHONE_VISUALS:
+        mirror_to_phone({"type": "visual", "visual": payload, "open": turn_from_phone})
 
 
 def send_ui_update(data_type, data):
@@ -555,8 +569,10 @@ async def handle_client(websocket):
                 continue
             if data.get("type") == "mute":
                 mic_muted.set()
+                mute_changes[0] += 1   # anything heard before this, still being transcribed, is thrown away
             elif data.get("type") == "unmute":
                 mic_muted.clear()
+                mute_changes[0] += 1
             elif data.get("type") == "set_speak_volume":
                 try:
                     volume = max(0, min(100, int(data.get("volume", 100))))
@@ -1470,7 +1486,9 @@ def parse_trailer_request(text: str):
     title = re.sub(r"^(?:the )?(?:series|show|movie|film|tv show)\s+(?:called |named )?", "", title) if not _REFERENCE.match(title) else title
     if re.search(r"\b(?:show me|play|watch|trailer|netflix|youtube)\b", title):  # left-over command words: not a title
         title = ""
-    service = "netflix" if on_netflix else "youtube"
+    on_youtube = bool(re.search(r"\b(?:on|in|from|at|through|with|via)\s+youtube\b", " ".join(re.sub(r"[^\w' ]", " ", (text or "").lower()).split())))
+    preferred = (os.getenv("JARVIS_TRAILERS") or "youtube").strip().lower()
+    service = "netflix" if on_netflix or (preferred == "netflix" and not on_youtube) else "youtube"
     if not title or title in {"official", "new"} or _REFERENCE.match(title):
         ordinal = next((_ORDINALS[w] for w in title.split() if w in _ORDINALS), None)
         return {"title": None, "ordinal": ordinal, "service": service, "hint": n}
@@ -1541,9 +1559,22 @@ def play_trailer(request: dict, new_tab: bool = False) -> str:
     query = title if (part and part.group(0) in title) else f"{title} {part.group(0) if part else ''}".strip()
     result = play_youtube_video(f"{query} official trailer", new_tab=new_tab)
     remember_played(title)
+    offer = _netflix_offer(title)
     if result.startswith("Playing "):
-        return f"Here's the trailer for {title}: {result[len('Playing '):]}"
-    return result
+        shown = string.capwords(title) if title == title.lower() else title   # "breaking bad" was how it was heard
+        return f"Here's the trailer for {shown}: {result[len('Playing '):]}{offer}"
+    return result + offer
+
+
+def _netflix_offer(title: str) -> str:
+    """After a YouTube trailer: say so when Netflix has the show too, so its own trailer is one sentence away."""
+    try:
+        found = netflix.find_title(re.sub(r"\s*\b(?:season|part|series)\s*\d+\s*$", "", title, flags=re.I).strip() or title)
+    except Exception:
+        return ""
+    if not found or not netflix.resembles(title, found[1]):
+        return ""
+    return f"\n\n{found[1]} is on Netflix too. Say “show it on Netflix” to watch Netflix's trailer there."
 
 
 _VIDEO_VERBS = r"(?:play|start|watch|put on|show me)"
@@ -1642,12 +1673,27 @@ def parse_spotify_request(text: str):
     return (query, seconds) if query else None
 
 
+_ORDINAL_MINUTE = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3, "fourth": 4, "4th": 4, "fifth": 5,
+                   "5th": 5, "sixth": 6, "6th": 6, "seventh": 7, "7th": 7, "eighth": 8, "8th": 8, "ninth": 9, "9th": 9,
+                   "tenth": 10, "10th": 10}
+_PLAY_FROM = re.compile(r"^(?:(?:hey |ok )?jarvis )?(?:please |can you |could you )*(?:play|start|resume|continue|put|watch|"
+                        r"go back to|take me to)(?: it| this| that| the (?:song|video|track|movie|episode|show))?"
+                        r"(?: (?:from|at|on))? (?P<t>.+)$")
+
+
 def parse_seek_command(text: str):
-    """"Go to minute 5" / "skip to 2:30" -> seconds, else None."""
+    """"Go to minute 5" / "skip to 2:30" / "play from minute 3" / "play the 3 minute" -> seconds, else None."""
     n = " ".join(re.sub(r"[^a-z0-9': ]", " ", (text or "").lower()).split())
-    if re.search(r"\b(play|put on|watch)\b", n) or not re.search(r"\b(go|skip|jump|seek|fast forward|move|scrub|rewind)\b.{0,20}\b(to|at)\b", n):
-        return None
-    return parse_start_time(n)[0]
+    n = re.sub(r"\b(?:the )?(" + "|".join(_ORDINAL_MINUTE) + r") minute\b", lambda m: f"minute {_ORDINAL_MINUTE[m.group(1)]}", n)
+    if re.search(r"\b(go|skip|jump|seek|fast forward|move|scrub|rewind)\b.{0,20}\b(to|at)\b", n) and not re.search(r"\b(play|put on|watch)\b", n):
+        return parse_start_time(n)[0]
+    # "play from minute 3", "play the 3 minute", "start it at 1:20": only a time after the verb, nothing to play by name
+    m = _PLAY_FROM.match(n)
+    if m:
+        seconds, rest = parse_start_time(m.group("t"))
+        if seconds is not None and rest.strip() in ("", "the", "it", "minute", "from", "the song", "the video"):
+            return seconds
+    return None
 
 
 def parse_track_skip(text: str):
@@ -1986,6 +2032,30 @@ def handle_math_followup(text: str):
     return ("It crosses the x-axis at " + ", ".join(f"x equals {graphs._say(r)}" for r in roots[:6]) + ".") if roots else "It never crosses the x-axis in this view."
 
 
+pending_earth_places = {"at": 0.0}   # Jarvis asked "which two places?": the next answer ("Israel and USA") is them
+
+
+def _places_talked_about():
+    """"Show me on the globe" right after the distance was asked (and answered in words): the two places from then."""
+    for message in reversed((chat_history or [])[-8:]):
+        if message.get("role") == "user" and isinstance(message.get("content"), str):
+            earlier = earth.parse_request(fix_typos(re.sub(r"^\(said[^)]*\)\s*", "", message["content"])))
+            if earlier and earlier["action"] in ("distance", "compare", "radius"):
+                return earlier
+    return None
+
+
+def handle_earth_places_answer(text: str):
+    """The answer to "which two places?": "Israel and USA", "from Rome to Paris"."""
+    if time.time() - pending_earth_places["at"] > 3 * 60:
+        return None
+    pending_earth_places["at"] = 0.0
+    places = re.fullmatch(r"(?:(?:from|between)\s+)?(.+?)\s+(?:and|to|&)\s+(.+?)[.!?]*", " ".join((text or "").split()), re.I)
+    if not places or len(places.group(0).split()) > 10:
+        return None
+    return handle_earth_command(f"what is the distance between {places.group(1)} and {places.group(2)}")
+
+
 def handle_earth_command(text: str):
     """Distance between two places, shown on a 3D globe: geocodes both (a network lookup, like the weather or Classroom
     checks) and works out the great-circle route between them."""
@@ -2002,15 +2072,166 @@ def handle_earth_command(text: str):
         send_ui_update_once({"type": "show_globe", "which": request["which"]})
         return {"prev": "Here is the previous one.", "next": "Here is the next one.", "first": "Here is the first one."}.get(request["which"], "Here it is again.")
     if request["action"] == "ask":
-        return "Which two places? For example: what's the distance between Tokyo and Paris."
-    a = earth.geocode(request["a"])
-    b = earth.geocode(request["b"]) if a else None
-    if not a or not b:
-        return f"I couldn't find {request['a'] if not a else request['b']}."
-    info = earth.build(a, b)
+        earlier = _places_talked_about()
+        if not earlier:
+            pending_earth_places["at"] = time.time()
+            return "Which two places? For example: what's the distance between Tokyo and Paris."
+        request = earlier
+    return answer_earth_request(request)
+
+
+last_globe_route = {"a": None, "b": None, "at": 0.0}   # for "which countries does it fly over?" / "how long is that flight?"
+pending_earth_choice = None   # {"request", "name", "options", "known", "at"}: "Which Valencia do you mean?"
+
+
+def _request_place_names(request: dict) -> list:
+    if request["action"] == "distance":
+        return [request["a"], request["b"]]
+    if request["action"] == "compare":
+        return [name for pair in request["pairs"] for name in pair]
+    if request["action"] == "radius":
+        return [request["a"]]
+    if request["action"] == "sun" and request.get("place"):
+        return [request["place"]]
+    return []
+
+
+def _lookup_place(name: str):
+    """(place, options): options when the name could mean two real places."""
+    try:
+        return earth.resolve(name)
+    except Exception as e:   # a lookup bug must never cost the answer: fall back to the single best match
+        print(f"Place lookup for {name!r} failed: {e!r}", flush=True)
+        return earth.geocode(name), None
+
+
+def answer_earth_request(request: dict, known: dict = None):
+    """Look up every place the request names (asking which one is meant when a name is ambiguous), then answer it
+    and send the globe. known: places already settled, by the name as said."""
+    global globes_drawn, pending_earth_choice
+    known = dict(known or {})
+    if request["action"] == "route_followup":
+        if not last_globe_route["a"] or time.time() - last_globe_route["at"] > 30 * 60:
+            return "Which route? Tell me both places, for example: which countries does a flight from Tel Aviv to London pass over."
+        request = {"action": "distance", "a": last_globe_route["a"]["name"], "b": last_globe_route["b"]["name"],
+                   "wants": request["wants"]}
+        known.update({request["a"]: last_globe_route["a"], request["b"]: last_globe_route["b"]})
+    for name in dict.fromkeys(_request_place_names(request)):
+        if name in known:
+            continue
+        place, options = _lookup_place(name)
+        if options:
+            pending_earth_choice = {"request": request, "name": name, "options": options, "known": known, "at": time.time()}
+            return f"Which {name.title()} do you mean: {options[0]['name']}, or {options[1]['name']}?"
+        if not place:
+            return f"I couldn't find {name}. Could you say it another way, maybe with the country?"
+        known[name] = place
+    action = request["action"]
+    if action == "distance":
+        info = earth.build(known[request["a"]], known[request["b"]])
+        text = earth.describe(info, request.get("wants", ""))
+        last_globe_route.update(a=info["a"], b=info["b"], at=time.time())
+    elif action == "compare":
+        info = earth.build_compare([(known[a], known[b]) for a, b in request["pairs"]])
+        text = earth.describe_compare(info, request.get("question"))
+    elif action == "radius":
+        center = known[request["a"]]
+        places = geo.places_near(center["lat"], center["lon"], request["km"], limit=12, exclude_name=center["name"])
+        info = earth.build_radius(center, request["km"], places)
+        text = earth.describe_radius(info)
+    elif action == "sun":
+        info, text = _sun_answer(request["what"], known.get(request.get("place")) if request.get("place") else None)
+    else:
+        return None
     globes_drawn += 1
     send_ui_update_once({"type": "globe", "data": info})
-    return earth.describe(info)
+    return text
+
+
+def handle_earth_choice(text: str):
+    """The answer to "Which Valencia do you mean: Valencia, Spain, or Valencia, Carabobo, Venezuela?"."""
+    global pending_earth_choice
+    pending = pending_earth_choice
+    if not pending or time.time() - pending["at"] > 3 * 60:
+        return None
+    n = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
+    options = pending["options"]
+    chosen = None
+    if re.search(r"\b(?:first|1st|former|the first one)\b", n):
+        chosen = options[0]
+    elif re.search(r"\b(?:second|2nd|latter|other one|the second one)\b", n):
+        chosen = options[1]
+    else:
+        scores = []
+        for option in options:
+            words = set(re.findall(r"[a-z]+", option["name"].lower())) - set(re.findall(r"[a-z]+", pending["name"].lower()))
+            scores.append(len(words & set(n.split())))
+        if max(scores) > 0 and scores.count(max(scores)) == 1:
+            chosen = options[scores.index(max(scores))]
+    if not chosen:
+        if len(n.split()) <= 6:   # a short reply that names neither: ask once more, plainly
+            return f"Sorry, which one: {options[0]['name']}, or {options[1]['name']}?"
+        pending_earth_choice = None
+        return None
+    pending_earth_choice = None
+    return answer_earth_request(pending["request"], {**pending["known"], pending["name"]: chosen})
+
+
+def _local(when, place: dict):
+    """The time there, with its zone's name, when the place's time zone is known; else UTC, said as such."""
+    try:
+        from zoneinfo import ZoneInfo
+        zone = ZoneInfo(place.get("timezone") or "")
+        return when.astimezone(zone), "local time"
+    except Exception:
+        return when.astimezone(timezone.utc), "UTC"
+
+
+def _sun_answer(what: str, place):
+    """Where the Sun really is now (or at that place's sunrise/sunset), and what that means."""
+    now = datetime.now(timezone.utc)
+    sun = {**geo.subsolar_point(now), "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    if what in ("night_view", "where_day"):
+        big = [p for p in geo._places() if p[5] >= 7_000_000]
+        day = sorted({p[0] for p in big if geo.sun_elevation(p[3], p[4], now) > 0})
+        night = sorted({p[0] for p in big if geo.sun_elevation(p[3], p[4], now) <= -6})
+        if what == "night_view":
+            info = earth.build_sun(what, None, sun, "Earth at night, right now")
+            text = ("Here's the night side of Earth right now, with its city lights. "
+                    + (f"It's night in {earth._join(night[:6])}." if night else ""))
+        else:
+            info = earth.build_sun(what, {"name": "", "lat": sun["lat"], "lon": sun["lon"]}, sun, "Day and night, right now")
+            text = (f"Right now the Sun is straight overhead at {abs(sun['lat']):.1f}° {'N' if sun['lat'] >= 0 else 'S'}, "
+                    f"{abs(sun['lon']):.1f}° {'E' if sun['lon'] >= 0 else 'W'}. "
+                    + (f"It's daytime in {earth._join(day[:6])}" if day else "")
+                    + (f", and night in {earth._join(night[:6])}." if night else "."))
+        return info, text
+    name = place["name"].split(",")[0]
+    if what == "is_day":
+        elevation = geo.sun_elevation(place["lat"], place["lon"], now)
+        local, zone = _local(now, place)
+        state = "daytime" if elevation > 0 else "twilight" if elevation > -6 else "night"
+        info = earth.build_sun(what, place, sun, f"{name}, right now")
+        return info, (f"It's {state} in {name} right now: {local.strftime('%-I:%M %p')} {zone}, with the Sun "
+                      f"{abs(elevation):.0f}° {'above' if elevation > 0 else 'below'} the horizon.")
+    local_now, zone = _local(now, place)
+    for offset in (0, 1):
+        day = (local_now + timedelta(days=offset)).date()
+        events = geo.sun_events(place["lat"], place["lon"], day)
+        if "polar" in events:
+            info = earth.build_sun(what, place, sun, f"{name}, right now")
+            return info, (f"There's no {what} in {name} today: it's polar {events['polar']}, so the Sun "
+                          + ("doesn't set." if events["polar"] == "day" else "doesn't rise."))
+        moment = events[what]
+        if moment > now - timedelta(minutes=30) or offset == 1:
+            break
+    local, zone = _local(moment, place)
+    when_word = "today" if local.date() == local_now.date() else "tomorrow"
+    at = {**geo.subsolar_point(moment), "at": moment.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    info = earth.build_sun(what, place, at, f"{what.title()} over {name}")
+    return info, (f"The Sun {'rises' if what == 'sunrise' else 'sets'} in {name} at {local.strftime('%-I:%M %p')} "
+                  f"{zone} {when_word}, {local.strftime('%B %-d')}. Here's the globe at that moment, with the "
+                  f"{'dawn' if what == 'sunrise' else 'dusk'} line passing over it.")
 
 
 planets_shown = 0   # how many planet models the window has been sent this session (kept, to open again)
@@ -2043,13 +2264,176 @@ _CALENDAR_READ = re.compile(
     r"\bnext events?\b|\bwhat'?s (?:on my calendar|coming up|next)\b|\b(?:the\s+)?(?:next\s+)?events?\b|"
     r"\bhear (?:them|it)\b|\bread (?:them|it)\b")
 _CALENDAR_CREATE = re.compile(
-    r"\b(?:make|create|add|schedule|set up|new)\b.*\b(?:event|meeting|appointment)\b|\bnew event\b|\banother\s+(?:one|event)\b")
+    r"\b(?:make|create|add|schedule|set up|new)\b.*\b(?:event|meeting|appointment)\b|\bnew event\b|\banother\s+(?:one|event)\b|"
+    r"\b(?:make|create|add|schedule|set up)\b(?:\s+(?:a|me))?(?:\s+new)?\s+(?:one|it)\b|\b(?:a\s+)?new one\b|^(?:the\s+)?(?:second|last)(?:\s+one)?$")
 _CALENDAR_READ_DIRECT = re.compile(
     r"\b(?:check|read|hear|see|show me|what'?s on|what is on)\b.*\b(?:calendar|schedule|agenda)\b|"
     r"\bmy (?:next|upcoming) events?\b|\bwhat'?s (?:coming up|next) on my calendar\b")
-_CALENDAR_CREATE_DIRECT = re.compile(r"\b(?:make|create|add|schedule|set up)\b.*\b(?:calendar\s+)?(?:event|meeting|appointment)\b")
+_CALENDAR_CREATE_DIRECT = re.compile(
+    r"\b(?:make|create|add|schedule|set up)\b.*\b(?:calendar\s+)?(?:event|meeting|appointment)\b|"
+    r"\b(?:add|put|save|write)\b.+\b(?:to|in|on|into)\s+(?:my\s+|the\s+)?(?:google\s+|apple\s+)?calendar\b|"
+    r"^(?:please\s+)?(?:can you\s+)?(?:schedule|book)\b.+\b(?:tomorrow|today|tonight|on|at|next|this)\b")
 _CALENDAR_CANCEL = re.compile(r"(?:never ?mind|cancel|forget it|no thanks|nothing|stop)")
 _DURATION_HINT = "How long should it be? Say a length, like '30 minutes' or '2 hours', or say default for one hour."
+
+
+_EVENT_TIME = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?=\s|$|[,.!?])", re.I)
+_EVENT_STOP = (r"(?=\s+(?:to|in|on|at|for|from|tomorrow|today|tonight|next|this|every|until|till|by)\b|\s*[,.!?;:]|$)")
+
+
+def event_title_from(text: str) -> str:
+    """The event's name in "add a dentist appointment tomorrow at 5" (Dentist appointment), "create an event called Team
+    sync on Monday" (Team sync), "Title: Weekly Review Start: 2 PM", or "" when none was said."""
+    t = " ".join((text or "").replace("\u2019", "'").split())
+    named = re.search(r"\b(?:called|named|titled|title\s*[:=-]|title\s+is)\s*[\"“']?(.+?)[\"”']?" + _EVENT_STOP, t, re.I)
+    if named:
+        title = re.sub(r"\s+(?:start|starts|begin|end|ends)\s*:?.*$", "", named.group(1), flags=re.I)
+        return title.strip(" .,:;-\"'")
+    noun = re.search(r"\b(?:make|create|add|schedule|set up|put|book|new)\b(?:\s+(?:me|in))?\s+(?:(?:a|an|the|my)\s+)?(?:new\s+)?(?P<what>.*?)\s*\b"
+                     r"(?P<noun>event|meeting|appointment)s?\b(?P<with>\s+with\s+.+?" + _EVENT_STOP + ")?", t, re.I)
+    if not noun:
+        # "schedule gym tomorrow at 7", "put Dana's birthday in my calendar on the 12th"
+        plain = re.search(r"\b(?:schedule|book|put|add|save|write)\s+(?:a\s+|an\s+|the\s+|my\s+)?(?P<what>.+?)(?:\s+(?:to|in|on|into)\s+"
+                          r"(?:my\s+|the\s+)?(?:google\s+|apple\s+)?calendar\b|" + _EVENT_STOP[3:], t, re.I)
+        what = plain.group("what").strip(" .,") if plain else ""
+        if not what or re.fullmatch(r"(?:it|this|that|something|one|an? event)", what, re.I):
+            return ""
+        return what[0].upper() + what[1:]
+    what = re.sub(r"\b(?:calendar|google calendar)\b", "", noun.group("what"), flags=re.I).strip(" .,")
+    with_whom = (noun.group("with") or "").strip()
+    kind = noun.group("noun").lower()
+    if what:
+        title = f"{what} {kind}" if kind in ("meeting", "appointment") else what
+    elif kind != "event" or with_whom:
+        title = kind
+    else:
+        return ""
+    title = f"{title} {with_whom}".strip()
+    return title[0].upper() + title[1:]
+
+
+def event_duration_from(text: str):
+    """Minutes from "for 2 hours" / "all day", or from a start and an end time ("from 2pm to 3:30pm", "Start: 2 PM End: 3 PM")."""
+    said = calendar_time.parse_duration(text) if re.search(r"\b(?:for|all day|lasting|long)\b", text or "", re.I) else None
+    if said is not None:
+        return said
+    times = [m for m in _EVENT_TIME.finditer(text or "") if m.group(3) or m.group(2)]
+    if len(times) >= 2 and re.search(r"\b(?:to|until|till|end|ends|-)\b|–|-", text or "", re.I):
+        def minutes(m):
+            hour, minute = int(m.group(1)) % 12, int(m.group(2) or 0)
+            return (hour + (12 if (m.group(3) or "").lower().startswith("p") else 0)) * 60 + minute
+        start, end = minutes(times[0]), minutes(times[1])
+        if not times[1].group(3) and times[0].group(3):
+            end += 12 * 60 if times[0].group(3).lower().startswith("p") else 0
+        if end > start:
+            return end - start
+    return None
+
+
+def _event_fields_from(text: str, fields: dict) -> dict:
+    """Whatever the sentence already says about the event, added to what's known (never overwriting it)."""
+    reminder = _REMINDER_PHRASE.search(text or "")
+    rest = _REMINDER_PHRASE.sub(" ", text or "") if reminder else text
+    found = {"title": event_title_from(rest), "date": calendar_time.parse_date(rest),
+             "time": calendar_time.parse_time(rest), "duration": event_duration_from(rest),
+             "reminders": parse_reminders(reminder.group(0)) if reminder else None}
+    return {**{k: v for k, v in found.items() if v or (k == "reminders" and v == [])},
+            **{k: v for k, v in fields.items() if v is not None}}
+
+
+def calendar_backend() -> str:
+    """Which calendar events go into (Settings, General): the Mac's Calendar app or Google Calendar."""
+    chosen = (os.getenv("JARVIS_CALENDAR") or ("apple" if osal.IS_MAC else "google")).strip().lower()
+    return "apple" if chosen == "apple" and osal.IS_MAC else "google"
+
+
+_REMINDER_UNIT = {"minute": 1, "min": 1, "hour": 60, "hr": 60, "day": 24 * 60, "week": 7 * 24 * 60}
+_NO_REMINDER = re.compile(r"^(?:no|nope|nah|none|no thanks|no thank you|no reminders?|without (?:a )?reminders?|"
+                          r"don'?t|skip(?: it)?|never ?mind|not needed|i don'?t need (?:one|it|a reminder))$")
+_REMINDER_PHRASE = re.compile(r"\b(?:with (?:a |an )?reminders?|(?:and )?remind me|(?:and )?(?:a |an )?reminders?|alerts?)\b"
+                              r"(?:\s+(?:of|at|for))?\s*((?:(?:\d+|an?|one|two|three|four|five|six|ten|fifteen|twenty|thirty|"
+                              r"forty five|half an?)\s*(?:minutes?|mins?|hours?|hrs?|days?|weeks?)(?:\s*(?:,|and|&)\s*)?)+)"
+                              r"\s*(?:before|earlier|ahead|in advance)?|\b(?:no|without(?: a| any)?)\s+(?:reminders?|alerts?)\b", re.I)
+
+
+def parse_reminders(text: str):
+    """Minutes before the event for each reminder said ("10 minutes and 1 day before" -> [10, 1440]), [] for "no",
+    or None when the answer isn't about reminders."""
+    n = " ".join(re.sub(r"[^a-z0-9' ]", " ", (text or "").lower()).split())
+    if _NO_REMINDER.match(n):
+        return []
+    if re.fullmatch(r"(?:yes|yeah|yep|sure|ok|okay|please|yes please)(?: please)?", n):
+        return [30]
+    if re.search(r"\b(?:at the (?:same )?time|when it starts|on time)\b", n):
+        found = [0]
+    else:
+        found = []
+    words = {**calendar_time._NUMBER_WORDS, "forty five": 45, "half an": 0.5, "half a": 0.5}
+    amount = r"\d+(?:\.\d+)?|forty five|half an?|" + "|".join(w for w in calendar_time._NUMBER_WORDS if w != "half")
+    for qty, unit in re.findall(rf"\b({amount})\s*(minutes?|mins?|hours?|hrs?|days?|weeks?)\b", n):
+        value = float(qty) if re.fullmatch(r"\d+(?:\.\d+)?", qty) else words[qty]
+        found.append(round(value * next(v for k, v in _REMINDER_UNIT.items() if unit.startswith(k))))
+    return sorted(set(found)) or None
+
+
+def _describe_reminders(minutes: list) -> str:
+    def one(m):
+        for size, name in ((7 * 24 * 60, "week"), (24 * 60, "day"), (60, "hour"), (1, "minute")):
+            if m and m % size == 0:
+                k = m // size
+                return f"{k} {name}{'s' if k != 1 else ''} before"
+        return "when it starts"
+    parts = [one(m) for m in minutes]
+    return "a reminder " + (parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1])
+
+def _next_event_step(pending: dict):
+    """Ask for the first thing still missing, or add the event once it has a name, a date and a time."""
+    global pending_calendar_event
+    fields = pending["fields"]
+    if not fields.get("title"):
+        pending["step"] = "title"
+        return "Sure, what should I call the event?"
+    if not fields.get("date"):
+        pending["step"] = "date"
+        return f"Got it: “{fields['title']}.” What date?"
+    if not fields.get("time") and fields.get("duration") != "all_day":
+        pending["step"] = "time"
+        return "And what time?"
+    if fields.get("reminders") is None:
+        pending["step"] = "reminder"
+        return ("Do you want a reminder? Say how long before, like 10 minutes or 1 day (or a few: "
+                "1 hour and 1 day), or say no.")
+    pending_calendar_event = None
+    return _create_calendar_event(fields, fields.get("duration") or 60)
+
+
+def _create_calendar_event(fields: dict, duration) -> str:
+    hour, minute = fields.get("time") or (0, 0)
+    start = calendar_time.combine(fields["date"], hour, minute)
+    end = start + (timedelta(days=1) if duration == "all_day" else timedelta(minutes=duration))
+    when = calendar_time.format_when(start, end, duration == "all_day")
+    reminders = fields.get("reminders") or []
+    with_reminders = f", with {_describe_reminders(reminders)}" if reminders else ""
+    if calendar_backend() == "apple":
+        try:
+            apple_calendar.create_event(fields["title"], start, end, duration == "all_day", reminders,
+                                        (os.getenv("JARVIS_APPLE_CALENDAR") or "").strip())
+        except apple_calendar.AppleCalendarUnavailable as e:
+            return str(e)
+        return f"Done. I've added “{fields['title']}” to your Calendar for {when}{with_reminders}."
+    if not calendar_api.configured():
+        # No Calendar sign-in set up: Google Calendar's own page, filled in, saved in the browser
+        default_note = " Google's link can't set reminders, so it has your Google Calendar's usual one." if reminders else ""
+        if calendar_api.create_event_in_browser(fields["title"], start, end, duration == "all_day"):
+            return f"Done. I've added “{fields['title']}” to your Google Calendar for {when}.{default_note}"
+        return (f"I've opened “{fields['title']}” in Google Calendar for {when}, all filled in. "
+                "Press Save to add it.")
+    try:
+        created = calendar_api.create_event(fields["title"], start, end, reminders=reminders)
+    except calendar_api.CalendarUnavailable as e:
+        return str(e)
+    when = calendar_time.format_when(created["start"], created["end"], duration == "all_day")
+    return f"Done. I've added “{fields['title']}” to your calendar for {when}{with_reminders}."
 
 
 def handle_calendar_read():
@@ -2057,8 +2441,8 @@ def handle_calendar_read():
     tab to sign in (see calendar_api.py); after that a cached, refreshed token is used silently."""
     speak("One moment, checking your calendar.")
     try:
-        events = calendar_api.list_upcoming(5)
-    except calendar_api.CalendarUnavailable as e:
+        events = apple_calendar.list_upcoming(5) if calendar_backend() == "apple" else calendar_api.list_upcoming(5)
+    except (calendar_api.CalendarUnavailable, apple_calendar.AppleCalendarUnavailable) as e:
         return str(e)
     if not events:
         return "You have no upcoming events on your calendar."
@@ -2090,46 +2474,51 @@ def handle_calendar_event_step(text: str):
     global pending_calendar_event
     pending = pending_calendar_event
     cleaned = " ".join(re.sub(r"[^a-z' ]", " ", text.lower()).split())
+    step = pending["step"]
+    if step == "reminder" and re.fullmatch(r"(?:no thanks|no thank you|nothing|none)", cleaned):
+        pending["fields"]["reminders"] = []   # "no thanks" to a reminder isn't "cancel the event"
+        return _next_event_step(pending)
     if _CALENDAR_CANCEL.fullmatch(cleaned):
         pending_calendar_event = None
         return "Okay, cancelled."
-    step = pending["step"]
     if step == "title":
-        title = text.strip().strip(".!? ")
+        said = _event_fields_from(text, {})
+        title = said.get("title") or re.sub(
+            r"\s*\b(?:(?:on|at|this|next)\s+)?(?:today|tomorrow|tonight|(?:mon|tues|wednes|thurs|fri|satur|sun)day)\b.*$|\s+at\s+\d.*$",
+            "", text.strip(), flags=re.I).strip(".!? ")
         if not title:
             return "Sorry, what should I call the event?"
-        pending["fields"]["title"] = title
-        pending["step"] = "date"
-        return f"Got it: “{title}.” What date?"
+        pending["fields"] = {**said, **pending["fields"], "title": title[0].upper() + title[1:]}
+        return _next_event_step(pending)
     if step == "date":
         date = calendar_time.parse_date(text)
         if not date:
             return "I didn't catch a date. Try something like tomorrow, next Friday, or October 3rd."
         pending["fields"]["date"] = date
-        pending["step"] = "time"
-        return "And what time?"
+        if not pending["fields"].get("time"):
+            pending["fields"]["time"] = calendar_time.parse_time(text)   # "Friday at 3"
+        return _next_event_step(pending)
     if step == "time":
         parsed = calendar_time.parse_time(text)
         if not parsed:
             return "I didn't catch a time. Try something like 3pm or 15:30."
         pending["fields"]["time"] = parsed
+        if pending["fields"].get("duration"):
+            return _next_event_step(pending)
         pending["step"] = "duration"
         return _DURATION_HINT
     if step == "duration":
         duration = calendar_time.parse_duration(text)
         if duration is None:
             return "I didn't catch a length. Try 30 minutes, 2 hours, all day, or say default for one hour."
-        pending_calendar_event = None
-        fields = pending["fields"]
-        hour, minute = fields["time"]
-        start = calendar_time.combine(fields["date"], hour, minute)
-        end = start + (timedelta(days=1) if duration == "all_day" else timedelta(minutes=duration))
-        try:
-            created = calendar_api.create_event(fields["title"], start, end)
-        except calendar_api.CalendarUnavailable as e:
-            return str(e)
-        when = calendar_time.format_when(created["start"], created["end"], duration == "all_day")
-        return f"Done. I've added “{fields['title']}” to your calendar for {when}."
+        pending["fields"]["duration"] = duration
+        return _next_event_step(pending)
+    if step == "reminder":
+        reminders = parse_reminders(text)
+        if reminders is None:
+            return "I didn't catch that. Say how long before, like 10 minutes or 1 day, or say no reminder."
+        pending["fields"]["reminders"] = reminders
+        return _next_event_step(pending)
     return None
 
 
@@ -2138,8 +2527,9 @@ def handle_calendar_command(text: str):
     global pending_calendar_event
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower()).split())
     if _CALENDAR_CREATE_DIRECT.search(n):
-        pending_calendar_event = {"step": "title", "fields": {}, "at": time.time()}
-        return "Sure, what should I call the event?"
+        # "add a dentist appointment tomorrow at 5pm": everything said is used; only what's missing is asked for
+        pending_calendar_event = {"step": "title", "fields": _event_fields_from(text, {}), "at": time.time()}
+        return _next_event_step(pending_calendar_event)
     if _CALENDAR_READ_DIRECT.search(n):
         return handle_calendar_read()
     return None
@@ -2167,6 +2557,37 @@ def handle_image_command(text: str):
         except images.ImageError as e:
             return str(e)
     return None
+
+
+_MAKE_IMAGE = re.compile(
+    r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis)[, ]+)?(?:(?:please|can you|could you|would you|i want you to|i'd like you to|"
+    r"go ahead and)\s+)*(?:generate|create|make|draw|paint|design|render)\s+(?:me\s+|for me\s+)?(?:a\s+|an\s+|another\s+|one\s+)?"
+    r"(?:new\s+)?(?:(?:realistic|cartoon|anime|cute|cool|funny|beautiful|\w+[- ]style)\s+)?"
+    r"(?:image|picture|photo|pic|drawing|painting|illustration|artwork|wallpaper|poster|logo)s?\s*(?:of\s+|showing\s+|that shows\s+|"
+    r"with\s+|where\s+|:\s*|-\s*|about\s+)(?P<what>.+?)[.!]*$", re.I)
+_DRAW_THING = re.compile(r"^(?:(?:please|can you|could you)\s+)*(?:draw|paint)\s+(?:me\s+)?(?:a|an|some)\s+(?P<what>.+?)[.!]*$", re.I)
+
+
+def handle_image_generation(text: str):
+    """"Generate an image of a dog in space", "make a new image: …", "draw me a dragon": straight to the picture,
+    with no AI in between to decide whether to (it used to answer with the tool's name instead of a picture)."""
+    m = _MAKE_IMAGE.match(" ".join((text or "").split())) or _DRAW_THING.match(" ".join((text or "").split()))
+    if not m or graphs.parse_request(text):
+        return None
+    what = m.group("what").strip()
+    if m.re is _DRAW_THING:
+        what = re.match(r"(?i)^.*?(?:draw|paint)\s+(?:me\s+)?(a|an|some)\s", text.strip()).group(1).lower() + " " + what
+    if len(what) < 2:
+        return None
+    speak("Creating it now.")
+    send_status("generating")
+    try:
+        result = images.generate(what)
+    except images.ImageError as e:
+        return f"I couldn't make that picture: {e}"
+    broadcast("ai", "", image=images.display_data_url(result["path"]), image_kind="generated")
+    note = f" {result['note']}" if result.get("note") else ""
+    return f"Here's your picture of {what}.{note}"
 
 
 def handle_graph_command(text: str):
@@ -2201,11 +2622,23 @@ def handle_graph_command(text: str):
         info = graphs.build_function(request["ast"])
         send_ui_update_once({"type": "graph", "data": info})
         graphs_drawn += 1
-        return graphs.describe_function(info)
+        return _with_solution(request, graphs.describe_function(info))
     info = graphs.facts(request["a"], request["b"], request["c"])
     send_ui_update_once({"type": "graph", "data": info})
     graphs_drawn += 1
-    return graphs.describe(info)
+    return _with_solution(request, graphs.describe(info))
+
+
+def _with_solution(request: dict, graph_text: str) -> str:
+    """"What is 2x + 6 = 0, draw the graph": the worked answer first, then what the graph shows."""
+    if not request.get("solve"):
+        return graph_text
+    try:
+        equation = equations.parse_request(f"solve {request['solve']}")
+        worksheet = equations.solve(*equation) if equation else None
+    except Exception:
+        worksheet = None
+    return f"{worksheet}\n\n---\n\nI drew its graph too. {graph_text}" if worksheet else graph_text
 
 
 _SERVICE_WORDS = {"netflix": "netflix", "stremio": "stremio", "youtube": "youtube", "spotify": "spotify"}
@@ -2229,8 +2662,8 @@ def split_open_and_do(text: str):
 
 
 def handle_compound_command(text: str):
-    if documents.detect_request(text) or documents.is_transfer_request(text):
-        return None   # "open Notepad and write a story": the document handlers write it, not just open the app
+    if documents.detect_request(text) or documents.is_transfer_request(text) or documents.is_blank_request(text):
+        return None   # "open Notepad and write a story" / "open Google Drive and create a new file": the document handlers
     parts = split_open_and_do(text)
     if not parts:
         return None
@@ -2278,6 +2711,13 @@ def handle_multi_task(text: str):
         return None
     if _CONTROL_EXPLICIT.match(text or "") or _CONTROL_PREAMBLE.match(text or ""):
         return None   # "take control of my computer and open Notepad": the "and" joins the request to its goal
+    graph = graphs.parse_request(text)
+    if graph and graph.get("action") in ("graph", "function"):
+        return None   # "y = x^2 - 4, plot it": the formula and the order to draw it are one task
+    if documents.detect_request(text):
+        return None   # "create a file on Google Drive and write a short story": one document, written
+    if _CALENDAR_CREATE_DIRECT.search(" ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower()).split())):
+        return None   # "make a meeting … and remind me 15 minutes before": the reminder belongs to the event
     parts = split_tasks(text)
     if len(parts) < 2 or split_open_and_do(text):
         return None
@@ -2857,7 +3297,7 @@ def handle_direct_command(text: str):
     followup = handle_math_followup(text)
     if followup:
         return followup
-    earth_reply = handle_earth_command(text)
+    earth_reply = handle_earth_choice(text) or handle_earth_command(text) or handle_earth_places_answer(text)
     if earth_reply:
         return earth_reply
     planet_reply = handle_planet_command(text)
@@ -2869,7 +3309,7 @@ def handle_direct_command(text: str):
     graph_reply = handle_graph_command(text)
     if graph_reply:
         return graph_reply
-    image_reply = handle_image_command(text)
+    image_reply = handle_image_command(text) or handle_image_generation(text)
     if image_reply:
         return image_reply
     equation = equations.parse_request(text)
@@ -2888,9 +3328,11 @@ def handle_direct_command(text: str):
         if time.time() - pending["at"] < 90:
             if re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|stop)", " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())):
                 return "Okay, cancelled."
+            if documents.asks_to_write(text):   # "write a short story": an instruction, not the words to put in
+                return write_document(text, pending["app"], into_open=True)
             return write_document(
                 "Put exactly what the user dictated into the document, formatted neatly (a clean bulleted list if it is a "
-                f"list of items). Do not add anything they did not say. Dictation: {text}", pending["app"])
+                f"list of items). Do not add anything they did not say. Dictation: {text}", pending["app"], into_open=True)
     global pending_spotify_request
     if pending_spotify_request:
         pending, pending_spotify_request = pending_spotify_request, None
@@ -2929,7 +3371,7 @@ def handle_direct_command(text: str):
     global pending_calendar_choice
     if pending_calendar_choice:
         pending, pending_calendar_choice = pending_calendar_choice, None
-        if time.time() - pending["at"] < 45:
+        if time.time() - pending["at"] < 3 * 60 and not is_new_command(text, "calendar"):
             return handle_calendar_choice(text)
     global pending_calendar_event
     if pending_calendar_event:
@@ -2977,6 +3419,10 @@ def handle_direct_command(text: str):
     doc_app = documents.detect_request(text)
     if doc_app:
         return write_document(text, doc_app)
+    if documents.asks_to_write(text) and re.search(r"\b(?:in|into|on|to)\s+(?:the|that|this|my)\s+(?:file|document|doc|page)\b|"
+                                                   r"\b(?:file|document|doc) (?:that )?you (?:just )?(?:opened|made|created)\b", text, re.I) \
+            and last_document and time.time() - last_document.get("at", 0) < 60 * 60:
+        return write_document(text, last_document["app"], into_open=True)   # "write a short story in the file you opened"
     volume = parse_volume_command(text)
     if volume:
         return change_volume(*volume)
@@ -3078,6 +3524,9 @@ def handle_direct_command(text: str):
                                               name="blender-bridge-launch")
             blender_launch.start()
             opened = f"Opening {blender_value}."
+        elif app_name.strip().lower() in ("calendar", "my calendar", "the calendar") and calendar_backend() == "apple":
+            subprocess.run(["open", "-a", "Calendar"], capture_output=True, timeout=15)   # the Mac's Calendar app
+            opened = "Opened Calendar."
         else:
             opened = open_application(app_name)
         print(f"Open app: {app_name!r} -> {opened}", flush=True)
@@ -3917,6 +4366,8 @@ TOOL_FUNCTIONS = {
     "edit_image": tool_edit_image,
     "use_computer": tool_use_computer,
     "get_weather": tool_get_weather,
+    "show_distance": lambda place_a="", place_b="", **kw: handle_earth_command(
+        f"what is the distance between {place_a} and {place_b}") or "I couldn't show that distance.",
 }
 
 TOOLS = [
@@ -4099,6 +4550,18 @@ TOOLS = [
                 "city": {"type": "string", "description": "Only if the user named a place; otherwise leave empty."}}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "show_distance",
+            "description": "Work out the distance between two places and show the route on Jarvis's 3D globe. Call it "
+                           "whenever the user asks how far apart two places are (cities, countries, landmarks).",
+            "parameters": {"type": "object", "properties": {
+                "place_a": {"type": "string", "description": "The first place, as the user said it."},
+                "place_b": {"type": "string", "description": "The second place, as the user said it."}},
+                "required": ["place_a", "place_b"]},
+        },
+    },
 ]
 
 SYSTEM_PROMPT = """You are Jarvis, an AI desktop assistant.
@@ -4110,6 +4573,7 @@ SYSTEM_PROMPT = """You are Jarvis, an AI desktop assistant.
 - You cannot see the user's messages, emails or files. Never claim that they have, or don't have, any unread messages or new mail: say you can't check that. You cannot see their Google Calendar either (a separate feature checks it before you're ever asked) — if a calendar question reaches you, tell the user to say "check my calendar" or "open my calendar" instead of guessing what is on it.
 - Images: the user can attach photos, screenshots or other pictures, and you can create or edit images too. You cannot see an image yourself — only the image tools can. Use analyze_image to describe an attached image or answer a question about it, including a vague follow-up like "what's wrong with it" right after an image was shared (a system message will tell you when one is pending). Use extract_image_text to read text out of an image. Use compare_images once two or more images have been shared. Use generate_image only when explicitly asked to create/draw/make a picture of something, and edit_image only when explicitly asked to change an existing image (remove/add/replace something, change the background or style, etc). Never claim an image was generated, edited or analyzed unless a tool result actually confirmed it. If an image tool result explains what's missing or how to fix it (a setup step, an environment variable, a URL), repeat that specific detail back to the user instead of a vague "I can't do that" — they need to know exactly what to do next.
 - use_computer lets you work in an app on the user's screen with the mouse and keyboard. Call it only when the user explicitly asks you to do something on screen (for example "scroll down" or "fill in this form"). The user is asked for permission and can stop you at any time; say in one short sentence what you're starting, never that it's finished.
+- show_distance shows how far apart two places are on a 3D globe: call it for every question about the distance between two places, instead of answering from memory.
 - get_weather answers a direct weather question with the city set in Settings. Call it only when the user is actually asking about the weather.
 - After using a tool, give the user a short natural spoken confirmation.
 - Keep casual answers concise and natural, never emoji.
@@ -4238,15 +4702,48 @@ pending_spotify_play = None     # {"query", "at"}: Spotify is showing a search, 
 _TYPO_TARGETS = ("control", "computer", "spotify", "search")
 
 
+# Misspellings seen in real requests ("the distence between…", "drew the greph", "30 seconeds"): fixed exactly, word
+# by word, so only these words change — a loose match would turn "plant" into "planet" or "instance" into "distance".
+_MISSPELLINGS = {
+    "distence": "distance", "distanse": "distance", "disstance": "distance", "distnace": "distance",
+    "greph": "graph", "grapgh": "graph", "grahp": "graph", "garph": "graph", "graf": "graph", "graoh": "graph",
+    "seconeds": "seconds", "secondes": "seconds", "secnds": "seconds", "seonds": "seconds", "secs": "seconds",
+    "minuts": "minutes", "minuets": "minutes", "mintues": "minutes", "minuites": "minutes",
+    "wrtie": "write", "wirte": "write", "writte": "write", "wrtite": "write",
+    "calender": "calendar", "calandar": "calendar", "calander": "calendar", "calnder": "calendar",
+    "trailor": "trailer", "trialer": "trailer", "traler": "trailer", "triler": "trailer",
+    "netflex": "netflix", "netfilx": "netflix", "netflx": "netflix",
+    "documnet": "document", "docuemnt": "document", "doucment": "document",
+    "storie": "story", "stroy": "story", "sotry": "story",
+    "planit": "planet", "plannet": "planet", "planent": "planet",
+    "seturn": "saturn", "saturen": "saturn", "jupitor": "jupiter", "jupiler": "jupiter", "nepture": "neptune",
+    "isreal": "israel", "isarel": "israel", "googel": "google", "gogle": "google",
+    "genearte": "generate", "generete": "generate", "genrate": "generate", "gnerate": "generate", "genarate": "generate",
+    "imgae": "image", "iamge": "image", "imag": "image", "pictuer": "picture", "picure": "picture", "pitcure": "picture",
+    "evnet": "event", "evnt": "event", "meating": "meeting", "apointment": "appointment",
+}
+_MISSPELLED_PHRASES = [
+    (re.compile(r"\btell my about\b", re.I), "tell me about"),
+    (re.compile(r"\bshow my\b(?= (?:the|a|an|it|on|how)\b)", re.I), "show me"),
+    (re.compile(r"\bdrew\b(?= (?:the|a|an|me|it|this|that|its|her|his|my)?\s*(?:graph|model|function|line|plot|chart|parabola|globe)\b)", re.I), "draw"),
+]
+
+
 def fix_typos(text: str) -> str:
     import difflib
     def fix(match):
         word = match.group(0)
+        exact = _MISSPELLINGS.get(word.lower())
+        if exact:
+            return exact.capitalize() if word[:1].isupper() else exact
         if len(word) < 5 or word.lower() in _TYPO_TARGETS:
             return word
         close = difflib.get_close_matches(word.lower(), _TYPO_TARGETS, n=1, cutoff=0.8)
         return close[0] if close else word
-    return re.sub(r"[A-Za-z]+", fix, text or "")
+    text = re.sub(r"[A-Za-z]+", fix, text or "")
+    for pattern, replacement in _MISSPELLED_PHRASES:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 # "Take control (of my computer) and …", said before something Jarvis can do directly: the preamble adds nothing.
@@ -4416,9 +4913,13 @@ DOC_SYSTEM_PROMPT = (
 )
 
 
-def write_document(request: str, app_key: str) -> str:
-    """Write what the user asked for, then put it into a new document in the chosen app."""
+def write_document(request: str, app_key: str, into_open: bool = False) -> str:
+    """Write what the user asked for, then put it into a new document in the chosen app — or, with into_open, into
+    the one Jarvis just opened ("open a new Google Doc" … "write a short story")."""
+    global last_document
     app_name = documents.APP_NAMES[app_key]
+    open_doc = last_document if into_open and last_document and last_document.get("app") == app_key \
+        and time.time() - last_document.get("at", 0) < 60 * 60 else None
     try:
         response = groq_chat(
             model=GROQ_MODEL,
@@ -4432,7 +4933,13 @@ def write_document(request: str, app_key: str) -> str:
     if not text:
         return "I couldn't come up with any text for that. Try asking again."
     title, body = documents.split_title(text)
-    global last_document
+    if open_doc:
+        try:
+            documents.update(app_key, open_doc["ref"], title, f"{title}\n\n{body}" if app_key == "gdocs" else body)
+            last_document = {**open_doc, "title": title, "body": body, "at": time.time()}
+            return f"Done. I wrote {title} in the document I opened."
+        except Exception as e:
+            print(f"Writing into the open document failed, making a new one: {e!r}")
     try:
         ref = documents.insert(app_key, title, body, context=f"{request} {title}")
     except Exception as e:
@@ -4440,7 +4947,10 @@ def write_document(request: str, app_key: str) -> str:
         return f"I wrote it, but couldn't put it into {app_name}: {e}"
     last_document = {"app": app_key, "ref": ref, "title": title, "body": body, "at": time.time()}
     if app_key == "gdocs":
-        return f"I wrote {title} and opened a new Google Doc. The text is also on your clipboard if it doesn't appear."
+        if ref == documents.GDOCS_PASTED:
+            return f"Done. I wrote {title} in a new Google Doc."
+        return (f"I opened a new Google Doc for {title}, but couldn't type into it. The text is on your clipboard: click "
+                f"into the document and press {'Ctrl' if osal.IS_WIN else 'Command'}+V.")
     return f"Done. I wrote {title} in {app_name}."
 
 
@@ -4467,7 +4977,13 @@ def should_enable_tools(text: str) -> bool:
     """Do not expose tools during ordinary conversation or incomplete phrases."""
     return (is_google_search_command(text) or is_music_command(text) or is_app_command(text) or is_youtube_command(text)
             or images.is_image_command(text) or images.has_pending_context() or is_computer_request(text)
-            or is_weather_command(text))
+            or is_weather_command(text) or is_distance_question(text))
+
+
+def is_distance_question(text: str) -> bool:
+    """"How far is it to …", "km between …": a distance the globe can show, however it was typed."""
+    n = earth._fix_spelling(" ".join((text or "").lower().split()))
+    return bool(re.search(r"\bdistance\b|\bhow far\b|\b(?:km|kilometers|kilometres|miles)\b.*\bbetween\b", n))
 
 
 def diagnose_connection(host: str = "api.groq.com") -> str:
@@ -4958,6 +5474,13 @@ WHISPER_HALLUCINATIONS = {
     "thanks for watching", "thank you for watching", "please subscribe",
     "subscribe to my channel", "you", "so", "uh", "um", "hmm",
 }
+# …and these too, confidently (a silent clip comes back as "Thank you."), but people also really say them, so a
+# second engine has to hear them too before they count: a made-up "Goodbye." would otherwise put Jarvis to sleep.
+WHISPER_SUSPECTS = {
+    "thank you", "thanks", "thank you so much", "thank you very much", "bye", "bye bye", "goodbye", "good bye",
+    "thank you goodbye", "thank you bye", "okay", "ok", "yeah", "oh", "ah", "i'm sorry", "sorry", "see you",
+    "see you next time", "see you later", "good night", "goodnight", "have a good day", "the end", "thank you for listening",
+}
 
 
 def transcribe_groq(wav_bytes: bytes) -> str:
@@ -4976,11 +5499,28 @@ def transcribe_groq(wav_bytes: bytes) -> str:
     return (result.text or "").strip()
 
 
+def is_own_echo(text: str) -> bool:
+    """The end of Jarvis's own last sentence, picked up by the microphone ("…whatever you need." -> "you need.")."""
+    if time.time() - last_spoken["at"] > 6 or not last_spoken["text"]:
+        return False
+    heard = " ".join(re.sub(r"[^a-z0-9' ]", " ", (text or "").lower()).split())
+    said = " ".join(re.sub(r"[^a-z0-9' ]", " ", last_spoken["text"].lower()).split())
+    return bool(heard) and len(heard.split()) <= 8 and f" {heard} " in f" {said} "
+
+
 def transcribe_google(audio) -> str:
     try:
         return recognizer.recognize_google(audio, language="en-US").strip()
     except sr.UnknownValueError:
         return ""
+
+
+def heard_by_google_too(audio) -> bool:
+    """A second opinion on a short phrase Whisper is known to invent: Google's recognizer hears nothing in noise."""
+    try:
+        return bool(transcribe_google(audio))
+    except Exception:
+        return True   # no second opinion available (offline): trust what was heard rather than drop a real request
 
 
 def transcribe(audio, passive=False) -> str:
@@ -5008,6 +5548,9 @@ def transcribe(audio, passive=False) -> str:
             continue
         cleaned = " ".join(re.sub(r"[^a-z0-9' ]", " ", text.lower()).split())
         if cleaned in WHISPER_HALLUCINATIONS:
+            return ""
+        if cleaned in WHISPER_SUSPECTS and "Whisper" in name and not heard_by_google_too(audio):
+            print(f"Ignored (only Whisper heard it, likely invented from noise): {text!r}", flush=True)
             return ""
         return text
     return ""
@@ -5081,6 +5624,7 @@ def listen(passive=False):
     if AUDIO_OFF:   # test mode: nothing is recorded; typed lines are handled by the main loop
         time.sleep(0.25)
         return None
+    mutes_before = mute_changes[0]
     try:
         microphone = open_microphone()
     except OSError as e:
@@ -5117,6 +5661,14 @@ def listen(passive=False):
         if not passive:
             send_status("thinking")
         text = transcribe(audio, passive=passive)
+        if mic_muted.is_set() or mute_changes[0] != mutes_before:
+            print(f"Ignored (the microphone was muted meanwhile): {text!r}", flush=True)
+            send_status("muted" if mic_muted.is_set() else ("sleeping" if passive else "idle"))
+            return None
+        if is_own_echo(text):
+            print(f"Ignored (my own voice): {text!r}", flush=True)
+            send_status("sleeping" if passive else "idle")
+            return None
         if len(text.strip()) < 2:
             print("Speech was not understood.")
             send_status("sleeping" if passive else "idle")
@@ -5178,6 +5730,7 @@ def speak(text):
     except Exception as e:
         print(f"TTS Error: {e}")
     finally:
+        last_spoken.update(text=text, at=time.time())
         if interrupt_speech.is_set():
             interrupt_speech.clear()
             send_status("listening")  # cut off on purpose: the next thing said is for Jarvis, so no pause
@@ -5200,7 +5753,7 @@ def remember_turn(messages: list, user_text: str, reply: str, turn_started: floa
 
 
 def main_loop():
-    global awake, last_llm_reply
+    global awake, last_llm_reply, turn_from_phone
 
     global chat_history
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -5217,6 +5770,7 @@ def main_loop():
             typed = typed_inputs.get_nowait()
         except queue.Empty:
             typed = None
+        turn_from_phone = isinstance(typed, PhoneVoiceInput)
         if typed:
             awake = True  # typing to Jarvis wakes him, and works while the microphone is muted
             text = typed
@@ -5242,7 +5796,7 @@ def main_loop():
                 continue
 
             text = listen()
-            if not text:
+            if not text or mic_muted.is_set():
                 continue
 
         if not isinstance(text, ImageCaption):  # already shown together with the image itself, in handle_client

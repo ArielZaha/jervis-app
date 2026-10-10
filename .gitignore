@@ -17,9 +17,10 @@ push_subscriptions.json
 relay_identity.json
 
 # Environments, dependencies, build output
-venv/
+venv
+*.nosync
 .venv/
-node_modules/
+node_modules
 __pycache__/
 *.pyc
 .electron-cache/

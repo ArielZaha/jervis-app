@@ -68,9 +68,9 @@ printf '{"project": "%s"}\n' "$PROJECT" > "$SUPPORT/config.json"
 if [ ! -x "$SUPPORT/venv/bin/python3" ]; then
   "$PY" -m venv "$SUPPORT/venv"
 fi
-say "Installing its packages (Vosk speech recognition, sounddevice, numpy, websockets)…"
+say "Installing its packages (Vosk speech recognition, sounddevice, numpy, websockets, cryptography)…"
 "$SUPPORT/venv/bin/python3" -m pip install --quiet --disable-pip-version-check --upgrade pip
-"$SUPPORT/venv/bin/python3" -m pip install --quiet --disable-pip-version-check "vosk==0.3.44" "sounddevice>=0.4.6" "numpy>=1.26" "websockets>=13"
+"$SUPPORT/venv/bin/python3" -m pip install --quiet --disable-pip-version-check "vosk==0.3.44" "sounddevice>=0.4.6" "numpy>=1.26" "websockets>=13" "cryptography>=42"
 
 if [ ! -f "$SUPPORT/model/am/final.mdl" ]; then
   say "Downloading the wake-phrase model (40 MB, once)…"

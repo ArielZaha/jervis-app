@@ -40,6 +40,7 @@ import time
 from urllib.parse import urlsplit
 
 import paths
+import phone_visuals
 import phone_crypto
 
 DEVICES_FILE = paths.data("phone_devices.json")
@@ -403,6 +404,7 @@ _CLIENT_PAGE = paths.resource("phone_client.html")
 _SERVICE_WORKER = paths.resource("phone_sw.js")
 _CONFIRM_PAGE = paths.resource("confirm.html")
 _MANIFEST = paths.resource("phone_manifest.webmanifest")
+_VISUALS = phone_visuals.files()
 _AGENT = paths.resource("phone_agent.js")   # the phone app's own Jarvis (built from mobile/src: npm run build:web)
 _ICON_DIR = paths.resource("phone_icons")
 # The only icon files ever served — a fixed list, never a path taken from the request (no file browsing).
@@ -458,6 +460,14 @@ def serve_static(connection, request, active_pair_code=None):
         try:
             with open(_AGENT, "rb") as f:
                 return _response(f.read(), "text/javascript; charset=utf-8", "no-cache")
+        except OSError:
+            return connection.respond(404, "Not found.")
+    visual = _VISUALS.get(path)   # graphs, the globe, planets: the window's own drawing code (phone_visuals.py)
+    if visual:
+        name, content_type, cache = visual
+        try:
+            with open(paths.resource(*name.split("/")), "rb") as f:
+                return _response(f.read(), content_type, cache)
         except OSError:
             return connection.respond(404, "Not found.")
     icon = icon_name_for(path)

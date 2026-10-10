@@ -36,6 +36,7 @@
       "orb.js",
       "bg.js",
       "graph.js",
+      "sphere_gl.js",
       "earth.js",
       "planet.js",
       "weather/**",

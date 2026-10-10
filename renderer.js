@@ -42,9 +42,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ---------- Connection ----------
+  let everConnected = false;   // until the first connection Jarvis is starting, not reconnecting
   function setConnection(connected) {
+    everConnected = everConnected || connected;
     app.classList.toggle('is-connected', connected);
-    $('connectionText').textContent = connected ? 'Connected' : 'Reconnecting…';
+    $('connectionText').textContent = connected ? 'Connected' : everConnected ? 'Reconnecting…' : 'Starting…';
   }
   function scheduleReconnect() {
     if (reconnectTimer) return;
@@ -523,9 +525,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const kicker = document.createElement('small');
     kicker.textContent = 'Globe';
     const name = document.createElement('b');
-    name.textContent = `${d.a.name} \u2192 ${d.b.name}`;
+    name.textContent = d.title || `${d.a.name} \u2192 ${d.b.name}`;
     const hint = document.createElement('em');
-    hint.textContent = `${d.km.toLocaleString()} km \u00b7 click to open again`;
+    const what = d.mode === 'sun' ? 'Sunlight' : d.mode === 'radius' ? `${d.km.toLocaleString()} km radius`
+      : d.mode === 'compare' ? `${(d.routes || []).length} routes` : `${d.km.toLocaleString()} km`;
+    hint.textContent = `${what} \u00b7 click to open again`;
     label.append(kicker, name, hint);
     chip.append(picture, label);
     chip.addEventListener('click', () => window.showGlobe?.(d));
@@ -894,5 +898,37 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.initBackground) window.initBackground('netCanvas');
   setState('idle');
   startVoiceMeter();
+  // ---------- Try saying: tabs by kind; clicking an example puts it in the message box, ready to send ----------
+  (function setUpTips() {
+    const card = $('tipsCard');
+    if (!card) return;
+    const items = [...card.querySelectorAll('#tipList li')];
+    const show = (cat) => {
+      let i = 0;
+      for (const li of items) {
+        const visible = cat === 'all' || li.dataset.cat === cat;
+        li.hidden = !visible;
+        if (visible) { li.style.setProperty('--i', i++); li.style.animation = 'none'; void li.offsetWidth; li.style.animation = ''; }
+      }
+      for (const tab of card.querySelectorAll('.tip-tabs button')) tab.setAttribute('aria-selected', String(tab.dataset.cat === cat));
+      $('tipList').scrollTop = 0;
+    };
+    card.querySelector('.tip-tabs').addEventListener('click', (e) => {
+      const tab = e.target.closest('button[data-cat]');
+      if (tab) show(tab.dataset.cat);
+    });
+    card.addEventListener('click', (e) => {
+      const tip = e.target.closest('button.tip');
+      if (!tip) return;
+      const input = $('typeInput');
+      input.value = tip.dataset.say;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      const bar = input.closest('.typebar');
+      if (bar) { bar.classList.remove('tip-filled'); void bar.offsetWidth; bar.classList.add('tip-filled'); }
+    });
+    show('all');
+  })();
+
   connectSocket();
 });

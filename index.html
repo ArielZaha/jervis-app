@@ -85,26 +85,42 @@
           <ul id="timerList"></ul>
         </section>
 
-        <section class="card tips">
-          <header class="card-head"><h2>Try saying</h2></header>
-          <ul>
-            <li><b>“Play Echoes on YouTube”</b><span>Opens and plays in one tab</span></li>
-            <li><b>“Stop the song”</b><span>Pauses what’s playing</span></li>
-            <li><b>“Check Google Classroom for work I didn’t submit”</b><span>Opens Classroom and tells you what is missing</span></li>
-            <li><b>“Graph sine of x over x”</b><span>Any function. See it again any time: click it in the chat, or press G</span></li>
-            <li><b>“Distance between Tokyo and Paris”</b><span>A 3D globe with the route between them</span></li>
-            <li><b>“Tell me about Saturn”</b><span>A real, spinning 3D model with the facts</span></li>
-            <li><b>“Open my calendar”</b><span>Hear your next events, or make a new one by voice</span></li>
-            <li><b>“Solve x squared minus 5x plus 6 equals 0”</b><span>Exact answer with the steps</span></li>
-            <li><b>Attach a picture</b><span>Paperclip, drag &amp; drop, or paste — then ask “what’s wrong with it?”</span></li>
-            <li><b>“Generate an image of a cyberpunk city”</b><span>Free, no setup needed</span></li>
-            <li><b>Type instead of talking</b><span>Press / or click the box under the orb, then Enter. F = full screen</span></li>
-            <li><b>“Do I have unread WhatsApp messages?”</b><span>Then “read them” or “what did Dana write?”</span></li>
-            <li><b>“Set a timer for 10 minutes”</b><span>Also: “remind me in an hour to…”</span></li>
-            <li><b>“Show me the trailer of this series”</b><span>Works for any show you name or I suggest</span></li>
-            <li><b>“Play Breaking Bad season 3 episode 2 on Netflix”</b><span>Starts that exact episode</span></li>
-            <li><b>“Write a story in Word”</b><span>Then say “make it shorter”</span></li>
-            <li><b>“Episode 3, season 1, Breaking Bad”</b><span>Opens that episode in Stremio</span></li>
+        <section class="card tips" id="tipsCard">
+          <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+            <symbol id="tip-media" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l5.5-3.5z" class="fill"/></symbol>
+            <symbol id="tip-learn" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M6.5 15.5c2.5-7 5-9 7-5s3.5 2.5 5-3"/></symbol>
+            <symbol id="tip-tasks" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4M9 14.5l2 2 4-4"/></symbol>
+            <symbol id="tip-more" viewBox="0 0 24 24"><path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></symbol>
+          </svg>
+          <header class="card-head"><h2>Try saying</h2><span class="tips-hint">Click to try</span></header>
+          <div class="tip-tabs" role="tablist" aria-label="Kinds of things to try">
+            <button type="button" role="tab" data-cat="all" aria-selected="true">All</button>
+            <button type="button" role="tab" data-cat="media" aria-selected="false">Watch</button>
+            <button type="button" role="tab" data-cat="learn" aria-selected="false">Learn</button>
+            <button type="button" role="tab" data-cat="tasks" aria-selected="false">Do</button>
+            <button type="button" role="tab" data-cat="more" aria-selected="false">More</button>
+          </div>
+          <ul id="tipList">
+            <li data-cat="media"><button type="button" class="tip" data-say="Play Echoes on YouTube"><svg class="tip-ic" aria-hidden="true"><use href="#tip-media"/></svg><span class="tip-text"><b>“Play Echoes on YouTube”</b><span>Opens and plays in one tab</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="media"><button type="button" class="tip" data-say="Play my favorite songs playlist on Spotify"><svg class="tip-ic" aria-hidden="true"><use href="#tip-media"/></svg><span class="tip-text"><b>“Play my favorite songs playlist on Spotify”</b><span>Your own playlists, albums and liked songs</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="media"><button type="button" class="tip" data-say="Show me the trailer of Wednesday on Netflix"><svg class="tip-ic" aria-hidden="true"><use href="#tip-media"/></svg><span class="tip-text"><b>“Show me the trailer of Wednesday on Netflix”</b><span>Netflix’s own trailer, or YouTube’s</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="media"><button type="button" class="tip" data-say="Play Breaking Bad season 3 episode 2 on Netflix"><svg class="tip-ic" aria-hidden="true"><use href="#tip-media"/></svg><span class="tip-text"><b>“Play Breaking Bad season 3 episode 2 on Netflix”</b><span>Starts that exact episode</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="media"><button type="button" class="tip" data-say="Stop the song"><svg class="tip-ic" aria-hidden="true"><use href="#tip-media"/></svg><span class="tip-text"><b>“Stop the song”</b><span>Pauses whatever is playing</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Graph sine of x over x"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Graph sine of x over x”</b><span>Any function. Press G to see it again</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Solve x squared minus 5x plus 6 equals 0"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Solve x squared minus 5x plus 6 equals 0”</b><span>The exact answer, step by step</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Distance between Tokyo and Paris"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Distance between Tokyo and Paris”</b><span>Flies the route on a 3D globe, with the flight time</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Show sunrise over Tokyo"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Show sunrise over Tokyo”</b><span>The real sunlight, day and night, on the globe</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Tell me about Saturn"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Tell me about Saturn”</b><span>A real, spinning 3D model with the facts</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Check Google Classroom for work I didn’t submit"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Check Google Classroom for work I didn’t submit”</b><span>Opens Classroom and tells you what’s missing</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Add a dentist appointment tomorrow at 5pm"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Add a dentist appointment tomorrow at 5pm”</b><span>Straight into your Google Calendar</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Write a short story in Google Docs"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Write a short story in Google Docs”</b><span>Then say “make it shorter”</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Set a timer for 10 minutes"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Set a timer for 10 minutes”</b><span>Or “remind me in an hour to…”</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Do I have unread WhatsApp messages?"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Do I have unread WhatsApp messages?”</b><span>Then “read them” or “what did Dana write?”</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Close the YouTube tab"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Close the YouTube tab”</b><span>Finds the tab by its site or title</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="more"><button type="button" class="tip" data-say="Generate an image of a cyberpunk city"><svg class="tip-ic" aria-hidden="true"><use href="#tip-more"/></svg><span class="tip-text"><b>“Generate an image of a cyberpunk city”</b><span>Free, no setup needed</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="more"><button type="button" class="tip" data-say="Connect my phone"><svg class="tip-ic" aria-hidden="true"><use href="#tip-more"/></svg><span class="tip-text"><b>“Connect my phone”</b><span>Jarvis on your phone, even with this computer off</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="more"><div class="tip tip-static"><svg class="tip-ic" aria-hidden="true"><use href="#tip-more"/></svg><span class="tip-text"><b>Attach a picture</b><span>Paperclip, drag &amp; drop or paste, then ask about it</span></span></div></li>
+            <li data-cat="more"><div class="tip tip-static"><svg class="tip-ic" aria-hidden="true"><use href="#tip-more"/></svg><span class="tip-text"><b>Type instead of talking</b><span>Press / to type, F for full screen</span></span></div></li>
           </ul>
         </section>
       </aside>
@@ -203,11 +219,18 @@
   <div class="earth-layer" id="earthLayer" hidden role="dialog" aria-modal="true" aria-labelledby="earthTitle">
     <div class="earth-card" id="earthCard">
       <header class="graph-head">
-        <div class="graph-heading"><p class="graph-kicker">Distance</p><h2 id="earthTitle"></h2><p class="earth-sub" id="earthSub"></p></div>
-        <div class="head-actions"><span class="graph-nav" id="earthNav" hidden><button class="ghost" id="earthPrev" type="button" title="Previous (←)">‹</button><span id="earthCount">1 / 1</span><button class="ghost" id="earthNext" type="button" title="Next (→)">›</button></span><button class="ghost" id="earthSave" type="button" title="Save the picture as a PNG">Save image</button><button class="ghost" id="earthClose" type="button" title="Close (Esc)">Close</button></div>
+        <div class="graph-heading"><p class="graph-kicker" id="earthKicker">Journey</p><h2 id="earthTitle"></h2><p class="earth-sub" id="earthSub"></p></div>
+        <div class="head-actions"><span class="journey-controls"><button class="ghost" id="earthPlay" type="button" title="Pause or resume (Space)">Pause</button><button class="ghost" id="earthReplay" type="button" title="Fly it again (R)">Replay</button><button class="ghost" id="earthSkip" type="button" title="Skip to the end (S)">Skip</button></span><span class="graph-nav" id="earthNav" hidden><button class="ghost" id="earthPrev" type="button" title="Previous (←)">‹</button><span id="earthCount">1 / 1</span><button class="ghost" id="earthNext" type="button" title="Next (→)">›</button></span><button class="ghost" id="earthSave" type="button" title="Save the picture as a PNG">Save image</button><button class="ghost" id="earthClose" type="button" title="Close (Esc)">Close</button></div>
       </header>
-      <div class="earth-stage"><canvas id="earthCanvas" aria-label="3D globe with the distance between two places"></canvas><p class="earth-hint">Drag to rotate · scroll to zoom</p></div>
-      <ul class="graph-facts" id="earthFacts"></ul>
+      <div class="earth-stage"><canvas id="earthCanvas" aria-label="3D globe with the distance between two places"></canvas><p class="earth-hint">Drag to look around · scroll to zoom</p>
+        <div class="journey-hud" id="journeyHud" hidden>
+          <span class="journey-end" id="journeyFrom"></span>
+          <div class="journey-track"><i class="journey-fill" id="journeyFill"></i><svg class="journey-plane" id="journeyPlane" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg></div>
+          <span class="journey-end" id="journeyTo"></span>
+          <span class="journey-km" id="journeyKm"></span>
+        </div>
+      </div>
+      <ul class="graph-facts earth-facts" id="earthFacts"></ul>
     </div>
   </div>
 
@@ -327,6 +350,7 @@
   <script src="orb.js"></script>
   <script src="bg.js"></script>
   <script src="graph.js"></script>
+  <script src="sphere_gl.js"></script>
   <script src="earth.js"></script>
   <script src="planet.js"></script>
   <script src="renderer.js"></script>

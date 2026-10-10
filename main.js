@@ -105,7 +105,7 @@ function createWindow() {
   // The engine goes back to sleep while the window is closed (hidden) and greets you when a wake phrase opens it.
   const visibility = (visible) => () => { if (!win.isDestroyed()) win.webContents.send('window-visibility', visible); };
   win.on('hide', visibility(false));
-  win.on('minimize', visibility(false));
+  // Minimizing only tucks the window away: Jarvis stays awake. Closing it (hide) is what puts him to sleep.
   win.on('show', visibility(true));
   win.on('restore', visibility(true));
   win.on('enter-full-screen', () => win.webContents.send('fullscreen-state', true));

@@ -457,18 +457,32 @@ def _generate_openai(prompt: str, size: str) -> dict:
     return {"path": path, "id": entry["id"], "prompt": prompt, "provider": "openai", **get_metadata(img, path)}
 
 
+class PollinationsOffline(ImageError):
+    """The service couldn't be reached at all (no internet), not just busy."""
+
+
 def _generate_pollinations(prompt: str, size: str) -> dict:
     """Pollinations.ai: a free, keyless text-to-image service (https://pollinations.ai). No account needed; a free
     registration at auth.pollinations.ai raises the rate limit and drops the small watermark, but isn't required."""
     width, height = _size_to_pixels(size)
     seed = int(time.time() * 1000) % 1_000_000  # a fresh seed each call, so asking twice doesn't return the same picture
+    token = (os.getenv("POLLINATIONS_TOKEN") or "").strip()
+    # Without an account only the "sana" model is free (anything else answers 402); an account unlocks FLUX.
+    model = (os.getenv("POLLINATIONS_MODEL") or ("flux" if token else "sana")).strip()
     url = (f"https://image.pollinations.ai/prompt/{_urlquote(prompt)}"
-           f"?width={width}&height={height}&seed={seed}&nologo=true")
-    try:
-        response = requests.get(url, timeout=90)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        raise ImageError(f"The free image service (Pollinations.ai) couldn't be reached: {e}")
+           f"?width={width}&height={height}&seed={seed}&nologo=true&model={model}")
+    response = None
+    for wait in (0, 5, 10, 15):   # the free tier takes one picture at a time: when it's busy (402/429), wait a moment
+        time.sleep(wait)
+        try:
+            response = requests.get(url, timeout=60, headers={"Authorization": f"Bearer {token}"} if token else {})
+        except requests.RequestException as e:
+            raise PollinationsOffline(f"The free image service (Pollinations.ai) couldn't be reached: {e}")
+        if response.status_code not in (402, 429, 500, 502, 503, 504):
+            break
+    if not response.ok:
+        raise ImageError(f"The free image service (Pollinations.ai) is busy right now ({response.status_code}). "
+                         "Try again in a minute, or add a free Cloudflare account in Settings for faster, sharper pictures.")
     if "image" not in response.headers.get("content-type", ""):
         raise ImageError("The free image service didn't return a picture (it may be temporarily overloaded). Try again in a moment.")
     img = validate_image_bytes(response.content, max_bytes=50 * 1024 * 1024)
@@ -531,6 +545,57 @@ def _generate_local(prompt: str) -> dict:
     return {"path": path, "id": entry["id"], "prompt": prompt, "provider": "local", **get_metadata(img, path)}
 
 
+def cloudflare_configured() -> bool:
+    return bool((os.getenv("CLOUDFLARE_ACCOUNT_ID") or "").strip() and (os.getenv("CLOUDFLARE_API_TOKEN") or "").strip())
+
+
+def _generate_cloudflare(prompt: str) -> dict:
+    """FLUX.1 [schnell] on Cloudflare Workers AI: sharp, fast (a few seconds), and free for hundreds of pictures a
+    day with a free Cloudflare account (an account ID and an API token with Workers AI permission)."""
+    import base64
+    account = os.environ["CLOUDFLARE_ACCOUNT_ID"].strip()
+    url = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/black-forest-labs/flux-1-schnell"
+    try:
+        response = requests.post(url, timeout=60, json={"prompt": prompt[:2000], "steps": 8},
+                                 headers={"Authorization": f"Bearer {os.environ['CLOUDFLARE_API_TOKEN'].strip()}"})
+        data = response.json()
+    except (requests.RequestException, ValueError) as e:
+        raise ImageError(f"Cloudflare couldn't be reached: {e}")
+    image_b64 = (data.get("result") or {}).get("image") if isinstance(data, dict) else None
+    if not response.ok or not image_b64:
+        errors = "; ".join(str(err.get("message", err)) for err in (data.get("errors") or [])) if isinstance(data, dict) else ""
+        raise ImageError(f"Cloudflare didn't make the picture ({errors or response.status_code})")
+    img = validate_image_bytes(base64.b64decode(image_b64), max_bytes=50 * 1024 * 1024)
+    path = _save(img, GENERATED_DIR, prompt, fmt="JPEG" if img.format == "JPEG" else "PNG")
+    entry = remember(path, "generated", prompt=prompt)
+    return {"path": path, "id": entry["id"], "prompt": prompt, "provider": "cloudflare", **get_metadata(img, path)}
+
+
+_ENHANCE_PROMPT = (
+    "You turn a short request for a picture into one prompt for an image model. Keep exactly what was asked for "
+    "(every subject, person, place, count, color and style the user named) and add only what makes it look great: "
+    "the composition, the setting's details, lighting, lens or art medium, mood and quality cues. Photorealistic unless "
+    "the user asked for a style. No text or letters in the picture unless asked. Answer with the prompt only, one "
+    "paragraph, at most 70 words.")
+_openai_rejected = [False]   # a key OpenAI refused once isn't tried again until Jarvis restarts
+
+
+def enhance_prompt(prompt: str) -> str:
+    """"a dog" -> a detailed, well-lit, well-composed description: the biggest single difference to the result."""
+    if len(prompt.split()) > 60:
+        return prompt
+    try:
+        client = _groq().with_options(timeout=8, max_retries=0)
+        response = client.chat.completions.create(
+            model=os.getenv("GROQ_MODEL") or "openai/gpt-oss-20b", max_tokens=400, temperature=0.7,
+            messages=[{"role": "system", "content": _ENHANCE_PROMPT}, {"role": "user", "content": prompt}])
+        better = (response.choices[0].message.content or "").strip().strip('"')
+    except Exception as e:
+        print(f"Image prompt kept as said ({e!r})", flush=True)
+        return prompt
+    return better if 10 <= len(better) <= 1200 else prompt
+
+
 def generate(prompt: str, size: str = "auto") -> dict:
     """Tries, in order: the local model (unlimited, free, private, if installed — see requirements-local-images.txt),
     then OpenAI (if configured), then the free Pollinations.ai service (always available, no setup). Whichever one
@@ -538,20 +603,33 @@ def generate(prompt: str, size: str = "auto") -> dict:
     prompt = (prompt or "").strip()
     if not prompt:
         raise ImageError("Tell me what to draw, for example: generate an image of a futuristic city at night.")
+    asked = prompt
+    detailed = enhance_prompt(prompt)
+    # The best that's set up first; the small local model only as a last resort (it's slow: it loads for every
+    # picture, and draws at a low quality), so with no internet there's still a picture.
     providers = []
+    if generation_configured() and not _openai_rejected[0]:
+        providers.append(("OpenAI", lambda: _generate_openai(detailed, size)))
+    if cloudflare_configured():
+        providers.append(("Cloudflare FLUX", lambda: _generate_cloudflare(detailed)))
+    providers.append(("the free Pollinations.ai service", lambda: _generate_pollinations(detailed, size)))
     if local_generation_configured():
-        providers.append(("the local model", lambda: _generate_local(prompt)))
-    if generation_configured():
-        providers.append(("OpenAI", lambda: _generate_openai(prompt, size)))
-    providers.append(("the free Pollinations.ai service", lambda: _generate_pollinations(prompt, size)))
+        providers.append(("the local model", lambda: _generate_local(detailed)))
 
     failures = []
+    offline = False
     for label, make in providers:
+        if label == "the local model" and not offline and len(providers) > 1:
+            break   # online services were reachable, just unable: the slow local model wouldn't do better
         try:
             result = make()
         except ImageError as e:
+            offline = offline or isinstance(e, PollinationsOffline)
+            if label == "OpenAI" and re.search(r"401|invalid|incorrect api key|rejected", str(e), re.I):
+                _openai_rejected[0] = True
             failures.append(f"{label} ({e})")
             continue
+        result["asked"] = asked
         if failures:
             result["note"] = f"Used {label} after {' and '.join(failures)} didn't work."
         return result

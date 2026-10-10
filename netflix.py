@@ -206,8 +206,37 @@ def find_episode(series_id: str, season: int, episode: int):
 
 # ---------- Trailers ----------
 # A show's public Netflix page lists its trailers, each a video with its own id that plays in Netflix's normal player.
-_EXTRA = re.compile(r'"videoId":(\d+),"title":"((?:[^"\\]|\\.)*)","runtimeSec":(\d+),"type":"([A-Z_]+)"')
+# Netflix reorders these fields between page versions, so each video is read field by field, not as one fixed pattern.
+_SUPPLEMENTAL = re.compile(r'"__typename":"Supplemental"')
+_FIELD = {"id": re.compile(r'"videoId":(\d+)'), "title": re.compile(r'"title":"((?:[^"\\]|\\.)*)"'),
+          "seconds": re.compile(r'"runtimeSec":(\d+)'), "type": re.compile(r'"type":"([A-Z_]+)"')}
+_PROMO = re.compile(r'"promoVideo":\{"__typename":"PromoVideo","id":(\d+)')
+_PROMO_LENGTH = re.compile(r'"displayRuntimeMs":(\d+)')
 _trailer_cache = {}
+
+
+def _unescape(raw: str) -> str:
+    text = re.sub(r"\\x([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), raw)
+    return html.unescape(text.replace("\\'", "'").replace('\\"', '"'))
+
+
+def parse_trailers(page: str) -> list:
+    """The trailers listed on a show's page, in Netflix's order: [{"id", "title", "seconds"}]. When the page lists
+    none, the show's promo video (the trailer that plays at the top of its page) stands in, so there's still one."""
+    trailers, seen = [], set()
+    starts = [m.start() for m in _SUPPLEMENTAL.finditer(page)] + [len(page)]
+    for here, following in zip(starts, starts[1:]):
+        chunk = page[here:min(following, here + 4000)]
+        fields = {name: (m.group(1) if (m := pattern.search(chunk)) else None) for name, pattern in _FIELD.items()}
+        if fields["type"] not in ("TRAILER", "TEASER", "TEASER_TRAILER") or not fields["id"] or fields["id"] in seen:
+            continue
+        seen.add(fields["id"])
+        trailers.append({"id": fields["id"], "title": _unescape(fields["title"] or "Trailer"),
+                         "seconds": int(fields["seconds"] or 0)})
+    if not trailers and (promo := _PROMO.search(page)):
+        length = _PROMO_LENGTH.search(page, promo.end(), promo.end() + 4000)
+        trailers.append({"id": promo.group(1), "title": "Trailer", "seconds": int(length.group(1)) // 1000 if length else 0})
+    return trailers
 
 
 def find_trailers(title_id: str) -> list:
@@ -218,14 +247,9 @@ def find_trailers(title_id: str) -> list:
         page = requests.get(f"https://www.netflix.com/title/{title_id}", headers=_PAGE_HEADERS, timeout=20).text
     except requests.RequestException:
         return []
-    trailers, seen = [], set()
-    for video_id, raw_title, seconds, kind in _EXTRA.findall(page):
-        if kind not in ("TRAILER", "TEASER", "TEASER_TRAILER") or video_id in seen:
-            continue
-        seen.add(video_id)
-        title = html.unescape(raw_title.replace("\\x20", " ").replace("\\'", "'").replace('\\"', '"'))
-        trailers.append({"id": video_id, "title": title, "seconds": int(seconds)})
-    _trailer_cache[title_id] = trailers
+    trailers = parse_trailers(page)
+    if trailers:   # a failed or odd page isn't remembered as "no trailers"
+        _trailer_cache[title_id] = trailers
     return trailers
 
 

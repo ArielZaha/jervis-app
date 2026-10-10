@@ -4,6 +4,7 @@ import { JarvisAgent, type Mode, type Turn, type Activity } from "../core/agent.
 import { ToolRegistry, type Tool } from "../core/tools.ts";
 import { webAnswerTool } from "../core/coreTools.ts";
 import { explicitTarget } from "../core/intent.ts";
+import { decrypt, encrypt, keyFromB64 } from "../core/crypto.ts";
 import type { AiConfig } from "../core/protocol.ts";
 import { WEB_APP_NOTE, webPhoneTools } from "./webTools.ts";
 
@@ -45,3 +46,8 @@ export async function transcribe(audio: Blob, config: AiConfig): Promise<string>
 }
 
 export { explicitTarget };
+
+// The session's AES-256-GCM (phone_crypto.py's format) without the browser's own crypto, which iPhones and Android
+// withhold from pages on plain http (the computer's own Wi-Fi address): so that page can encrypt as well.
+export const seal = (keyB64: string, message: unknown) => encrypt(keyFromB64(keyB64), message);
+export const open = (keyB64: string, envelope: unknown) => decrypt(keyFromB64(keyB64), envelope);
