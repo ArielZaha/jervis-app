@@ -68,6 +68,20 @@ SERVICE_WORKER_PATH = os.path.join(_HERE, "phone_sw.js")
 CONFIRM_PAGE_PATH = os.path.join(_HERE, "confirm.html")
 MANIFEST_PATH = os.path.join(_HERE, "phone_manifest.webmanifest")
 AGENT_PATH = os.path.join(_HERE, "phone_agent.js")
+# The phone app's graphs, globe and planets: the computer window's own drawing code and imagery, copied in by the
+# Dockerfile. The same fixed list as phone_visuals.py (tests/test_phone_visuals.py checks they agree).
+VISUAL_SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js")
+VISUAL_IMAGES = (
+    "vendor/earth/blue_marble_5400.jpg", "vendor/earth/clouds_2048.jpg", "vendor/earth/night_lights_3600.jpg",
+    "vendor/earth/earth_atmos_2048.jpg",
+    "vendor/planets/2k_sun.jpg", "vendor/planets/2k_mercury.jpg", "vendor/planets/2k_venus_surface.jpg",
+    "vendor/planets/2k_mars.jpg", "vendor/planets/2k_jupiter.jpg", "vendor/planets/2k_saturn.jpg",
+    "vendor/planets/2k_saturn_ring_alpha.png", "vendor/planets/2k_uranus.jpg", "vendor/planets/2k_neptune.jpg",
+    "vendor/planets/2k_moon.jpg",
+)
+VISUAL_FILES = {f"/{n}": (n, "text/javascript; charset=utf-8", "no-cache") for n in VISUAL_SCRIPTS}
+VISUAL_FILES.update({f"/{n}": (n, "image/png" if n.endswith(".png") else "image/jpeg", "public, max-age=604800")
+                     for n in VISUAL_IMAGES})
 ICON_DIR = os.path.join(_HERE, "phone_icons")
 # Same fixed list as phone_control.ICON_FILES (this file deploys on its own, so it can't import that module).
 ICON_FILES = frozenset({"icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png",
@@ -302,6 +316,15 @@ async def process_request(connection, request):
         try:
             with open(AGENT_PATH, "rb") as f:
                 return _http_response(200, f.read(), "text/javascript; charset=utf-8", "no-cache")
+        except OSError:
+            return connection.respond(404, "Not found.")
+
+    visual = VISUAL_FILES.get(path.path)   # graphs, the globe, planets: a fixed list (see phone_visuals.py)
+    if visual:
+        name, content_type, cache = visual
+        try:
+            with open(os.path.join(_HERE, *name.split("/")), "rb") as f:
+                return _http_response(200, f.read(), content_type, cache)
         except OSError:
             return connection.respond(404, "Not found.")
 

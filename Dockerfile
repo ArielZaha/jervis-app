@@ -12,5 +12,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY relay/server.py .
 COPY phone_client.html phone_sw.js confirm.html phone_manifest.webmanifest phone_agent.js ./
 COPY phone_icons ./phone_icons
+# graphs, the 3D globe and planets on the phone (relay/server.py's VISUAL_FILES). On this branch the three drawing
+# scripts the phone needs live in relay/web/: they are newer than this branch's desktop window (index.html) expects,
+# so the window's own copies at the repo root are left exactly as they are.
+COPY sphere_gl.js ./
+COPY relay/web/graph.js relay/web/earth.js relay/web/planet.js ./
+COPY vendor/earth ./vendor/earth
+COPY vendor/planets ./vendor/planets
 EXPOSE 8080
 CMD ["python", "server.py"]

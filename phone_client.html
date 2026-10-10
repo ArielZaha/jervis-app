@@ -108,6 +108,71 @@
   .hero .orb { width: 92px; height: 92px; margin-bottom: 22px; }
   .hero h1 { font-size: 30px; line-height: 1.15; font-weight: 720; letter-spacing: -.03em; margin: 0 0 10px; }
   .hero p { margin: 0; color: var(--text-2); font-size: 16px; max-width: 300px; }
+  /* ---------------------------------------------------------------- graphs, the globe, planets (full screen) */
+  .vis-layer { position: fixed; inset: 0; z-index: 60; background: #03050c; display: flex; animation: fadeUp .3s var(--ease) both; }
+  .vis-layer[hidden] { display: none; }
+  .vis-card { flex: 1; min-width: 0; display: flex; flex-direction: column;
+    padding: calc(var(--sat) + 10px) calc(var(--sar) + 14px) calc(var(--sab) + 12px) calc(var(--sal) + 14px); }
+  .vis-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+  .vis-heading { flex: 1; min-width: 0; }
+  .vis-kicker { margin: 0 0 2px; font-size: 11px; font-weight: 650; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); }
+  .vis-heading h2 { margin: 0; font-size: 19px; line-height: 1.25; font-weight: 680; letter-spacing: -.01em; overflow-wrap: anywhere; }
+  .vis-sub { margin: 3px 0 0; font-size: 12.5px; color: var(--text-2); }
+  .vis-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .vis-actions button, .vis-controls button { height: 36px; min-width: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-2);
+    background: var(--surface); color: var(--text); font: 600 13px/1 inherit; font-family: inherit; }
+  .vis-actions button[hidden], .vis-controls button[hidden] { display: none; }
+  .vis-close { width: 36px; padding: 0 !important; font-size: 15px !important; }
+  .vis-nav { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); }
+  .vis-nav[hidden] { display: none; }
+  .vis-stage { position: relative; flex: 1; min-height: 0; border-radius: var(--r-md); overflow: hidden; background: #02040a; }
+  .vis-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  .vis-controls { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 6px; }
+  .vis-controls button { height: 32px; font-size: 12px; background: rgb(10 16 30 / .75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .vis-facts { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-height: 30vh; overflow-y: auto; }
+  .vis-facts li { display: grid; gap: 1px; padding: 7px 11px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+  .vis-facts li.wide { flex: 1 1 100%; }
+  .vis-facts span { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); }
+  .vis-facts b { font-size: 13.5px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+  .journey-hud { position: absolute; left: 10px; right: 10px; top: 10px; display: grid; grid-template-columns: auto minmax(40px, 1fr) auto;
+    grid-template-rows: auto auto; align-items: center; gap: 4px 10px; padding: 8px 14px; border-radius: 16px;
+    background: rgb(4 10 22 / .6); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); pointer-events: none; }
+  .journey-hud[hidden] { display: none; }
+  .journey-end { font-size: 12px; font-weight: 650; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .journey-track { position: relative; height: 3px; border-radius: 3px; background: rgb(255 255 255 / .14); }
+  .journey-fill { position: absolute; inset: 0; border-radius: 3px; transform-origin: left center; transform: scaleX(0);
+    background: linear-gradient(90deg, #ff5cd6, #5ed6ff); }
+  .journey-plane { position: absolute; top: 50%; left: 0; width: 15px; height: 15px; transform: translate(-50%, -50%) rotate(90deg); fill: #fff; }
+  .journey-km { grid-column: 1 / -1; justify-self: center; font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .vis-chip { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 8px; padding: 12px 14px; text-align: left;
+    border-radius: var(--r-md); border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: inherit; }
+  .vis-chip i { width: 38px; height: 38px; flex-shrink: 0; border-radius: 12px; display: grid; place-items: center; font-style: normal; font-size: 19px;
+    background: linear-gradient(135deg, rgb(94 224 255 / .18), rgb(165 139 255 / .18)); }
+  .vis-chip b { display: block; font-size: 14.5px; font-weight: 640; }
+  .vis-chip span { display: block; font-size: 12.5px; color: var(--text-2); }
+  .vis-chip:active { transform: scale(.98); }
+  .always-on { display: grid; gap: 2px; width: 100%; margin-top: 18px; padding: 13px 16px; text-align: left; border-radius: var(--r-md);
+    border: 1px solid rgb(255 200 97 / .35); background: rgb(255 200 97 / .08); color: var(--text); font: inherit; cursor: pointer; }
+  .always-on[hidden] { display: none; }
+  .always-on b { font-size: 14px; font-weight: 640; color: var(--amber); }
+  .always-on span { font-size: 13.5px; color: var(--text-2); }
+  .choose-hero { margin-bottom: 26px; }
+  .choose-hero .orb { width: 76px; height: 76px; margin-bottom: 18px; }
+  .choices { display: grid; gap: 12px; }
+  .choice {
+    display: flex; align-items: center; gap: 16px; width: 100%; min-height: 92px; padding: 18px 20px; text-align: left;
+    border-radius: var(--r-lg); border: 1px solid var(--line-2); background: var(--surface); color: var(--text);
+    font: inherit; cursor: pointer; transition: transform .18s var(--ease), background .2s, border-color .2s;
+  }
+  .choice:active { transform: scale(.975); background: var(--surface-2); }
+  .choice:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  .choice[disabled] { opacity: .5; cursor: default; }
+  .choice-ic { width: 52px; height: 52px; flex-shrink: 0; display: grid; place-items: center; border-radius: 16px;
+    background: linear-gradient(135deg, rgb(94 224 255 / .16), rgb(165 139 255 / .16)); color: var(--cyan); }
+  .choice-ic svg { width: 28px; height: 28px; }
+  .choice-text { display: grid; gap: 3px; min-width: 0; }
+  .choice-text b { font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
+  .choice-text span { font-size: 14px; color: var(--text-2); line-height: 1.35; }
   .steps { list-style: none; padding: 0; margin: 0 0 22px; display: grid; gap: 10px; }
   .steps li {
     display: flex; gap: 14px; align-items: flex-start; padding: 16px; border-radius: var(--r-md);
@@ -529,6 +594,30 @@
     </div>
   </section>
 
+  <!-- ============ Which Jarvis: asked each time the app is opened ============ -->
+  <section class="view" id="chooseView" hidden>
+    <div class="view-inner">
+      <div class="hero choose-hero">
+        <div class="orb"><svg><use href="#orbMark"/></svg></div>
+        <h1>Which Jarvis?</h1>
+      </div>
+      <div class="choices">
+        <button class="choice" id="choosePhone" type="button" data-mode="phone">
+          <span class="choice-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="3"/><path d="M11 18.5h2"/></svg></span>
+          <span class="choice-text"><b>On this phone</b><span id="choosePhoneSub">Jarvis does it here, on your phone</span></span>
+        </button>
+        <button class="choice" id="chooseComputer" type="button" data-mode="computer">
+          <span class="choice-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2.2"/><path d="M8.5 20h7M12 16v4"/></svg></span>
+          <span class="choice-text"><b>On my computer</b><span>Chat with Jarvis on your computer</span></span>
+        </button>
+      </div>
+      <!-- Shown only in the app that loads from the computer itself: that one can't open while the computer is off. -->
+      <button class="always-on" id="alwaysOnBtn" type="button" hidden>
+        <b>This app only opens while your computer is on</b><span>Get the one that always opens  ›</span>
+      </button>
+    </div>
+  </section>
+
   <!-- ============ The app: chat ============ -->
   <section class="chat" id="chatView" hidden>
     <header class="topbar" id="topbar">
@@ -613,10 +702,47 @@
   </div>
 </div>
 
+<div class="sheet" id="alwaysOnSheet" role="dialog" aria-modal="true" aria-labelledby="alwaysOnTitle">
+  <div class="grip"></div>
+  <h3 id="alwaysOnTitle">Jarvis that always opens</h3>
+  <p class="lead">This icon loads Jarvis from your computer, so it can't open when the computer is off or asleep. The
+    other one loads from Jarvis's secure address and keeps a copy on your phone: it opens every time, anywhere.</p>
+  <ol class="install-steps" id="alwaysOnSteps"></ol>
+  <div class="actions">
+    <a class="btn brand" id="alwaysOnOpen" href="#" target="_blank" rel="noopener">Open it</a>
+    <button class="btn quiet" id="alwaysOnCopy" type="button">Copy the link instead</button>
+    <button class="btn ghost" id="alwaysOnClose" type="button">Not now</button>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status"></div>
 
 <!-- Jarvis on the phone (the same agent as the native app, built from mobile/src/web): answers and acts here even
      when the computer is off. Missing on an older server: then this page is the computer's remote only, as before. -->
+
+  <!-- ============ Graphs, the 3D globe and planets: the computer window's own drawing code (graph.js, earth.js,
+       planet.js, sphere_gl.js), loaded from the computer the first time one arrives. Same element ids as its window. ============ -->
+  <div class="vis-layer" id="graphLayer" hidden role="dialog" aria-modal="true" aria-labelledby="graphTitle">
+    <div class="vis-card"><header class="vis-head"><div class="vis-heading"><p class="vis-kicker" id="graphKicker">Graph</p><h2 id="graphTitle"></h2></div>
+      <div class="vis-actions"><span class="vis-nav" id="graphNav" hidden><button id="graphPrev" type="button" aria-label="Previous">‹</button><span id="graphCount">1 / 1</span><button id="graphNext" type="button" aria-label="Next">›</button></span><button id="graphSave" type="button" hidden>Save</button><button class="vis-close" id="graphClose" type="button" aria-label="Close">✕</button></div></header>
+      <div class="vis-stage"><canvas id="graphCanvas" aria-label="Graph"></canvas></div>
+      <ul class="vis-facts" id="graphFacts"></ul></div>
+  </div>
+  <div class="vis-layer" id="earthLayer" hidden role="dialog" aria-modal="true" aria-labelledby="earthTitle">
+    <div class="vis-card"><header class="vis-head"><div class="vis-heading"><p class="vis-kicker" id="earthKicker">Journey</p><h2 id="earthTitle"></h2><p class="vis-sub" id="earthSub"></p></div>
+      <div class="vis-actions"><span class="vis-nav" id="earthNav" hidden><button id="earthPrev" type="button" aria-label="Previous">‹</button><span id="earthCount">1 / 1</span><button id="earthNext" type="button" aria-label="Next">›</button></span><button id="earthSave" type="button" hidden>Save</button><button class="vis-close" id="earthClose" type="button" aria-label="Close">✕</button></div></header>
+      <div class="vis-stage"><canvas id="earthCanvas" aria-label="3D globe"></canvas>
+        <div class="journey-hud" id="journeyHud" hidden><span class="journey-end" id="journeyFrom"></span><div class="journey-track"><i class="journey-fill" id="journeyFill"></i><svg class="journey-plane" id="journeyPlane" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg></div><span class="journey-end" id="journeyTo"></span><span class="journey-km" id="journeyKm"></span></div>
+        <div class="vis-controls"><button id="earthPlay" type="button">Pause</button><button id="earthReplay" type="button">Replay</button><button id="earthSkip" type="button">Skip</button></div>
+      </div>
+      <ul class="vis-facts" id="earthFacts"></ul></div>
+  </div>
+  <div class="vis-layer" id="planetLayer" hidden role="dialog" aria-modal="true" aria-labelledby="planetTitle">
+    <div class="vis-card"><header class="vis-head"><div class="vis-heading"><p class="vis-kicker" id="planetKicker">Planet</p><h2 id="planetTitle"></h2></div>
+      <div class="vis-actions"><span class="vis-nav" id="planetNav" hidden><button id="planetPrev" type="button" aria-label="Previous">‹</button><span id="planetCount">1 / 1</span><button id="planetNext" type="button" aria-label="Next">›</button></span><button id="planetSave" type="button" hidden>Save</button><button class="vis-close" id="planetClose" type="button" aria-label="Close">✕</button></div></header>
+      <div class="vis-stage"><canvas id="planetCanvas" aria-label="A 3D model of the planet"></canvas></div>
+      <ul class="vis-facts" id="planetFacts"></ul></div>
+  </div>
 <script src="/agent.js"></script>
 <script>
 (() => {
@@ -727,9 +853,11 @@
   // there when the app first opens. While the install sheet is up, this page's address carries the pairing in its
   // #fragment (never sent to any server — only this page's script reads it); Add to Home Screen saves that address,
   // and the app's first launch adopts it below. Removed from the address bar again the moment the sheet closes.
+  let arrivedByHandoff = false;   // opened from a link carrying the pairing: on its way to the Home Screen
   (function adoptHandoff() {
     const m = /^#jv=([A-Za-z0-9_-]+)$/.exec(location.hash);
     if (!m) return;
+    arrivedByHandoff = true;
     try {
       const device = JSON.parse(b64urlToText(m[1]));
       const forgotten = store.get("jarvis_forgotten");
@@ -749,17 +877,26 @@
     history.replaceState(null, "", location.pathname + (on ? "?source=app#jv=" + textToB64url(JSON.stringify(minimal)) : ""));
   }
 
-  // ===================================================================================================== crypto (relay only)
-  // AES-256-GCM, matching phone_crypto.py exactly. Only ever used over the relay (always HTTPS, where the browser's
-  // crypto is available); same-Wi-Fi sessions are plaintext, as phone_crypto.py documents.
-  const importKey = (keyB64) => crypto.subtle.importKey("raw", b64urlToBytes(keyB64), "AES-GCM", false, ["encrypt", "decrypt"]);
+  // ===================================================================================================== crypto
+  // AES-256-GCM, matching phone_crypto.py exactly. Through the relay (HTTPS) with the browser's own crypto; on the
+  // computer's plain-http Wi-Fi address, where phones withhold that, with the same cipher from the bundled Jarvis
+  // core (/agent.js), so this session is encrypted too (and can carry the phone's AI settings).
+  const coreCrypto = () => (window.JarvisCore && window.JarvisCore.seal ? window.JarvisCore : null);
+  const canEncrypt = () => !!((window.crypto && crypto.subtle) || coreCrypto());
+  async function importKey(keyB64) {
+    if (window.crypto && crypto.subtle) return crypto.subtle.importKey("raw", b64urlToBytes(keyB64), "AES-GCM", false, ["encrypt", "decrypt"]);
+    if (coreCrypto()) return { raw: keyB64 };
+    throw new Error("no AES-GCM here");
+  }
   async function encryptEnvelope(key, obj) {
+    if (key && key.raw) return coreCrypto().seal(key.raw, obj);
     const nonce = crypto.getRandomValues(new Uint8Array(12));
     const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, new TextEncoder().encode(JSON.stringify(obj)));
     return { n: bytesToB64url(nonce), ct: bytesToB64url(ct) };
   }
   async function decryptEnvelope(key, env) {
     try {
+      if (key && key.raw) return coreCrypto().open(key.raw, env);
       const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64urlToBytes(env.n) }, key, b64urlToBytes(env.ct));
       return JSON.parse(new TextDecoder().decode(pt));
     } catch { return null; }
@@ -767,7 +904,7 @@
 
   // ===================================================================================================== views
   const app = $("app");
-  const views = ["welcomeView", "pairView", "relayView", "chatView"];
+  const views = ["welcomeView", "pairView", "relayView", "chooseView", "chatView"];
   function showView(id) { for (const v of views) $(v).hidden = v !== id; }
 
   let toastTimer = 0;
@@ -1072,6 +1209,9 @@
       case "ai_config":
         if (m.apiKey) { aiConfig = m; store.set("jarvis_ai", m); refreshAction(); conn.renderStatus(); }
         break;
+      case "visual":
+        handleVisual(m.visual, m.open === true && document.visibilityState === "visible");
+        break;
       case "chat": {
         if (m.sender === "user" && takeEcho(m.text)) break;   // a request the phone's own Jarvis sent there
         if (m.sender === "ai" && computerRequests.size) { holdComputerAnswer(m); break; }
@@ -1218,10 +1358,63 @@
     if (reply.where !== "computer" && conn.ready) conn.send({ type: "phone_turn", user: text, reply: reply.text });
   }
 
+  // ===================================================================================================== graphs, globe, planets
+  // The computer sends its window's pictures here too ("visual"): drawn by the very same code, which the phone loads
+  // from the computer the first time one arrives. They open by themselves when it was the phone that asked.
+  const VISUAL_SCRIPTS = ["/sphere_gl.js", "/graph.js", "/earth.js", "/planet.js"];
+  let visualsLoading = null;
+  function loadVisuals() {
+    if (!visualsLoading) {
+      visualsLoading = VISUAL_SCRIPTS.reduce((chain, src) => chain.then(() => new Promise((resolve, reject) => {
+        const el = document.createElement("script");
+        el.src = src; el.onload = resolve; el.onerror = () => reject(new Error(src));
+        document.body.appendChild(el);
+      })), Promise.resolve()).catch((e) => { visualsLoading = null; throw e; });
+    }
+    return visualsLoading;
+  }
+  const VISUAL_KINDS = {
+    graph: { show: "showGraph", reopen: "reopenGraph", hide: "hideGraph", icon: "📈", name: "Graph",
+             title: (d) => d.plain || d.equation || "Graph" },
+    globe: { show: "showGlobe", reopen: "reopenGlobe", hide: "hideGlobe", icon: "🌍", name: "Globe",
+             title: (d) => d.title || (d.a && d.b ? `${d.a.name} → ${d.b.name}` : "Globe") },
+    planet: { show: "showPlanet", reopen: "reopenPlanet", hide: "hidePlanet", icon: "🪐", name: "Planet",
+              title: (d) => d.name || "Planet" },
+  };
+  function addVisualChip(kind, data) {
+    const k = VISUAL_KINDS[kind];
+    const row = addMessage("ai", "", { noCache: true });
+    const chip = document.createElement("button");
+    chip.type = "button"; chip.className = "vis-chip";
+    chip.innerHTML = `<i>${k.icon}</i><span><b></b><span>Tap to open</span></span>`;
+    chip.querySelector("b").textContent = k.title(data);
+    chip.addEventListener("click", () => loadVisuals().then(() => window[k.show](data)).catch(() => toast("Your computer needs to be connected to open this")));
+    (row && row.querySelector(".text") || row || thread).appendChild(chip);
+    scrollToBottom(true);
+  }
+  async function handleVisual(payload, open) {
+    const type = String(payload && payload.type || "");
+    const kind = type.replace(/^(show|close)_/, "");
+    const k = VISUAL_KINDS[kind];
+    if (!k) return;
+    try { await loadVisuals(); } catch { toast("Couldn't load the picture from your computer"); return; }
+    if (type.startsWith("close_")) { if (window[k.hide]) window[k.hide](); return; }
+    if (type.startsWith("show_")) { if (open && window[k.reopen]) window[k.reopen](payload.which || "last"); return; }
+    if (!payload.data) return;
+    addVisualChip(kind, payload.data);
+    if (open) {
+      for (const other of Object.values(VISUAL_KINDS)) if (other !== k && window[other.hide]) window[other.hide]();
+      window[k.show](payload.data);
+    }
+  }
+  // Phone mode: these need the computer's maths and maps; when it's reachable they go there, and come back as pictures
+  const VISUAL_REQUEST = /\b(graph|plot|draw|drew|sketch|parabola|distance|distence|how far|globe|earth at night|sunrise|sunset|daytime|nighttime|planet|saturn|jupiter|mars|venus|mercury|neptune|uranus|pluto|the sun|the moon|cities (?:near|within|around)|places (?:near|within))\b/i;
+
   /** Who handles this message: the computer's Jarvis, or Jarvis right here on the phone. */
   function toComputer(text) {
     if (!phoneAI()) return true;                                   // no AI here yet: the computer's remote, as always
     const named = window.JarvisCore.explicitTarget(text);
+    if (named !== "phone" && prefs.mode === "phone" && conn.ready && VISUAL_REQUEST.test(text)) return true;   // a graph, globe, planet
     if (named === "phone" || prefs.mode === "phone") return false;
     if (conn.ready) return true;                                   // Computer mode, computer on
     return ["connecting", "waiting", "starting"].includes(conn.state);   // a moment away: wait for it, as before
@@ -1239,6 +1432,8 @@
     haptic(8);
     refreshModeSwitch();
     toast(prefs.mode === "phone" ? "Jarvis acts here on your phone" : "Jarvis acts on your computer");
+    if (prefs.mode === "computer" && !conn.ready) conn.start(true);   // open Jarvis on the computer now
+    conn.renderStatus();
   });
   refreshModeSwitch();
 
@@ -1426,7 +1621,9 @@
     // (which then routes to the computer, end-to-end encrypted).
     url() { return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`; },
 
-    start() { this.hold = null; this.attempt = 0; this.wantWake = true; this.connect(); },
+    // wake: open Jarvis on the computer if it's closed (the "On my computer" choice). On the phone choice the app
+    // still connects quietly, so a Jarvis that's already running hears about the conversation, but never opens it.
+    start(wake = prefs.mode === "computer") { this.hold = null; this.attempt = 0; this.wantWake = wake; this.connect(); },
     stop(hold = "manual") {
       this.hold = hold;
       clearTimeout(this.retryTimer); clearTimeout(this.connectTimer); this.stopHeartbeat();
@@ -1443,10 +1640,11 @@
       if (!navigator.onLine) { this.setState("offline"); return; }
       this.ready = false;
       this.setState(this.wakingSince ? "starting" : this.attempt ? "waiting" : "connecting");
-      if (this.viaRelay && !this.key) {
+      if (!this.key && (this.viaRelay || canEncrypt())) {
         try { this.key = await importKey(device.key); } catch { this.key = null; }
-        if (!this.key) { this.setState("unreachable"); return; }
+        if (!this.key && this.viaRelay) { this.setState("unreachable"); return; }
       }
+      this.encrypted = this.viaRelay || !!this.key;
       if (this.hold) return;   // stopped while the key was being prepared
       let ws;
       try { ws = new WebSocket(this.url()); } catch { this.scheduleRetry(); return; }
@@ -1460,13 +1658,17 @@
         if (!this.viaRelay) {
           // wake: only when you opened the app, came back to it, or tapped — so Jarvis Wake starts Jarvis then,
           // and never from a background reconnect (Jarvis itself ignores the flag)
-          ws.send(JSON.stringify({ type: "auto_attach", deviceId: device.id, token: device.token, wake: this.wantWake }));
+          ws.send(JSON.stringify({ type: "auto_attach", deviceId: device.id, token: device.token, wake: this.wantWake,
+                                   ...(this.encrypted ? { encrypt: true } : {}) }));
           this.wantWake = false;
         } else if (this.key) {
           // Over the relay, prove it's this phone with its key instead of sending the token through a middlebox
           // (see phone_session.verify_attach_proof).
           const proof = await encryptEnvelope(this.key, { type: "attach", deviceId: device.id, ts: Date.now() });
-          if (this.ws === ws) ws.send(JSON.stringify({ type: "auto_attach", deviceId: device.id, proof }));
+          // wake: as on the Wi-Fi — while Jarvis is closed, Jarvis Wake answers on the relay too and opens him
+          const wake = this.wantWake;
+          this.wantWake = false;
+          if (this.ws === ws) ws.send(JSON.stringify({ type: "auto_attach", deviceId: device.id, proof, wake }));
         }
       };
       ws.onmessage = async (event) => {
@@ -1474,7 +1676,11 @@
         let data;
         try { data = JSON.parse(event.data); } catch { return; }
         if (data.type === "hello_ok") return;
-        if (data.type === "offline") { this.setState("unreachable"); return; }   // relay: the computer isn't on
+        if (data.type === "offline") {   // relay: the computer isn't there (or Jarvis Wake just stepped aside for Jarvis)
+          if (this.wakingSince && Date.now() - this.wakingSince < 120000) { try { ws.close(); } catch { /* */ } return; }
+          this.setState("unreachable");
+          return;
+        }
         // Jarvis is closed on the computer, and Jarvis Wake (wake/jarvis_wake.py) answered instead: it checked this
         // phone's pairing and is opening Jarvis now. Keep knocking, briskly, until he's up and answers himself.
         if (data.type === "waking") { this.wakingSince = Date.now(); this.setState("starting"); return; }
@@ -1488,7 +1694,14 @@
           }
           return;
         }
-        if (!this.viaRelay) { handleSessionMessage(data); return; }
+        if (!this.encrypted) { handleSessionMessage(data); return; }
+        if (!this.viaRelay && data.type && !data.n) {
+          // An older Jarvis on the Wi-Fi that doesn't encrypt there: carry on as that version always did (plainly,
+          // on your own network). The AI settings are still only ever asked for over an encrypted session.
+          this.encrypted = false;
+          handleSessionMessage(data);
+          return;
+        }
         if (data.n && data.ct && this.key) {
           const message = await decryptEnvelope(this.key, data);
           if (message && this.ws === ws) handleSessionMessage(message);
@@ -1536,7 +1749,7 @@
       this.setState("ready");
       this.startHeartbeat();
       if (this.afterReady) { const fn = this.afterReady; this.afterReady = null; fn(); return; }
-      if (this.viaRelay) this.send({ type: "get_ai_config" });   // only ever sent over this encrypted session
+      if (this.encrypted) this.send({ type: "get_ai_config" });   // only ever sent over an encrypted session
       flushOutbox();
       if (pendingSubscription) { this.send({ type: "push_subscribe", subscription: pendingSubscription }); pendingSubscription = null; }
     },
@@ -1556,7 +1769,7 @@
       const ws = this.ws;
       if (!ws || ws.readyState !== WebSocket.OPEN) return false;
       try {
-        ws.send(JSON.stringify(this.viaRelay ? await encryptEnvelope(this.key, obj) : obj));
+        ws.send(JSON.stringify(this.encrypted ? await encryptEnvelope(this.key, obj) : obj));
         return true;
       } catch { return false; }
     },
@@ -1583,7 +1796,7 @@
       if (this.ready) { this.ping(4000); return; }
       if (this.ws && this.ws.readyState === WebSocket.CONNECTING) return;   // already on its way
       this.attempt = 0;
-      this.wantWake = true;   // back in the app: same as opening it
+      this.wantWake = prefs.mode === "computer";   // back in the app: same as opening it
       this.connect();
     },
 
@@ -1607,7 +1820,7 @@
       $("connText").textContent = sub;
       const banner = {
         starting: ["Opening Jarvis on your computer…", true],
-        closed: ["Jarvis is closed on your computer", false, "Open Jarvis", () => this.start()],
+        closed: ["Jarvis is closed on your computer", false, "Open Jarvis", () => this.start(true)],
         waiting: this.attempt >= 5 ? ["Can't reach your computer. Is it on, on this Wi-Fi?", false, "Retry", () => { this.attempt = 0; this.connect(); }] : ["Reconnecting…", true, "Retry now", () => { this.attempt = 0; this.connect(); }],
         connecting: this.attempt || Date.now() - bootTime > 2500 ? ["Connecting…", true] : null,
         offline: ["Offline. Reconnects when you're back online", false],
@@ -1616,7 +1829,10 @@
         replaced: ["Open on another device", false, "Use here", () => this.start()],
         ended: ["Disconnected by your computer", false, "Reconnect", () => this.start()],
       }[s];
-      if (phoneAI() && ["unreachable", "closed", "stopped", "ended"].includes(s)) {
+      if (phoneAI() && prefs.mode === "phone" && s !== "unpaired") {
+        $("connText").textContent = "On your phone";
+        setBanner(null);
+      } else if (phoneAI() && ["unreachable", "closed", "stopped", "ended"].includes(s)) {
         $("connText").textContent = s === "closed" ? "Jarvis is closed on your computer" : "Computer off";
         if (s === "closed") setBanner(banner);
         else if (!this.toldOffline) {
@@ -1653,7 +1869,18 @@
     if (spinning && conn.attempt < 2 && conn.state !== "starting") bannerTimer = setTimeout(apply, 700); else apply();
   }
 
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) conn.wake(); });
+  let hiddenAt = 0;
+  const ASK_AGAIN_AFTER = 10 * 60 * 1000;   // away this long: opening the app again is a new start, so it asks again
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (chosen && hiddenAt && Date.now() - hiddenAt > ASK_AGAIN_AFTER && !$("chatView").hidden) {
+      chosen = false;
+      conn.stop("idle");
+      showChooser();
+      return;
+    }
+    conn.wake();
+  });
   window.addEventListener("pageshow", (e) => { if (e.persisted) conn.wake(); });
   window.addEventListener("online", () => conn.wake());
   window.addEventListener("offline", () => { if (!conn.ready) conn.setState("offline"); });
@@ -1807,6 +2034,30 @@
       return `${origin}/?sync=1&install=1#${encodeURIComponent(JSON.stringify({ ...device, ...(aiConfig ? { ai: aiConfig } : {}) }))}`;
     } catch { return ""; }
   }
+  // The app that loads from the computer's own address can't open while the computer is off or asleep (there's
+  // nothing to load it from). The one at the relay's secure address always opens: this is the way over to it.
+  const alwaysOnUrl = () => (!SERVED_BY_RELAY && !window.isSecureContext ? secureInstallUrl() : "");
+  function openAlwaysOn() {
+    const url = alwaysOnUrl();
+    if (!url) return;
+    const steps = IS_IOS ? [
+      "Tap <b>Open it</b>. If it opens inside this app, tap the <b>Safari</b> (compass) button to continue in Safari.",
+      "In Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>.",
+      "Use the new Jarvis icon from now on. You can delete this one.",
+    ] : [
+      "Tap <b>Open it</b> (it opens in Chrome).",
+      "Tap <b>Install</b>.",
+      "Use the new Jarvis icon from now on. You can remove this one.",
+    ];
+    $("alwaysOnSteps").innerHTML = steps.map((html, i) => `<li><span class="glyph">${i + 1}</span><span>${html}</span></li>`).join("");
+    $("alwaysOnOpen").href = url;
+    openSheet($("alwaysOnSheet"));
+  }
+  $("alwaysOnBtn").onclick = openAlwaysOn;
+  $("alwaysOnClose").onclick = closeSheet;
+  $("alwaysOnCopy").onclick = () => copyText(alwaysOnUrl()).then((ok) =>
+    toast(ok ? `Link copied. Paste it in ${IS_IOS ? "Safari" : "Chrome"}'s address bar` : "Couldn't copy the link"));
+
   function openInstall() {
     const steps = installSteps();
     $("installSteps").innerHTML = steps.map(([icon, html]) => `<li><span class="glyph">${icon}</span><span>${html}</span></li>`).join("");
@@ -1953,7 +2204,11 @@
   }
 
   // ===================================================================================================== boot
+  // Each time the app is opened, it asks which Jarvis first: the one on this phone (nothing happens on the computer),
+  // or the computer's (opened there if it's closed). Coming back within a few minutes carries on without asking.
+  let chosen = false;
   function enterChat() {
+    if (!chosen) { showChooser(); return; }
     showView("chatView");
     if (!thread.children.length) {
       const cached = store.get("jarvis_transcript", []);
@@ -1961,8 +2216,26 @@
     }
     refreshAction();
     refreshMenu();
-    conn.start();
+    refreshModeSwitch();
+    conn.start(prefs.mode === "computer");
   }
+  function showChooser() {
+    const phoneReady = phoneAI();
+    $("choosePhone").disabled = !phoneReady;
+    $("choosePhoneSub").textContent = phoneReady ? "Jarvis does it here, on your phone"
+      : "Connect to your computer once first, to set Jarvis up on the phone";
+    $("alwaysOnBtn").hidden = !alwaysOnUrl();
+    showView("chooseView");
+  }
+  function choose(mode) {
+    haptic(10);
+    prefs.mode = mode;
+    savePrefs();
+    chosen = true;
+    enterChat();
+  }
+  $("choosePhone").addEventListener("click", () => choose("phone"));
+  $("chooseComputer").addEventListener("click", () => choose("computer"));
 
   function boot(message) {
     const device = saved();
@@ -2014,6 +2287,9 @@
       history.replaceState(null, "", location.pathname);   // tidy address bar; nothing in these needs keeping
     }
     boot();
+    // Arrived in the browser from the app's "Open it" (not yet on the Home Screen): straight to "Add to Home Screen",
+    // which also puts the pairing back in the address for the installed app's own first launch.
+    if (arrivedByHandoff && saved() && !isStandalone() && (IS_IOS || IS_ANDROID)) setTimeout(openInstall, 900);
   }
 })();
 </script>
