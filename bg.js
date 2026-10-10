@@ -63,14 +63,15 @@
     window.addEventListener('resize', resize);
     window.addEventListener('pointermove', (e) => { mouseX = e.clientX / w - 0.5; mouseY = e.clientY / h - 0.5; }, { passive: true });
 
-    function shoot(now) {
-      // from somewhere along the top or the right edge, down and to the left, at its own angle, length and pace
+    function shoot() {
+      // In from beyond the top or the right edge, down and to the left, at its own angle, length and pace. It never
+      // burns out on the way: it crosses the whole window and is only gone once it has left through the other side.
       const angle = Math.PI * (0.70 + Math.random() * 0.16);
       const fromTop = Math.random() < 0.6;
       shooting.push({
-        x: fromTop ? w * (0.25 + Math.random() * 0.8) : w + 20, y: fromTop ? -20 : h * Math.random() * 0.5,
-        dx: Math.cos(angle), dy: Math.sin(angle), speed: 560 + Math.random() * 460, tail: 240 + Math.random() * 300,
-        born: now, life: 1.1 + Math.random() * 0.8, width: 1.1 + Math.random() * 0.7,
+        x: fromTop ? w * (0.3 + Math.random() * 0.85) : w + 20, y: fromTop ? -20 : h * (Math.random() * 0.5 - 0.05),
+        dx: Math.cos(angle), dy: Math.sin(angle), speed: 520 + Math.random() * 420, tail: 240 + Math.random() * 300,
+        travelled: 0, width: 1.1 + Math.random() * 0.7,
       });
     }
 
@@ -104,18 +105,18 @@
 
       if (!reduced) {
         if (now >= nextShot) {
-          shoot(now);
-          nextShot = now + 2400 + Math.random() * 3800;
-          if (Math.random() < 0.16) nextShot = now + 420;   // once in a while, two in a row
+          shoot();
+          nextShot = now + 1600 + Math.random() * 2000;      // a new one every two or three seconds: one or two in the sky at a time
+          if (Math.random() < 0.15) nextShot = now + 380;    // once in a while, two in a row
         }
         for (let i = shooting.length - 1; i >= 0; i--) {
-          const s = shooting[i], age = (now - s.born) / 1000, k = age / s.life;
-          if (k >= 1) { shooting.splice(i, 1); continue; }
-          const travelled = s.speed * age * (1 - 0.28 * k);                    // it slows a little as it burns out
-          const headX = s.x + s.dx * travelled, headY = s.y + s.dy * travelled;
-          const tail = Math.min(s.tail, travelled);
-          const fade = Math.min(1, k * 10) * (1 - Math.pow(k, 2.4));          // in at once, bright most of the way, then out
+          const s = shooting[i];
+          s.travelled += s.speed * dt;                                         // a steady pace, all the way across
+          const headX = s.x + s.dx * s.travelled, headY = s.y + s.dy * s.travelled;
+          const tail = Math.min(s.tail, s.travelled);
           const tailX = headX - s.dx * tail, tailY = headY - s.dy * tail;
+          if (tailX < -30 || tailY > h + 30) { shooting.splice(i, 1); continue; }   // its whole trail has left the window
+          const fade = Math.min(1, s.travelled / 90);                          // full brightness by the time it's in view
           const trail = ctx.createLinearGradient(headX, headY, tailX, tailY);
           trail.addColorStop(0, `rgba(255,255,255,${fade})`);
           trail.addColorStop(0.1, `rgba(${(r + 510) / 3 | 0},${(g + 510) / 3 | 0},${(b + 510) / 3 | 0},${0.72 * fade})`);
