@@ -49,6 +49,9 @@ def normalize(text: str) -> str:
                  ("√", " sqrt "), ("π", " pi "), ("−", "-")):
         t = t.replace(a, b)
     t = re.sub(r"[?!,;:]", " ", t)
+    # "2x 2 + 6767": copied from somewhere that lost the raised 2. Nobody writes "x times 2" as "x 2", so an x followed
+    # by a lone small number, then an operator or the end, is that power.
+    t = re.sub(r"(?<![a-z])x\s+([2-9])(?=\s*(?:[-+=)]|\.?\s*$))", r"x^\1", t)
     t = _NUMBER_PHRASE.sub(lambda m: " " + _phrase_value(m.group(0)) + " ", t)
     # function names
     t = re.sub(r"\b(?:arc|inverse)\s*(sin|sine|cos|cosine|tan|tangent)\b", lambda m: "a" + m.group(1)[:3], t)

@@ -72,6 +72,10 @@ def both(monkeypatch):
     "graph x cubed minus 3x",
     "what is 2x + 6 = 0, draw the graph",
     "drew the greph of x squared",
+    "y = 2x +2x^2 +6767 graph",
+    "create a graph y=2x+2x 2 +6767.",
+    "y = x^2",
+    "What is the distance between New York and New York?",
     "tell me about Saturn",
     "tell my about seturn",
     "show me the moon",
@@ -215,3 +219,25 @@ def test_anything_else_is_left_alone_with_its_typos_fixed():
     out = phone_brain.Brain().handle("genearte an imgae of a dog in space")
     assert out == {"text": "generate an image of a dog in space"}
     assert phone_brain.Brain().handle("what's the capital of France?") == {"text": "what's the capital of France?"}
+
+
+def test_two_functions_at_once_come_back_as_two_pictures(both):
+    computer, phone = both("create a graph y=x^2 and g = x+ 1")
+    assert phone[0] == computer[0] and phone[0].startswith("I drew 2 graphs")
+    out = phone_brain.Brain().handle("graph sine of x and cosine of x")
+    assert [v["data"]["plain"] for v in out["visuals"]] == ["y = sin(x)", "y = cos(x)"] and out["visual"] == out["visuals"][-1]
+
+
+def test_the_equation_given_after_being_asked_for_it_is_drawn():
+    brain = phone_brain.Brain()
+    assert brain.handle("create a graph")["reply"].startswith("Tell me the equation")
+    out = brain.handle("y=2x+2x 2 +6767.")
+    assert out["visual"]["data"]["plain"] == "y = 2x² + 2x + 6767"
+
+
+def test_which_two_places_stays_open_across_something_else_said(monkeypatch):
+    monkeypatch.setattr(earth, "resolve", lambda name: (PLACES.get(name.lower()), None))
+    brain = phone_brain.Brain()
+    assert brain.handle("What is the distance between Tokyo and Tokyo?")["reply"] == "I heard Tokyo twice. Which two places do you mean?"
+    assert "reply" not in brain.handle("Do you remember that I stuck on these?")
+    assert brain.handle("tokyo and new york")["visual"]["type"] == "globe"

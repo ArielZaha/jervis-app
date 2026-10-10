@@ -199,6 +199,10 @@ def parse_request(text: str):
         if loose:
             return loose
     if re.search(r"\bdistance\b.*\b(?:between|from)\b|\bhow far (?:is|are|away)\b", n) or re.fullmatch(rf"{_LEAD}(?:show|see|view|display).*\b(?:earth|globe)\b.*", n):
+        # "the distance between New York and New York" (usually a misheard second place): said back, so it's clear why
+        twice = re.search(r"\b(?:between|from)\s+(?P<a>.+?)\s+(?:and|to)\s+(?P<b>.+?)[.?! ]*$", n)
+        if twice and _clean_name(twice.group("a")) and _clean_name(twice.group("a")) == _clean_name(twice.group("b")):
+            return {"action": "ask", "same": _clean_name(twice.group("a"))}
         return {"action": "ask"}
     return None
 

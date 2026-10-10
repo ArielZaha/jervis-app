@@ -27,6 +27,8 @@ _MISSPELLINGS = {
     "genearte": "generate", "generete": "generate", "genrate": "generate", "gnerate": "generate", "genarate": "generate",
     "imgae": "image", "iamge": "image", "imag": "image", "pictuer": "picture", "picure": "picture", "pitcure": "picture",
     "evnet": "event", "evnt": "event", "meating": "meeting", "apointment": "appointment",
+    "coonnect": "connect", "conect": "connect", "connnect": "connect", "conenct": "connect", "connet": "connect",
+    "conncet": "connect", "connecct": "connect", "pohne": "phone", "phoen": "phone", "fone": "phone",
 }
 _MISSPELLED_PHRASES = [
     (re.compile(r"\btell my about\b", re.I), "tell me about"),

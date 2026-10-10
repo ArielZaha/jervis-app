@@ -895,6 +895,11 @@ def start_phone_pairing() -> str:
         return ("Phone control is turned off. Turn on “Let your phone control this computer” in Settings, "
                 "Computer control, then ask me again.")
     code = phone_server.begin_pairing()
+    # Asked right after Jarvis started (or restarted to switch phone control on): the relay is still signing in. A few
+    # seconds' wait gets the code that pairs from anywhere, instead of the same-Wi-Fi one.
+    waited = time.time()
+    while RELAY_URL and getattr(relay, "_loop", None) is not None and getattr(relay, "_ws", None) is None and time.time() - waited < 5:
+        time.sleep(0.15)
     address = f"http://{phone_control.lan_address()}:{PHONE_WS_PORT}"
     local_url = f"{address}/?code={code}"   # same Wi-Fi: the code travels in the link, never typed
     # With the relay reachable, the QR leads to the phone's always-on app instead and carries this pairing's one-time
@@ -1240,6 +1245,9 @@ def _find_video_yt_dlp(query: str):
     return None
 
 
+NO_VIDEO = ("", "")   # YouTube answered, and has nothing for these words
+
+
 def _find_video_scrape(query: str):
     """Return (video_id, title) from the YouTube results page (no extra tools needed)."""
     try:
@@ -1254,7 +1262,8 @@ def _find_video_scrape(query: str):
         return None
     m = re.search(r'"videoRenderer":\{"videoId":"([A-Za-z0-9_-]{11})"', html)
     if not m:
-        return None
+        # YouTube's own "No results found" page (as opposed to a page this couldn't read)
+        return NO_VIDEO if '"backgroundPromoRenderer"' in html and '"videoId"' not in html else None
     title = re.search(r'"videoId":"%s".*?"title":\{"runs":\[\{"text":"(.*?)"' % m.group(1), html)
     return m.group(1), (title.group(1) if title else query)
 
@@ -1450,6 +1459,8 @@ def play_youtube_video(query: str, new_tab: bool = False, **kwargs) -> str:
         return "Tell me which YouTube video you want."
 
     found = _find_video_yt_dlp(query) or _find_video_scrape(query)
+    if found == NO_VIDEO:
+        return f"YouTube has no video called {query}. Check the spelling, or tell me who it's by."
     if found:
         video_id, title = found
         try:
@@ -2080,7 +2091,8 @@ def handle_math_followup(text: str):
     return ("It crosses the x-axis at " + ", ".join(f"x equals {graphs._say(r)}" for r in roots[:6]) + ".") if roots else "It never crosses the x-axis in this view."
 
 
-pending_earth_places = {"at": 0.0}   # Jarvis asked "which two places?": the next answer ("Israel and USA") is them
+# Jarvis asked "which two places?": an answer like "Israel and USA" within the next couple of messages is them
+pending_earth_places = {"at": 0.0, "left": 0}
 
 
 def _places_talked_about():
@@ -2097,10 +2109,14 @@ def handle_earth_places_answer(text: str):
     """The answer to "which two places?": "Israel and USA", "from Rome to Paris"."""
     if time.time() - pending_earth_places["at"] > 3 * 60:
         return None
-    pending_earth_places["at"] = 0.0
     places = re.fullmatch(r"(?:(?:from|between)\s+)?(.+?)\s+(?:and|to|&)\s+(.+?)[.!?]*", " ".join((text or "").split()), re.I)
     if not places or len(places.group(0).split()) > 10:
+        # something else was said in between ("do you remember…?"): the question stays open for one more message
+        pending_earth_places["left"] = pending_earth_places.get("left", 0) - 1
+        if pending_earth_places["left"] <= 0:
+            pending_earth_places["at"] = 0.0
         return None
+    pending_earth_places["at"] = 0.0
     return handle_earth_command(f"what is the distance between {places.group(1)} and {places.group(2)}")
 
 
@@ -2120,9 +2136,11 @@ def handle_earth_command(text: str):
         send_ui_update_once({"type": "show_globe", "which": request["which"]})
         return {"prev": "Here is the previous one.", "next": "Here is the next one.", "first": "Here is the first one."}.get(request["which"], "Here it is again.")
     if request["action"] == "ask":
-        earlier = _places_talked_about()
+        earlier = None if request.get("same") else _places_talked_about()
         if not earlier:
-            pending_earth_places["at"] = time.time()
+            pending_earth_places.update(at=time.time(), left=2)
+            if request.get("same"):   # usually the second place misheard
+                return f"I heard {request['same'].title()} twice. Which two places do you mean?"
             return "Which two places? For example: what's the distance between Tokyo and Paris."
         request = earlier
     return answer_earth_request(request)
@@ -2587,12 +2605,19 @@ _OPEN_IMAGE_RE = re.compile(r"\b(?:open|show(?:\s+me)?)\s+(?:this|that|the)\s+(?
 _SAVE_IMAGE_RE = re.compile(r"\bsave\s+(?:this|that|the)\s+(?:generated\s+|edited\s+)?(?:image|picture|photo)\b")
 
 
+# "what is it", "whats is it", "wha t is it", "what's this?": right after a picture was shared, it's about the picture
+_WHAT_IS_IT = re.compile(r"(?:so|and|ok|okay|jarvis|hey)*what(?:s|is|sis|are)?(?:it|this|that|these|those|init|inthis|inthat|onit|"
+                         r"(?:in|on)?(?:the|this|that)(?:image|picture|photo|pic))(?:please)?")
+
+
 def handle_image_command(text: str):
     """The two deterministic, non-AI image actions: opening or saving the most recent picture in this conversation.
     Understanding, generating and editing images go through the AI's tools instead (see TOOLS / TOOL_FUNCTIONS)."""
     if not images.has_pending_context():
         return None
     n = " ".join((text or "").lower().split())
+    if images.just_received_image() and _WHAT_IS_IT.fullmatch(re.sub(r"[^a-z]", "", n)):
+        return tool_analyze_image("What is in this image? Describe it briefly.")   # looked at, not guessed about
     if _OPEN_IMAGE_RE.search(n):
         try:
             osal.open_path(images.last_image(1)[0]["path"])
@@ -2638,16 +2663,20 @@ def handle_image_generation(text: str):
     return f"Here's your picture of {what}.{note}"
 
 
+pending_graph_ask = {"at": 0.0}   # Jarvis asked for the equation: for a few minutes a formula on its own is the answer
+
+
 def handle_graph_command(text: str):
     global graphs_drawn
-    request = graphs.parse_request(text)
+    request = graphs.parse_request(text, expecting=time.time() - pending_graph_ask["at"] < 3 * 60)
     if request is None:
         return None
     if request["action"] == "last":
         if last_function["tree"] is not None and time.time() - last_function["at"] < 60 * 60:
             request = graphs.request_from_tree(last_function["tree"])
         elif request.get("explicit"):
-            return "Tell me the equation, for example: graph y equals x squared minus 4x plus 3. Or give me a, b and c."
+            pending_graph_ask["at"] = time.time()
+            return graphs.ASK_FOR_EQUATION
         else:
             return None
     if request.get("ast") is not None:
@@ -2661,20 +2690,26 @@ def handle_graph_command(text: str):
         send_ui_update_once({"type": "show_graph", "which": request["which"]})
         return {"prev": "Here is the previous graph.", "next": "Here is the next graph.", "first": "Here is the first graph."}.get(request["which"], "Here is the graph again.")
     if request["action"] == "ask":
-        return "Tell me the equation, for example: graph y equals x squared minus 4x plus 3. Or give me a, b and c."
+        pending_graph_ask["at"] = time.time()
+        return graphs.ASK_FOR_EQUATION
     if request["action"] == "unsupported":
         return "I can graph any function of x, like y equals something with x. Give me one of those."
     if request["action"] == "unclear":
         return "I couldn't read that as a function of x. Try something like: graph sine of x, or graph x cubed minus 3x."
-    if request["action"] == "function":
-        info = graphs.build_function(request["ast"])
-        send_ui_update_once({"type": "graph", "data": info})
-        graphs_drawn += 1
-        return _with_solution(request, graphs.describe_function(info))
-    info = graphs.facts(request["a"], request["b"], request["c"])
+    pending_graph_ask["at"] = 0.0
+    if request["action"] == "several":   # "graph y = x^2 and g = x + 1": one graph each, kept side by side in the window
+        infos = []
+        for one in request["requests"]:
+            info, _ = graphs.build(one)
+            send_ui_update_once({"type": "graph", "data": info})
+            graphs_drawn += 1
+            infos.append(info)
+        remember_function(request["requests"][-1]["ast"])
+        return graphs.describe_several(infos, request["unread"])
+    info, described = graphs.build(request)
     send_ui_update_once({"type": "graph", "data": info})
     graphs_drawn += 1
-    return _with_solution(request, graphs.describe(info))
+    return _with_solution(request, described)
 
 
 def _with_solution(request: dict, graph_text: str) -> str:
@@ -3304,7 +3339,7 @@ def handle_direct_command(text: str):
     control = handle_control_voice(text)
     if control:
         return control
-    if is_phone_pair_command(text):
+    if is_phone_pair_command(fix_typos(text)):   # "coonnect my phone"
         return start_phone_pairing()
     if re.search(r"\bdisconnect\s+(?:the\s+|my\s+)?phone\b|\bend\s+(?:the\s+|my\s+)?phone\s+(?:session|connection)\b",
                 text, re.I):
@@ -3335,8 +3370,8 @@ def handle_direct_command(text: str):
     if re.search(r"\b(quit|close|exit)\s+(my\s+)?spotify\b", normalized):
         return quit_application("Spotify")
     if alerts_open and re.fullmatch(
-            r"(?:jarvis )?(?:ok|okay|stop|dismiss|thanks|thank you|got it|i got it|silence|quiet|enough|alright)"
-            r"(?: (?:it|that|the alarm|the timer|the alert|the sound))?", " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())):
+            r"(?:jarvis )?(?:ok|okay|stop|dismiss|thanks|thank you|got it|i got it|silence|quiet|enough|alright|cancel)"
+            r"(?: (?:it|that|(?:the )?(?:alarm|timer|alert|sound)))?", " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())):
         send_ui_update_once({"type": "dismiss_alert"})
         return "Okay."
     classroom_reply = handle_classroom_command(text)
@@ -4796,7 +4831,11 @@ def deliver_alert(payload: dict) -> bool:
     return False
 
 
+last_timer_fired = {"at": 0.0, "timer": None}   # the one that went off most recently, for "stop timer" said right after
+
+
 def on_timer_fired(timer: dict) -> None:
+    last_timer_fired.update(at=time.time(), timer=timer)
     if timer["kind"] == "reminder":
         message = f"Reminder: {timer['label']}." if timer["label"] else "Time's up."
         spoken = message
@@ -4829,12 +4868,18 @@ def handle_timer_command(text: str):
     if action == "ask":
         return "How long should I set it for?"
     if action == "set":
+        last_timer_fired["at"] = 0.0
         timer = timer_manager.add(command["seconds"], command["label"], command["kind"])
         if timer["kind"] == "reminder":
             what = f" to {timer['label']}" if timer["label"] else ""
             return f"Okay, I'll remind you{what} in {format_duration(timer['total'])}."
         return f"Timer set for {format_duration(timer['total'])}" + (f", for {timer['label']}." if timer["label"] else ".")
     if action == "cancel":
+        if not command["all"] and not command["label"] and time.time() - last_timer_fired["at"] < 90:
+            # "stop timer" just after one went off means that one: it is silenced, and no other timer is touched
+            finished, last_timer_fired["at"] = last_timer_fired["timer"], 0.0
+            send_ui_update_once({"type": "dismiss_alert"})
+            return f"Your {describe_timer(finished)} already finished. I've silenced it."
         cancelled = timer_manager.cancel(command["label"], command["all"])
         if not cancelled:
             return "You don't have any timers running."
@@ -5221,7 +5266,14 @@ def is_model_glitch(error: Exception) -> bool:
     return code in ("tool_use_failed", "output_parse_failed") or "tool_use_failed" in str(error) or "output_parse_failed" in str(error)
 
 
-def _groq_chat_with_retry(**kwargs):
+def wanted_a_tool(error: Exception) -> bool:
+    """The AI was asked without its tools (the message didn't read like a command) and tried to use one anyway: it
+    understood a request in it ("new york and paris" after a distance question). Asking again the same way fails the
+    same way; asking again with the tools is what it needs."""
+    return "but model called a tool" in str(error)
+
+
+def _groq_chat_with_retry(tools_if_wanted=None, **kwargs):
     """One online-AI call. A short rate-limit wait is honoured (the answer comes a few seconds late instead of never)."""
     try:
         return groq_client.chat.completions.create(**kwargs)
@@ -5229,8 +5281,12 @@ def _groq_chat_with_retry(**kwargs):
         log_ai_error(e)
         status = getattr(e, "status_code", None)
         if is_model_glitch(e):
+            if tools_if_wanted and not kwargs.get("tools") and wanted_a_tool(e):
+                print("The online AI wants one of its tools for this; asking again with them...", flush=True)
+                return groq_client.chat.completions.create(**{**kwargs, "tools": tools_if_wanted, "tool_choice": "auto"})
             print("The online AI produced a garbled answer; asking again...", flush=True)
-            return groq_client.chat.completions.create(**kwargs)
+            # a little more freedom the second time: the same request at the same setting tends to fail the same way
+            return groq_client.chat.completions.create(**{**kwargs, "temperature": max(0.6, float(kwargs.get("temperature") or 0))})
         if status in (401, 403) or (status and status < 500 and status != 429):
             raise
         wait = rate_limit_wait(e) if status == 429 else 1.5
@@ -5269,6 +5325,7 @@ def groq_chat(**kwargs):
     After a failure the online AI is skipped for a few minutes, so every question isn't delayed by timeouts.
     """
     global groq_down_until
+    tools_if_wanted = kwargs.pop("tools_if_wanted", None)   # see wanted_a_tool: only the online AI is ever given them
     if "gpt-oss" in str(kwargs.get("model", "")):  # a "thinking" model: keep the thinking short, it counts against the limit
         kwargs.setdefault("reasoning_effort", "low")
         kwargs.setdefault("max_tokens", 1500)
@@ -5277,7 +5334,7 @@ def groq_chat(**kwargs):
     if LLM_BACKEND == "auto" and time.time() < groq_down_until:
         return local_llm.chat(**kwargs)
     try:
-        return _groq_chat_with_retry(**kwargs)
+        return _groq_chat_with_retry(tools_if_wanted=tools_if_wanted, **kwargs)
     except Exception as e:
         status = getattr(e, "status_code", None)
         log_ai_error(e)
@@ -5343,6 +5400,9 @@ def _failed_generation_text(error: Exception) -> str:
 
 
 ACTION_TOOLS = {"use_computer", "play_song", "play_music", "pause_music", "open_application", "play_youtube_video"}
+# Overheard talk about what someone else is doing ("no, he's doing it on the screen"): not a request to Jarvis, whatever
+# words it shares with one. It gets an ordinary answer, never the "say it as a command" correction.
+_ABOUT_SOMEONE_ELSE = re.compile(r"^(?:(?:no|yes|yeah|oh|well|look|see|wait)[, ]+)*(?:he|she|they|it)(?:'s|'re| is| are| was| were)\b", re.I)
 _CLAIMS_ACTION = re.compile(
     r"\b(?:i'?m (?:now )?(?:using|controlling) (?:the|your) (?:computer|mouse)|i (?:have |'ve )?(?:opened|clicked|typed|"
     r"searched|started|played|launched|pressed)\b|i(?:'ll| will) (?:now )?(?:take control (?:of|over|on)|open|click|"
@@ -5362,6 +5422,8 @@ def ask_jarvis(messages, user_text=""):
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice
+        else:
+            kwargs["tools_if_wanted"] = TOOLS   # the tools it may still reach for; each one's own guard below still applies
         response = groq_chat(**kwargs)
     except Exception as e:
         if tools and tool_choice == "required":
@@ -5387,7 +5449,7 @@ def ask_jarvis(messages, user_text=""):
         # ran — whatever the model wrote instead (a claim, or a whole fake back-and-forth about "confirming") is
         # never shown: a free-text answer to an action request is untrustworthy by construction here.
         action_shaped = (is_computer_request(user_text) or is_music_command(user_text) or is_youtube_command(user_text)
-                         or is_app_command(user_text))
+                         or is_app_command(user_text)) and not _ABOUT_SOMEONE_ELSE.search(user_text or "")
         if content and (action_shaped or _CLAIMS_ACTION.search(content)):
             print("The AI answered in text instead of acting on a request that needed a tool; replaced.", flush=True)
             return ("I didn't do anything on your computer for that. Say it as a command, like “play Jane on Spotify” "
@@ -6065,7 +6127,7 @@ if __name__ == "__main__":
     if os.environ.pop("JARVIS_WOKEN_BY_VOICE", "") == "1":   # opened by Jarvis Wake (wake/): greet right away
         greet_after_voice_launch()
     else:
-        greet_on_startup()   # opened normally: greet once the window connects, and start awake right away
+        greet_on_startup()  
 
     try:
         main_loop()

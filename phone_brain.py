@@ -107,21 +107,24 @@ class Brain:
 
     def __init__(self):
         self.last_function = {"tree": None, "at": 0.0, "equation": None}
-        self.pending_places_at = 0.0     # asked "which two places?": the next answer ("Israel and USA") is them
+        self.pending_places_at = 0.0     # asked "which two places?": an answer ("Israel and USA") in the next two messages is them
+        self.pending_places_left = 0
+        self.pending_graph_at = 0.0      # asked for the equation: for a few minutes a formula on its own is the answer
         self.last_route = {"a": None, "b": None, "at": 0.0}   # for "which countries does it fly over?"
         self.pending_choice = None       # {"request", "name", "options", "known", "at"}: "Which Valencia do you mean?"
         self.drawn = {"graph": 0, "globe": 0, "planet": 0}
-        self._visual = None
+        self._visuals = []
 
     # ------------------------------------------------------------ the one way in
     def handle(self, text: str, settings: dict = None) -> dict:
         """What to do with one message. Always has "text" (the message with its typos fixed); has "reply" when this
-        brain answered it, with any of "visual" (a graph, globe or planet for the app to draw), "weather" (the
-        forecast to show), "timer" (one to start or cancel) and "music" (something to find and play)."""
+        brain answered it, with any of "visual" (a graph, globe or planet for the app to draw; "visuals" when it drew
+        more than one), "weather" (the forecast to show), "timer" (one to start or cancel) and "music" (something to
+        find and play)."""
         settings = settings or {}
         fixed = fix_typos(text or "")
         out = {"text": fixed}
-        self._visual = None
+        self._visuals = []
         steps = (
             lambda: self._music(fixed),
             lambda: self._math_followup(fixed),
@@ -140,13 +143,15 @@ class Brain:
                 answer = None
             if answer:
                 out.update({"reply": answer} if isinstance(answer, str) else answer)
-                if self._visual:
-                    out["visual"] = self._visual
+                if self._visuals:
+                    out["visual"] = self._visuals[-1]
+                    if len(self._visuals) > 1:
+                        out["visuals"] = self._visuals
                 break
         return out
 
     def _show(self, payload: dict) -> None:
-        self._visual = payload
+        self._visuals.append(payload)
 
     # ------------------------------------------------------------ music: only read here, the app finds and plays it
     def _music(self, text: str):
@@ -218,15 +223,15 @@ class Brain:
         return solved
 
     def _graph(self, text: str):
-        request = graphs.parse_request(text)
+        request = graphs.parse_request(text, expecting=time.time() - self.pending_graph_at < 3 * 60)
         if request is None:
             return None
-        hint = "Tell me the equation, for example: graph y equals x squared minus 4x plus 3. Or give me a, b and c."
         if request["action"] == "last":
             if self.last_function["tree"] is not None and time.time() - self.last_function["at"] < 60 * 60:
                 request = graphs.request_from_tree(self.last_function["tree"])
             elif request.get("explicit"):
-                return hint
+                self.pending_graph_at = time.time()
+                return graphs.ASK_FOR_EQUATION
             else:
                 return None
         if request.get("ast") is not None:
@@ -242,17 +247,23 @@ class Brain:
             return {"prev": "Here is the previous graph.", "next": "Here is the next graph.",
                     "first": "Here is the first graph."}.get(request["which"], "Here is the graph again.")
         if action == "ask":
-            return hint
+            self.pending_graph_at = time.time()
+            return graphs.ASK_FOR_EQUATION
         if action == "unsupported":
             return "I can graph any function of x, like y equals something with x. Give me one of those."
         if action == "unclear":
             return "I couldn't read that as a function of x. Try something like: graph sine of x, or graph x cubed minus 3x."
-        if action == "function":
-            info = graphs.build_function(request["ast"])
-            described = graphs.describe_function(info)
-        else:
-            info = graphs.facts(request["a"], request["b"], request["c"])
-            described = graphs.describe(info)
+        self.pending_graph_at = 0.0
+        if action == "several":   # "graph y = x^2 and g = x + 1": one graph each
+            infos = []
+            for one in request["requests"]:
+                info, _ = graphs.build(one)
+                self._show({"type": "graph", "data": info})
+                self.drawn["graph"] += 1
+                infos.append(info)
+            self._remember(request["requests"][-1]["ast"])
+            return graphs.describe_several(infos, request["unread"])
+        info, described = graphs.build(request)
         self._show({"type": "graph", "data": info})
         self.drawn["graph"] += 1
         if not request.get("solve"):
@@ -297,10 +308,13 @@ class Brain:
     def _earth_places_answer(self, text: str, settings: dict):
         if time.time() - self.pending_places_at > 3 * 60:
             return None
-        self.pending_places_at = 0.0
         places = re.fullmatch(r"(?:(?:from|between)\s+)?(.+?)\s+(?:and|to|&)\s+(.+?)[.!?]*", " ".join((text or "").split()), re.I)
         if not places or len(places.group(0).split()) > 10:
+            self.pending_places_left -= 1   # something else was said in between: the question stays open for one more message
+            if self.pending_places_left <= 0:
+                self.pending_places_at = 0.0
             return None
+        self.pending_places_at = 0.0
         return self._earth(f"what is the distance between {places.group(1)} and {places.group(2)}", settings)
 
     def _earth(self, text: str, settings: dict):
@@ -317,9 +331,11 @@ class Brain:
             return {"prev": "Here is the previous one.", "next": "Here is the next one.",
                     "first": "Here is the first one."}.get(request["which"], "Here it is again.")
         if request["action"] == "ask":
-            earlier = self._places_talked_about(settings)
+            earlier = None if request.get("same") else self._places_talked_about(settings)
             if not earlier:
-                self.pending_places_at = time.time()
+                self.pending_places_at, self.pending_places_left = time.time(), 2
+                if request.get("same"):   # usually the second place misheard
+                    return f"I heard {request['same'].title()} twice. Which two places do you mean?"
                 return "Which two places? For example: what's the distance between Tokyo and Paris."
             request = earlier
         return self._answer_earth(request)

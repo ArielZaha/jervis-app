@@ -4,6 +4,7 @@ Ollama runs models on your own computer, free and offline, and speaks the same c
 Python package is needed: this only makes plain HTTP calls to http://localhost:11434.
 """
 import os
+import re
 import time
 from types import SimpleNamespace
 
@@ -107,4 +108,15 @@ def chat(**kwargs):
     if response.status_code != 200:
         raise LocalAIUnavailable(f"the local AI answered with an error ({response.status_code}): {response.text[:200]}")
     print(f"Local AI ({model}) answered in {time.time() - started:.1f}s", flush=True)
-    return _wrap(response.json())
+    answer = response.json()
+    for choice in answer.get("choices") or []:
+        message = choice.get("message") or {}
+        if isinstance(message.get("content"), str):
+            message["content"] = clean_reply(message["content"])
+    return _wrap(answer)
+
+
+def clean_reply(text: str) -> str:
+    """Small local models sometimes begin an answer with their own role's name ("assistant It's the number 2."), and
+    once that is in the conversation they copy it, one more each time ("assistant assistant …"). Never part of the answer."""
+    return re.sub(r"^(?:\s*(?:<\|?)?assistant\b(?:\|?>)?\s*:?\s*)+(?=\S)", "", text or "", flags=re.I)

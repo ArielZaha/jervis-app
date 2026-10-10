@@ -65,7 +65,28 @@ def move_to_plain_folder() -> None:
         say("Please move the whole Jarvis folder to a path with only English letters (for example C:\\Jarvis) and run it again.")
         sys.exit(1)
     say(f"Done. From now on start Jarvis from {target}  (double-click start_jarvis.bat there).")
-    sys.exit(subprocess.call([sys.executable, os.path.join(target, "run.py")], cwd=target))
+    try:
+        sys.exit(subprocess.call([sys.executable, os.path.join(target, "run.py")], cwd=target))
+    except KeyboardInterrupt:   # Ctrl+C: Jarvis was quit, which is not an error to print a traceback for
+        sys.exit(0)
+
+
+def use_utf8_console() -> None:
+    """Windows' console shows Hebrew and curly quotes as scrambled symbols (Jarvis writes them as UTF-8, the console
+    reads them in its own old code page) unless it is told the text is UTF-8."""
+    if not IS_WIN:
+        return
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        ctypes.windll.kernel32.SetConsoleCP(65001)
+    except Exception:
+        pass
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 
 def ensure_python_environment() -> None:
@@ -372,6 +393,7 @@ def start_jarvis(env: dict) -> int:
 
 
 if __name__ == "__main__":
+    use_utf8_console()
     say(f"Jarvis launcher {VERSION}")
     move_to_plain_folder()
     ensure_env_file()
