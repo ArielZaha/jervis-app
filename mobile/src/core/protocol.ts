@@ -19,6 +19,10 @@ export type AiConfig = {
   fallbackModel?: string;   // used when the main model is rate-limited (separate allowance)
   transcribeModel: string;
   userName?: string;
+  /** Told by the computer along with the key, for the phone's own skills. */
+  visionModel?: string;     // answers questions about pictures
+  weatherCity?: string;     // the city from the computer's Settings
+  spotify?: boolean;        // the computer can play on the phone's Spotify (the user's account is signed in there)
 };
 
 export type ChatMessage = { type: "chat"; sender: "user" | "ai"; text: string; ts?: number; image?: string };

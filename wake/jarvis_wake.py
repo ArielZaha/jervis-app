@@ -184,7 +184,9 @@ _STATIC = {   # path -> (file in the project, content type, cache) — a fixed l
 for _icon in ("icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png", "favicon-64.png"):
     _STATIC[f"/icons/{_icon}"] = (f"phone_icons/{_icon}", "image/png", "public, max-age=86400")
 # The phone app's graphs, globe and planets (phone_visuals.py keeps the same list; a test checks they agree)
-VISUAL_SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js", "vendor/jsqr/jsQR.js")
+VISUAL_SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js", "vendor/jsqr/jsQR.js", "phone_brain_worker.js")
+BRAIN = ("typos.py", "functions.py", "equations.py", "graphs.py", "geo.py", "earth.py", "planets.py", "timers.py",
+         "forecast.py", "music.py", "phone_brain.py", "geo_data/countries_50m.json", "geo_data/places_10m.json")   # Jarvis's brain for the phone (phone_visuals.py)
 VISUAL_FONTS = ("vendor/fonts/orbitron-latin.woff2",)
 VISUAL_IMAGES = (
     "vendor/earth/blue_marble_5400.jpg", "vendor/earth/clouds_2048.jpg", "vendor/earth/night_lights_3600.jpg",
@@ -200,6 +202,9 @@ for _name in VISUAL_IMAGES:
     _STATIC[f"/{_name}"] = (_name, "image/png" if _name.endswith(".png") else "image/jpeg", "public, max-age=604800")
 for _name in VISUAL_FONTS:
     _STATIC[f"/{_name}"] = (_name, "font/woff2", "public, max-age=604800")
+for _name in BRAIN:
+    _STATIC[f"/brain/{_name}"] = ((_name, "application/json", "public, max-age=604800") if _name.endswith(".json")
+                                  else (_name, "text/x-python; charset=utf-8", "no-cache"))
 
 
 class PhoneDoor:

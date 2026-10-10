@@ -18,5 +18,9 @@ COPY vendor/earth ./vendor/earth
 COPY vendor/planets ./vendor/planets
 COPY vendor/jsqr ./vendor/jsqr
 COPY vendor/fonts ./vendor/fonts
+# Jarvis's brain for the phone (relay/server.py's BRAIN): the worker that runs it, the modules, the map data
+COPY phone_brain_worker.js ./
+COPY typos.py functions.py equations.py graphs.py geo.py earth.py planets.py timers.py forecast.py music.py phone_brain.py ./brain/
+COPY geo_data/countries_50m.json geo_data/places_10m.json ./brain/geo_data/
 EXPOSE 8080
 CMD ["python", "server.py"]

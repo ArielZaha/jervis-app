@@ -432,6 +432,91 @@
   .vis-chip b { display: block; font-size: 15px; font-weight: 640; line-height: 1.3; }
   .vis-chip span { display: block; font-size: 12.5px; color: var(--muted); }
 
+  /* ---------------------------------------------------------------- what Jarvis's skills leave in the chat */
+  /* a worked answer: headed steps, the maths set as maths, the result boxed */
+  .text h4 { margin: 1.1em 0 .4em; font: 600 12.5px/1.35 var(--display); letter-spacing: .05em; color: var(--accent); }
+  .text h4:first-child { margin-top: 0; }
+  .tex { font-family: "Times New Roman", "Cambria Math", "Noto Serif", Georgia, serif; font-size: 1.1em; white-space: nowrap; }
+  .tex-block { display: block; margin: .15em 0 .7em; padding: 3px 0; overflow-x: auto; font-size: 1.22em; scrollbar-width: none; }
+  .tex-text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: .88em; }
+  .frac { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 .16em; line-height: 1.18; }
+  .frac > span:first-child { border-bottom: 1px solid currentColor; padding: 0 .28em .06em; }
+  .frac > span:last-child { padding: .06em .28em 0; }
+  .sqrt > span { border-top: 1px solid currentColor; padding: 0 .14em; margin-left: .02em; }
+  .text blockquote { margin: .6em 0; padding: 2px 0 2px 14px; color: var(--muted); border-left: 1px solid var(--line-2); }
+  .text blockquote.answer { margin: 1em 0 .15em; padding: 11px 14px; border: 0; color: var(--text); text-align: center; font-size: 1.12em;
+    overflow-x: auto; outline: 1px solid var(--accent); outline-offset: -1px; background: rgb(var(--accent-rgb) / .1); }
+
+  /* a running timer */
+  :where(.timer-chip, .card, .wx) {
+    position: relative; isolation: isolate; --c: 12px; --fill: var(--panel);
+    --edge: linear-gradient(135deg, rgb(var(--accent-rgb) / .62), rgb(var(--accent-rgb) / .16) 36%, rgb(var(--accent-rgb) / .1) 64%, rgb(var(--accent-rgb) / .44));
+  }
+  :where(.timer-chip, .card, .wx)::before { content: ""; position: absolute; inset: 0; z-index: -2; background: var(--edge); --k: var(--c);
+    clip-path: polygon(var(--k) 0, 100% 0, 100% calc(100% - var(--k)), calc(100% - var(--k)) 100%, 0 100%, 0 var(--k)); }
+  :where(.timer-chip, .card, .wx)::after { content: ""; position: absolute; inset: 1px; z-index: -1; background: var(--fill); --k: calc(var(--c) - .59px);
+    clip-path: polygon(var(--k) 0, 100% 0, 100% calc(100% - var(--k)), calc(100% - var(--k)) 100%, 0 100%, 0 var(--k)); }
+  .timer-chip { display: flex; align-items: center; gap: 14px; width: min(100%, 420px); padding: 12px 10px 12px 16px;
+    --fill: linear-gradient(135deg, rgb(var(--accent-rgb) / .14), rgb(var(--accent-rgb) / .03)), var(--panel); }
+  .timer-chip i { width: 30px; height: 30px; flex-shrink: 0; display: grid; place-items: center; color: var(--accent); }
+  .timer-chip i svg { width: 26px; height: 26px; }
+  .timer-chip > span { flex: 1; min-width: 0; display: grid; }
+  .timer-chip b { font-size: 13.5px; font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .timer-chip time { font: 600 24px/1.2 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  .timer-chip button { appearance: none; border: 0; background: none; color: var(--muted); font: 600 13.5px/1 inherit; font-family: inherit; min-height: 44px; padding: 0 12px; }
+  .timer-chip.over time { font: 600 16px/1.5 inherit; font-family: inherit; color: var(--muted); }
+
+  /* cards: an event to add, something written */
+  .card { width: 100%; max-width: 680px; padding: 16px; }
+  .card-head { display: flex; align-items: center; gap: 14px; }
+  .card-head i { width: 32px; height: 32px; flex-shrink: 0; display: grid; place-items: center; color: var(--accent); }
+  .card-head i svg { width: 27px; height: 27px; }
+  .card-head > span { display: grid; gap: 2px; min-width: 0; }
+  .card-head b { font-size: 16px; font-weight: 650; overflow-wrap: anywhere; }
+  .card-head span span { font-size: 13.5px; color: var(--muted); line-height: 1.4; }
+  .card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .card-actions .btn { flex: 1 1 130px; width: auto; min-height: 46px; padding: 0 14px; font-size: 14.5px; --c: 9px; }
+  .card.doc h4 { margin: 0 0 10px; font: 600 16px/1.3 var(--display); letter-spacing: .02em; }
+  .doc-body { max-height: 46vh; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15.5px; line-height: 1.6; color: var(--text);
+    padding-right: 4px; scrollbar-width: thin; scrollbar-color: rgb(var(--accent-rgb) / .4) transparent; }
+
+  /* the forecast */
+  .wx { width: 100%; max-width: 520px; padding: 16px 16px 12px; --fill: linear-gradient(160deg, rgb(var(--accent-rgb) / .13), rgb(var(--accent-rgb) / .02) 60%), var(--panel); }
+  .wx i { display: grid; place-items: center; color: var(--accent); }
+  .wx-now { display: flex; align-items: center; gap: 12px; }
+  .wx-now i svg { width: 46px; height: 46px; }
+  .wx-now > b { font: 600 46px/1 var(--display); letter-spacing: -.01em; }
+  .wx-now div { display: grid; gap: 2px; min-width: 0; margin-left: 4px; }
+  .wx-now strong { font-size: 16px; font-weight: 650; }
+  .wx-now span { font-size: 13px; color: var(--muted); }
+  .wx-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 8px; margin: 16px 0 14px; padding: 12px 0; border-block: 1px solid var(--line); }
+  .wx-facts div { display: grid; gap: 1px; }
+  .wx-facts dt { font-size: 12px; color: var(--faint); }
+  .wx-facts dd { margin: 0; font: 600 15px/1.3 var(--mono); font-variant-numeric: tabular-nums; }
+  .wx-facts small { font: 11.5px/1 system-ui, sans-serif; color: var(--muted); }
+  .wx ol { list-style: none; margin: 0; padding: 0; }
+  .wx-hours { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 12px 12px !important; }
+  .wx-hours::-webkit-scrollbar { display: none; }
+  .wx-hours li { flex: 0 0 52px; display: grid; justify-items: center; gap: 5px; }
+  .wx-hours time { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .wx-hours i svg { width: 22px; height: 22px; }
+  .wx-hours b { font: 600 14px/1 var(--mono); }
+  .wx-days { border-top: 1px solid var(--line); }
+  .wx-days li { display: grid; grid-template-columns: 52px 26px 1fr 38px 38px; align-items: center; gap: 8px; min-height: 36px; }
+  .wx-days time { font-size: 14px; }
+  .wx-days i svg { width: 21px; height: 21px; }
+  .wx-days span { font-size: 12px; color: var(--muted); }
+  .wx-days b, .wx-days em { font: 600 14px/1 var(--mono); font-style: normal; text-align: right; }
+  .wx-days em { color: var(--faint); font-weight: 500; }
+  .wx-source { margin: 8px 0 0; font-size: 11.5px; color: var(--faint); }
+
+  /* a photo waiting to be sent with the message */
+  .field .attach { width: 44px; height: 50px; align-self: flex-end; color: var(--muted); }
+  .attach-preview { display: flex; align-items: flex-start; gap: 2px; max-width: 760px; margin: 0 auto; padding: 8px calc(var(--sar) + 12px) 0 calc(var(--sal) + 12px); animation: rise .5s var(--out) both; }
+  .attach-preview img { width: 68px; height: 68px; object-fit: cover; outline: 1px solid var(--line-2); outline-offset: -1px; }
+  .attach-preview .icon-btn { width: 36px; height: 36px; margin: -6px 0 0 -4px; }
+  .attach-preview .icon-btn svg { width: 16px; height: 16px; }
+
   /* Small system-level notes: what happened on the computer (an action done or failed), connection events. */
   .note { align-self: center; display: inline-flex; align-items: center; gap: 7px; margin-top: 16px; max-width: 92%;
     font-size: 12.5px; color: var(--faint); text-align: center; animation: fade .5s ease-out both; }
@@ -840,11 +925,17 @@
     </button>
 
     <div class="composer-wrap">
+      <div class="attach-preview" id="attachPreview" hidden>
+        <img id="attachThumb" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="The picture you're sending" width="68" height="68">
+        <button class="icon-btn" id="attachRemove" type="button" aria-label="Remove the picture"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
       <form class="composer" id="composer" autocomplete="off">
         <div class="field-wrap">
           <div class="field">
             <i aria-hidden="true"></i>
             <textarea id="input" rows="1" placeholder="Message Jarvis" enterkeyhint="send" aria-label="Message Jarvis" autocapitalize="sentences" autocorrect="on" spellcheck="true"></textarea>
+            <button class="icon-btn attach" id="attachBtn" type="button" aria-label="Add a picture to ask about" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 3.5 3 3-2.5 5 4"/></svg></button>
+            <input type="file" id="attachInput" accept="image/*" hidden>
           </div>
           <div class="recbar" id="recbar" aria-hidden="true"><span class="rec-dot"></span><time id="recTime">0:00</time><span class="slide" id="recHint">Slide left to cancel</span></div>
         </div>
@@ -906,13 +997,13 @@
        planet.js, sphere_gl.js), loaded from the computer the first time one arrives. Same element ids as its window. ============ -->
   <div class="vis-layer" id="graphLayer" hidden role="dialog" aria-modal="true" aria-labelledby="graphTitle">
     <div class="vis-card"><header class="vis-head"><div class="vis-heading"><p class="vis-kicker" id="graphKicker">Graph</p><h2 id="graphTitle"></h2></div>
-      <div class="vis-actions"><span class="vis-nav" id="graphNav" hidden><button id="graphPrev" type="button" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><span id="graphCount">1 / 1</span><button id="graphNext" type="button" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button></span><button id="graphSave" type="button" hidden>Save</button><button class="vis-close" id="graphClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></header>
+      <div class="vis-actions"><span class="vis-nav" id="graphNav" hidden><button id="graphPrev" type="button" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><span id="graphCount">1 / 1</span><button id="graphNext" type="button" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button></span><button id="graphSave" type="button">Save image</button><button class="vis-close" id="graphClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></header>
       <div class="vis-stage"><canvas id="graphCanvas" aria-label="Graph"></canvas></div>
       <ul class="vis-facts" id="graphFacts"></ul></div>
   </div>
   <div class="vis-layer" id="earthLayer" hidden role="dialog" aria-modal="true" aria-labelledby="earthTitle">
     <div class="vis-card"><header class="vis-head"><div class="vis-heading"><p class="vis-kicker" id="earthKicker">Journey</p><h2 id="earthTitle"></h2><p class="vis-sub" id="earthSub"></p></div>
-      <div class="vis-actions"><span class="vis-nav" id="earthNav" hidden><button id="earthPrev" type="button" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><span id="earthCount">1 / 1</span><button id="earthNext" type="button" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button></span><button id="earthSave" type="button" hidden>Save</button><button class="vis-close" id="earthClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></header>
+      <div class="vis-actions"><span class="vis-nav" id="earthNav" hidden><button id="earthPrev" type="button" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><span id="earthCount">1 / 1</span><button id="earthNext" type="button" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button></span><button id="earthSave" type="button">Save image</button><button class="vis-close" id="earthClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></header>
       <div class="vis-stage"><canvas id="earthCanvas" aria-label="3D globe"></canvas>
         <div class="journey-hud" id="journeyHud" hidden><span class="journey-end" id="journeyFrom"></span><div class="journey-track"><i class="journey-fill" id="journeyFill"></i><svg class="journey-plane" id="journeyPlane" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg></div><span class="journey-end" id="journeyTo"></span><span class="journey-km" id="journeyKm"></span></div>
         <div class="vis-controls"><button id="earthPlay" type="button">Pause</button><button id="earthReplay" type="button">Replay</button><button id="earthSkip" type="button">Skip</button></div>
@@ -921,7 +1012,7 @@
   </div>
   <div class="vis-layer" id="planetLayer" hidden role="dialog" aria-modal="true" aria-labelledby="planetTitle">
     <div class="vis-card"><header class="vis-head"><div class="vis-heading"><p class="vis-kicker" id="planetKicker">Planet</p><h2 id="planetTitle"></h2></div>
-      <div class="vis-actions"><span class="vis-nav" id="planetNav" hidden><button id="planetPrev" type="button" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><span id="planetCount">1 / 1</span><button id="planetNext" type="button" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button></span><button id="planetSave" type="button" hidden>Save</button><button class="vis-close" id="planetClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></header>
+      <div class="vis-actions"><span class="vis-nav" id="planetNav" hidden><button id="planetPrev" type="button" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><span id="planetCount">1 / 1</span><button id="planetNext" type="button" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button></span><button id="planetSave" type="button">Save image</button><button class="vis-close" id="planetClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></header>
       <div class="vis-stage"><canvas id="planetCanvas" aria-label="A 3D model of the planet"></canvas></div>
       <ul class="vis-facts" id="planetFacts"></ul></div>
   </div>
@@ -1256,6 +1347,8 @@
     toastTimer = setTimeout(() => el.classList.remove("show"), ms);
   }
   const haptic = (ms = 8) => { try { navigator.vibrate && navigator.vibrate(ms); } catch { /* not supported */ } };
+  /** One of the app's own line icons, from its paths. */
+  const drawn = (paths) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
 
   // ===================================================================================================== keyboard / viewport
   // Android Chrome (interactive-widget=resizes-content) already shrinks the page for the keyboard; visualViewport
@@ -1301,7 +1394,51 @@
       .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
       .replace(/\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)"'\]]/g, (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
   }
-  // A small, safe Markdown subset — paragraphs, lists, code blocks — since Jarvis's replies sometimes use them.
+  // Maths as Jarvis writes it in a worked answer (fractions, roots, powers, a few symbols), set with plain HTML.
+  const TEX_SYMBOLS = { pm: "±", mp: "∓", cdot: "·", times: "×", div: "÷", Delta: "Δ", approx: "≈", neq: "≠", lt: "&lt;", le: "≤", leq: "≤",
+                        gt: "&gt;", ge: "≥", geq: "≥", pi: "π", infty: "∞", to: "→", quad: "&emsp;", qquad: "&emsp;&emsp;", left: "", right: "" };
+  function tex(source) {
+    let i = 0, out = "";
+    const group = () => {   // {…} with its braces matched, or just the next character
+      if (source[i] !== "{") return i < source.length ? escapeHtml(source[i++]) : "";
+      let depth = 0;
+      const start = ++i;
+      for (; i < source.length; i++) {
+        if (source[i] === "{") depth++;
+        else if (source[i] === "}") { if (!depth) break; depth--; }
+      }
+      return tex(source.slice(start, i++));
+    };
+    while (i < source.length) {
+      const c = source[i];
+      if (c === "\\") {
+        const name = /^\\([a-zA-Z]+|.?)/.exec(source.slice(i))[1];
+        i += name.length + 1;
+        if (name === "frac") { const top = group(), bottom = group(); out += `<span class="frac"><span>${top}</span><span>${bottom}</span></span>`; }
+        else if (name === "sqrt") out += `<span class="sqrt">√<span>${group()}</span></span>`;
+        else if (name === "text" || name === "mathrm") out += `<span class="tex-text">${group()}</span>`;
+        else if (name in TEX_SYMBOLS) out += TEX_SYMBOLS[name];
+        else out += /^[a-zA-Z]+$/.test(name) ? name : /^[ ,;:!]?$/.test(name) ? " " : escapeHtml(name);   // \sin stays "sin"
+      } else if (c === "^") { i++; out += `<sup>${group()}</sup>`; }
+      else if (c === "_") { i++; out += `<sub>${group()}</sub>`; }
+      else if (c === "{") out += group();
+      else { out += escapeHtml(c); i++; }
+    }
+    return out;
+  }
+  /** One line of a reply: its $maths$ set as maths, the rest with the usual inline formatting. */
+  function inline(raw) {
+    let out = "", last = 0;
+    raw.replace(/\$([^\s$](?:[^$\n]*[^\s$])?)\$/g, (whole, body, at) => {
+      if (!/[\\^_={}]/.test(body)) return whole;   // "$5 and $10" is money
+      out += inlineFormat(escapeHtml(raw.slice(last, at))) + `<span class="tex">${tex(body)}</span>`;
+      last = at + whole.length;
+      return whole;
+    });
+    return out + inlineFormat(escapeHtml(raw.slice(last)));
+  }
+  // A small, safe Markdown subset — paragraphs, lists, code blocks, and a worked answer's headings and maths — since
+  // Jarvis's replies use them.
   function renderRich(text) {
     const out = [];
     const parts = String(text).split(/```/);
@@ -1318,12 +1455,20 @@
         if (!trimmed) continue;
         const lines = trimmed.split("\n");
         if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(trimmed)) { out.push("<hr>"); continue; }
-        if (lines.every((l) => /^\s*[-*•]\s+/.test(l))) {
-          out.push("<ul>" + lines.map((l) => `<li>${inlineFormat(escapeHtml(l.replace(/^\s*[-*•]\s+/, "")))}</li>`).join("") + "</ul>");
+        if (lines.some((l) => /^\s*(?:#{1,4}\s|\$\$.*\$\$\s*$|>\s)/.test(l))) {   // a worked answer: steps, maths, the boxed result
+          for (const l of lines) {
+            let m;
+            if ((m = /^\s*#{1,4}\s+(.*)$/.exec(l))) out.push(`<h4>${inline(m[1])}</h4>`);
+            else if ((m = /^\s*\$\$(.*)\$\$\s*$/.exec(l))) out.push(`<div class="tex tex-block">${tex(m[1])}</div>`);
+            else if ((m = /^\s*>\s?(.*)$/.exec(l))) out.push(`<blockquote${/\$.+\$/.test(m[1]) ? ' class="answer"' : ""}>${inline(m[1])}</blockquote>`);   // the boxed result
+            else if (l.trim()) out.push(`<p>${inline(l)}</p>`);
+          }
+        } else if (lines.every((l) => /^\s*[-*•]\s+/.test(l))) {
+          out.push("<ul>" + lines.map((l) => `<li>${inline(l.replace(/^\s*[-*•]\s+/, ""))}</li>`).join("") + "</ul>");
         } else if (lines.every((l) => /^\s*\d+[.)]\s+/.test(l))) {
-          out.push("<ol>" + lines.map((l) => `<li>${inlineFormat(escapeHtml(l.replace(/^\s*\d+[.)]\s+/, "")))}</li>`).join("") + "</ol>");
+          out.push("<ol>" + lines.map((l) => `<li>${inline(l.replace(/^\s*\d+[.)]\s+/, ""))}</li>`).join("") + "</ol>");
         } else {
-          out.push(`<p>${lines.map((l) => inlineFormat(escapeHtml(l))).join("<br>")}</p>`);
+          out.push(`<p>${lines.map((l) => inline(l)).join("<br>")}</p>`);
         }
       }
     });
@@ -1375,7 +1520,8 @@
       const body = document.createElement("div");
       body.className = "text";
       body.innerHTML = renderRich(text || "");
-      if (opts.image) { const img = new Image(); img.src = opts.image; img.alt = ""; img.loading = "lazy"; img.decoding = "async"; body.appendChild(img); }
+      if (opts.image instanceof HTMLImageElement) body.appendChild(opts.image);   // already loaded (a picture Jarvis just made)
+      else if (opts.image) { const img = new Image(); img.src = opts.image; img.alt = ""; img.loading = "lazy"; img.decoding = "async"; body.appendChild(img); }
       row.appendChild(body);
     }
     target.appendChild(row);
@@ -1534,6 +1680,7 @@
         break;
       case "session_info":
         computerName = m.computerName || "";
+        computerAssists = m.assist === true;
         if (m.vapidKey) vapidKey = m.vapidKey;
         if (Array.isArray(m.history) && m.history.length) {
           // The computer's own conversation is the source of truth: it includes what was said at the computer,
@@ -1552,6 +1699,11 @@
       case "visual":
         handleVisual(m.visual, m.open === true && document.visibilityState === "visible");
         break;
+      case "assist_result": {
+        const done = assists.get(m.requestId);
+        if (done) { assists.delete(m.requestId); done(m); }
+        break;
+      }
       case "chat": {
         if (m.sender === "user" && takeEcho(m.text)) break;   // a request the phone's own Jarvis sent there
         if (m.sender === "ai" && computerRequests.size) { holdComputerAnswer(m); break; }
@@ -1665,7 +1817,7 @@
     });
   }
   let phoneAgent = null;
-  const agent = () => phoneAgent || (phoneAgent = window.JarvisCore.createAgent(() => aiConfig, askComputer));
+  const agent = () => phoneAgent || (phoneAgent = window.JarvisCore.createAgent(() => aiConfig, askComputer, { tools: phoneTools(), note: PHONE_NOTE }));
   let turns = Promise.resolve();
 
   function historyForAI() {
@@ -1678,28 +1830,728 @@
     return out.slice(-12);
   }
 
-  async function runOnPhone(text, voice) {
+  const spokenPart = (text) => String(text || "").split(/\n\s*(?:#{1,4}\s|---)/)[0].trim();   // a worked answer is read up to its worksheet
+  async function runOnPhone(text, voice, image) {
     const history = historyForAI();
-    addMessage("user", text);
-    showTyping("Still thinking…");
+    addMessage("user", text, image ? { image } : {});
+    turnExtras = [];
+    turnImage = null;
+    showTyping(brain.state === "loading" ? "Getting ready…" : "Still thinking…");
     let reply;
     try {
-      reply = await agent().respond({
-        text, mode: prefs.mode, history,
-        computer: { online: conn.ready, name: computerName, status: $("connText").textContent || "not connected" },
-        confirm: async (title, detail) => window.confirm(detail ? `${title}\n${detail}` : title),
-        onActivity: (a) => { if (a.where === "computer" && a.status === "running") showTyping("Working on it on your computer…"); },
-      });
+      reply = await phoneTurn(text, history, image);
     } catch (e) {
-      reply = { text: "Something went wrong there. Try again?", where: "none" };
+      console.warn("Jarvis on the phone:", e);
+      reply = { text: e instanceof Error && /key|rate limit|set up/i.test(e.message) ? e.message : "Something went wrong there. Try again?", where: "none" };
     }
     hideTyping();
-    addMessage("ai", reply.text);
+    const picture = reply.image || turnImage;
+    addMessage("ai", reply.text || "", picture ? { image: picture } : {});
     lastAiTexts.push(reply.text); if (lastAiTexts.length > 5) lastAiTexts.shift();
-    if (voice || prefs.speakAlways) speak(reply.text);
+    for (const show of turnExtras.splice(0)) { try { show(); } catch (e) { console.warn(e); } }   // its cards, under the words
+    if (voice || prefs.speakAlways || reply.spoken) speak(reply.spoken || spokenPart(reply.text));
     // part of the one conversation: the computer's window and its AI hear about it too, whenever it's reachable
-    if (reply.where !== "computer" && conn.ready) conn.send({ type: "phone_turn", user: text, reply: reply.text });
+    if (reply.where !== "computer" && conn.ready && reply.text) conn.send({ type: "phone_turn", user: text, reply: spokenPart(reply.text).slice(0, 600) });
   }
+
+  // ===================================================================================================== Jarvis's brain, on the phone
+  // "On this phone" has Jarvis's own brain with it: the same Python modules he uses on the computer (math, graphs,
+  // the globe, planets, weather, timers, music requests), running in a worker of this page (phone_brain_worker.js,
+  // phone_brain.py). A message goes there first; what it answers is shown and done right here, with no computer.
+  // Loaded in the background when the chat opens; if this phone's browser can't run it, everything else still works.
+  const brain = {
+    worker: null, state: "idle", waiting: new Map(), nextId: 1, readyWaiters: [],
+    start() {
+      if (this.worker || this.state === "failed") return;
+      if (!window.Worker || !window.WebAssembly) { this.state = "failed"; return; }
+      let worker;
+      try { worker = new Worker("/phone_brain_worker.js"); } catch { this.state = "failed"; return; }
+      this.worker = worker;
+      this.state = app.dataset.brain = "loading";
+      const fail = () => {
+        this.state = app.dataset.brain = "failed";
+        this.worker = null;
+        try { worker.terminate(); } catch { /* already gone */ }
+        for (const done of this.waiting.values()) done(null);
+        this.waiting.clear();
+        this.settle();
+      };
+      worker.onerror = (e) => { if (e && e.preventDefault) e.preventDefault(); fail(); };
+      worker.onmessage = (event) => {
+        const m = event.data || {};
+        if (m.ready) { this.state = app.dataset.brain = "ready"; this.settle(); return; }
+        if (m.failed) { console.warn("Jarvis's brain didn't start on this phone:", m.failed); fail(); return; }
+        const done = this.waiting.get(m.id);
+        if (done) { this.waiting.delete(m.id); done(m.error ? null : m.result); }
+      };
+    },
+    settle() { for (const waiter of this.readyWaiters.splice(0)) waiter(); },
+    /** true once it's ready; false if it isn't going to be (or not within `patience` ms). */
+    whenReady(patience) {
+      this.start();
+      if (this.state === "ready") return Promise.resolve(true);
+      if (this.state === "failed") return Promise.resolve(false);
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(false), patience);
+        this.readyWaiters.push(() => { clearTimeout(timer); resolve(this.state === "ready"); });
+      });
+    },
+    /** What the brain makes of one message (see phone_brain.handle), or null if it can't be asked. */
+    async ask(text, patience = 30000) {
+      if (!(await this.whenReady(patience))) return null;
+      return new Promise((resolve) => {
+        const id = this.nextId++;
+        const timer = setTimeout(() => { this.waiting.delete(id); resolve(null); }, 30000);
+        this.waiting.set(id, (result) => { clearTimeout(timer); resolve(result); });
+        this.worker.postMessage({ id, text, settings: {
+          timers: timers.snapshot(), weatherCity: (aiConfig && aiConfig.weatherCity) || "",
+          history: transcript.filter((m) => m.s === "user").slice(-4).map((m) => m.t) } });
+      });
+    },
+  };
+
+  // ---- what only the computer has: the user's Spotify sign-in, and where a title is on Netflix ("assist")
+  const assists = new Map();
+  let computerAssists = false;   // this computer's Jarvis answers "assist" requests (told in session_info)
+  function assist(kind, payload, timeout = 12000) {
+    if (!conn.ready || !computerAssists) return Promise.resolve(null);
+    const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { assists.delete(requestId); resolve(null); }, timeout);
+      assists.set(requestId, (answer) => { clearTimeout(timer); resolve(answer); });
+      conn.send({ type: "assist", kind, requestId, ...payload });
+    });
+  }
+  const spotifyThroughComputer = () => conn.ready && computerAssists && !!(aiConfig && aiConfig.spotify);
+
+  // ---- opening other apps: a link is all a web app can hand the phone
+  const enc = encodeURIComponent;
+  /** Opens a link that belongs to an app; true if the app came up (this page went to the background). */
+  function launchUrl(url, wait = 2500) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (opened) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener("visibilitychange", onVisibility);
+        window.removeEventListener("pagehide", onHide);
+        clearTimeout(timer);
+        resolve(opened);
+      };
+      const onVisibility = () => { if (document.hidden) finish(true); };
+      const onHide = () => finish(true);
+      document.addEventListener("visibilitychange", onVisibility);
+      window.addEventListener("pagehide", onHide);
+      const timer = setTimeout(() => finish(false), wait);
+      try { window.location.href = url; } catch { finish(false); }
+    });
+  }
+  const androidApp = (httpsUrl, pkg) => `intent://${httpsUrl.replace(/^https?:\/\//, "")}#Intent;scheme=https;package=${pkg};end`;
+  /** An app on this phone at something specific, or its website when the app isn't there. `link`: {app, web}. */
+  async function openOnPhone(link) {
+    if (link.app && (await launchUrl(link.app))) return "app";
+    try { if (link.web && window.open(link.web, "_blank", "noopener")) return "web"; } catch { /* blocked */ }
+    return "";
+  }
+  /** A way back to what was opened, in the chat: tapping it always works, even where opening by itself was blocked. */
+  function addOpenChip(title, sub, link, icon) {
+    const row = addMessage("ai", "", { noCache: true });
+    const empty = row.querySelector(".text");
+    if (empty) empty.remove();
+    const chip = document.createElement("button");
+    chip.type = "button"; chip.className = "vis-chip";
+    chip.innerHTML = `<i>${icon || ICON_PLAY}</i><span><b></b><span></span></span>`;
+    chip.querySelector("b").textContent = title;
+    chip.querySelector("span span").textContent = sub;
+    chip.addEventListener("click", async () => { if (!(await openOnPhone(link))) toast("That didn't open on this phone"); });
+    row.appendChild(chip);
+    scrollToBottom(true);
+  }
+  const ICON_PLAY = drawn('<path d="M8 5.5v13l10.5-6.5z"/>');
+  const ICON_NOTE = drawn('<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>');
+  const ICON_CLOCK = drawn('<circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 3h5"/>');
+  const ICON_CAL = drawn('<rect x="3.5" y="5" width="17" height="15.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>');
+
+  // ---------------------------------------------------------------- music, on this phone
+  const MUSIC_APPS = {   // each service's app (and website), on a search
+    spotify: { name: "Spotify", pkg: "com.spotify.music", ios: (q) => `spotify:search:${enc(q)}`, web: (q) => `https://open.spotify.com/search/${enc(q)}` },
+    apple_music: { name: "Apple Music", pkg: "com.apple.android.music", ios: (q) => `music://music.apple.com/search?term=${enc(q)}`, web: (q) => `https://music.apple.com/search?term=${enc(q)}` },
+    youtube_music: { name: "YouTube Music", pkg: "com.google.android.apps.youtube.music", ios: (q) => `youtubemusic://music.youtube.com/search?q=${enc(q)}`, web: (q) => `https://music.youtube.com/search?q=${enc(q)}` },
+    youtube: { name: "YouTube", pkg: "com.google.android.youtube", ios: (q) => `youtube://results?search_query=${enc(q)}`, web: (q) => `https://www.youtube.com/results?search_query=${enc(q)}` },
+    soundcloud: { name: "SoundCloud", pkg: "com.soundcloud.android", web: (q) => `https://soundcloud.com/search?q=${enc(q)}` },
+    deezer: { name: "Deezer", pkg: "deezer.android.app", web: (q) => `https://www.deezer.com/search/${enc(q)}` },
+    tidal: { name: "Tidal", pkg: "com.aspiro.tidal", web: (q) => `https://listen.tidal.com/search?q=${enc(q)}` },
+    amazon_music: { name: "Amazon Music", pkg: "com.amazon.mp3", web: (q) => `https://music.amazon.com/search/${enc(q)}` },
+  };
+  function musicLink(service, query, liked) {
+    const app = MUSIC_APPS[service] || MUSIC_APPS.spotify;
+    if (liked && service === "spotify") return { app: IS_ANDROID ? "intent://collection/tracks#Intent;scheme=spotify;package=com.spotify.music;end" : "spotify:collection:tracks", web: "https://open.spotify.com/collection/tracks" };
+    const web = app.web(query);
+    return { app: IS_IOS ? (app.ios ? app.ios(query) : "") : IS_ANDROID ? (service === "spotify" ? `intent://search/${enc(query)}#Intent;scheme=spotify;package=${app.pkg};end` : androidApp(web, app.pkg)) : "", web };
+  }
+  /** Music asked for on the phone. `said`: the user's own words; `request`: how the brain (or the AI) read them. */
+  async function playMusic(said, request) {
+    const service = request.service || "spotify";
+    const liked = request.kind === "liked";
+    const query = liked ? "Liked Songs" : [request.mix || request.query, request.by].filter(Boolean).join(" ");
+    const app = MUSIC_APPS[service] || MUSIC_APPS.spotify;
+    const link = musicLink(service, query, liked);
+    const what = liked ? "your liked songs" : `“${query}”`;
+    if (service === "spotify" && spotifyThroughComputer()) {
+      // The computer holds the Spotify sign-in: it starts the music on this phone's own Spotify (Spotify Connect),
+      // with everything it knows on the computer (your playlists, mixes, albums, shuffle).
+      showTyping("Starting it in Spotify on this phone…");
+      const started = await assist("music", { text: said });
+      if (started && started.ok) return started.reply;
+      if (started && started.reason === "no_device") {
+        // Spotify isn't up on this phone yet: open it, and the computer starts the music the moment it appears.
+        assist("music", { text: said, wait: true }, 30000).then((late) => { if (late && late.ok) addMessage("ai", late.reply); });
+        addOpenChip(liked ? "Liked Songs" : query, "Open in Spotify", link, ICON_NOTE);
+        const opened = await openOnPhone(link);
+        return opened === "app" ? `Opening Spotify to play ${what}. It starts by itself in a moment.`
+          : opened ? `Spotify didn't open on this phone (it may not be installed), so I opened ${what} on its website.`
+          : `Tap the button above to open Spotify, and ${what} starts by itself.`;
+      }
+    }
+    addOpenChip(liked ? "Liked Songs" : query, `Open in ${app.name}`, link, ICON_NOTE);
+    const opened = await openOnPhone(link);
+    if (opened === "app") return `Opened ${app.name} on ${what}. Tap play to start it.`;
+    if (opened === "web") return `${app.name} didn't open on this phone (it may not be installed), so I opened ${what} on its website.`;
+    return `Tap the button above to open ${what} in ${app.name}.`;
+  }
+  // "Pause", "next song", "skip to 2:30", "volume up": only ever short, and only about what's playing
+  const PLAYBACK = new RegExp("^(?:please )?(?:" + [
+    "pause|stop|resume|unpause|continue|keep playing|next|previous|skip|mute|unmute|louder|quieter",
+    "(?:pause|stop|resume|continue|skip|restart|replay) (?:the |this |that )?(?:song|track|music|playback|one|it)",
+    "(?:next|previous|last) (?:song|track|one)|skip (?:this )?(?:song|track)",
+    "(?:go|skip|jump|fast forward|rewind)(?: back)? to .+|(?:play|start)(?: it| the song)? from .+",
+    "start (?:it|the song|this song) (?:over|again|from the (?:beginning|start))|play the \\w+ minute",
+    "(?:turn (?:it|the (?:volume|music|sound)) (?:up|down)|volume (?:up|down)|set (?:the )?volume (?:to )?\\d+|volume (?:to )?\\d+)(?: a (?:bit|little|lot))?",
+    "(?:play )?another (?:song|one) (?:by|of|from) .+|(?:play )?something else by .+",
+  ].join("|") + ")(?: please)?$");
+  async function musicControl(said) {
+    if (spotifyThroughComputer()) {
+      const done = await assist("music", { text: said });
+      if (done && done.ok) return { text: done.reply, where: "phone" };
+      if (done && done.reason === "no_device") return { text: "Spotify isn't open on this phone right now. Open it, and I can control it from here.", where: "none" };
+      if (done && done.reason === "not_music") return null;
+    }
+    if (/\b(?:volume|louder|quieter|mute|unmute)\b/i.test(said)) {
+      return { text: "I can't change this phone's volume from here. Use the volume buttons on its side.", where: "none" };
+    }
+    if (spotifyThroughComputer()) return { text: "I couldn't reach Spotify just now. Try again in a moment.", where: "none" };
+    // pausing and skipping go through the Spotify account, and that is signed in on the computer
+    return { text: !conn.ready ? "I can pause, skip and jump around in Spotify on this phone while your computer is on (your Spotify sign-in lives there). Right now I can't reach it, so use Spotify's own buttons."
+      : "To pause and skip Spotify on this phone, your Spotify account has to be connected in Jarvis's Settings on the computer. Until then, use Spotify's own buttons.", where: "none" };
+  }
+
+  // ---------------------------------------------------------------- videos, on this phone
+  /** {title, service, season, episode, trailer} for "play The Office on Netflix", "show me the trailer of Wednesday"… */
+  function parseVideo(said) {
+    let n = said.replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "");
+    if (/^(?:what|who|how|why|when|where|which|is|are|does|do|did|can)\b/i.test(n)) return null;
+    const trailer = /\btrailers?\b/i.test(n);
+    const service = /\bnetflix\b/i.test(n) ? "netflix" : /\bstremio\b/i.test(n) ? "stremio" : /\byou ?tube\b(?! music)/i.test(n) ? "youtube" : "";
+    if (!service && !trailer) return null;
+    const asks = /^(?:(?:hey |ok |okay )?jarvis[, ]+)?(?:(?:no|yes|ok|okay|now|and|then)[, ]+)*(?:(?:please|can you|could you|i want to|i wanna|let'?s)\s+)*(?:play|watch|show(?: me)?|put on|open|start|find|search(?: for)?|see)\b/i;
+    if (!asks.test(n) && !trailer) return null;
+    let season = null, episode = null, m;
+    if ((m = /\bs(\d{1,2})\s*e(\d{1,3})\b/i.exec(n))) { season = +m[1]; episode = +m[2]; n = n.replace(m[0], " "); }
+    if ((m = /\bseason (\d{1,2})\b/i.exec(n))) { season = +m[1]; n = n.replace(m[0], " "); }
+    if ((m = /\bepisode (\d{1,3})\b/i.exec(n))) { episode = +m[1]; n = n.replace(m[0], " "); }
+    n = n.replace(/^(?:(?:hey |ok |okay )?jarvis[, ]+)?(?:(?:no|yes|ok|okay|now|and|then)[, ]+)*(?:(?:please|can you|could you|i want to|i wanna|let'?s)\s+)*/i, "")
+      .replace(/^open (?:netflix|stremio|youtube)(?: and)? /i, "")
+      .replace(/^(?:play|watch|show(?: me)?|put on|open|start|find|search(?: for)?|see)\s+/i, "")
+      .replace(/\b(?:on|in|from|at|with|through|using|via)\s+(?:netflix|stremio|you ?tube)\b/gi, " ")
+      .replace(/\b(?:netflix|stremio|you ?tube)\b/gi, " ")
+      .replace(/\b(?:the |a |an )?(?:official |new |latest )*trailers?(?: (?:of|for|to|from))?\b/gi, " ")
+      .replace(/^(?:a video (?:about|of|on)|videos? (?:about|of|on)|the (?:series|show|movie|film))\s+/i, "")
+      .replace(/\s*[,;]\s*/g, " ").replace(/\b(?:please|for me|now)\s*$/i, "").replace(/\s+/g, " ").trim()
+      .replace(/^(?:of|for|and|the trailer)\s+|\s+(?:of|for|and|on)$/gi, "").trim();
+    if (!n || /^(?:it|this|that|them|one)$/i.test(n)) return null;
+    return { title: n, service: service || "youtube", season, episode, trailer };
+  }
+  async function playVideo(v) {
+    const ICON = drawn('<rect x="3" y="5" width="18" height="14"/><path d="M10 9.5v5l4.5-2.5z"/>');
+    if (v.service === "netflix") {
+      const found = await assist("netflix", { title: v.title, season: v.season, episode: v.episode, trailer: v.trailer }, 20000);
+      const web = found && found.ok ? found.url : `https://www.netflix.com/search?q=${enc(v.title)}`;
+      const link = { app: IS_IOS ? web.replace(/^https:/, "nflx:") : IS_ANDROID ? androidApp(web, "com.netflix.mediaclient") : "", web };
+      const name = (found && found.name) || v.title;
+      addOpenChip(name, "Open in Netflix", link, ICON);
+      const opened = await openOnPhone(link);
+      const where = opened === "app" ? "Netflix" : opened ? "Netflix's website" : "";
+      if (found && found.ok) {
+        if (!where) return { text: `Tap the button above to open ${name} on Netflix.`, where: "phone" };
+        return { text: v.trailer ? `Opening ${name} on ${where}: its trailer plays at the top of the page.`
+          : `Opening ${found.episode ? `${name}, ${found.episode}` : name} on ${where}.`, where: "phone" };
+      }
+      const lead = found && found.reason === "no_episode" ? `I couldn't find that episode of ${name}, so I searched` : "I searched";
+      return { text: where ? `${lead} Netflix for “${v.title}”. Tap it to play.` : `Tap the button above to search Netflix for “${v.title}”.`, where: "phone" };
+    }
+    if (v.service === "stremio") {
+      const link = { app: `stremio:///search?search=${enc(v.title)}`, web: `https://web.stremio.com/#/search?search=${enc(v.title)}` };
+      addOpenChip(v.title, "Open in Stremio", link, ICON);
+      const opened = await openOnPhone(link);
+      return { text: opened ? `Searching Stremio for “${v.title}”. Tap it to play.` : `Tap the button above to find “${v.title}” in Stremio.`, where: "phone" };
+    }
+    const query = v.trailer ? `${v.title} official trailer` : v.title;
+    const link = musicLink("youtube", query);
+    addOpenChip(query, "Open in YouTube", link, ICON);
+    const opened = await openOnPhone(link);
+    return { text: opened ? `Searching YouTube for “${query}”. Tap the first result to play it.` : `Tap the button above to find “${query}” on YouTube.`, where: "phone" };
+  }
+
+  // ---------------------------------------------------------------- timers and reminders, kept by this app
+  // Read by the brain exactly as on the computer ("set a 30 second timer for the eggs"); counted down here. A web
+  // app is only awake while it's open: a timer that ends while the phone is locked rings when Jarvis is back.
+  let audio = null;
+  function unlockAudio() {   // phones only let a page make sound once a tap has started its audio
+    try {
+      if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === "suspended") audio.resume();
+    } catch { audio = null; }
+  }
+  document.addEventListener("pointerdown", unlockAudio, { passive: true });
+  function ring() {
+    haptic([220, 120, 220, 120, 420]);
+    if (!audio) return;
+    try {
+      for (let i = 0; i < 6; i++) {
+        const at = audio.currentTime + 0.05 + i * 0.33 + Math.floor(i / 2) * 0.24;
+        const tone = audio.createOscillator(), level = audio.createGain();
+        tone.type = "sine"; tone.frequency.value = i % 2 ? 1175 : 880;
+        level.gain.setValueAtTime(0.0001, at);
+        level.gain.exponentialRampToValueAtTime(0.28, at + 0.02);
+        level.gain.exponentialRampToValueAtTime(0.0001, at + 0.26);
+        tone.connect(level).connect(audio.destination);
+        tone.start(at); tone.stop(at + 0.3);
+      }
+    } catch { /* silent, the message still shows */ }
+  }
+  const clock = (seconds) => {
+    const s = Math.max(0, Math.ceil(seconds)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+    return (h ? `${h}:${String(m).padStart(2, "0")}` : String(m)) + ":" + String(s % 60).padStart(2, "0");
+  };
+  const timers = {
+    list: (store.get("jarvis_timers", []) || []).filter((t) => t && t.id && t.end && t.total),
+    handles: new Map(), ticking: 0,
+    snapshot() { return this.list.map(({ id, label, kind, total, end }) => ({ id, label, kind, total, end })); },
+    save() { store.set("jarvis_timers", this.list); },
+    apply(command) {
+      if (command.action === "set") this.add(command);
+      else if (command.action === "cancel") for (const id of command.ids || []) this.end(id, "Cancelled");
+    },
+    add({ label, kind, total, done }) {
+      const timer = { id: Date.now() % 1e9 + Math.floor(Math.random() * 1000), label: label || "", kind, total, end: Date.now() / 1000 + total, done };
+      this.list.push(timer);
+      this.save();
+      this.schedule(timer);
+      turnExtras.push(() => this.chip(timer));
+    },
+    schedule(timer) {
+      clearTimeout(this.handles.get(timer.id));
+      this.handles.set(timer.id, setTimeout(() => this.fire(timer.id), Math.min(Math.max(0, timer.end * 1000 - Date.now()), 2 ** 31 - 1)));
+      if (!this.ticking) this.ticking = setInterval(() => this.tick(), 500);
+    },
+    end(id, word) {
+      clearTimeout(this.handles.get(id));
+      this.handles.delete(id);
+      this.list = this.list.filter((t) => t.id !== id);
+      this.save();
+      for (const chip of document.querySelectorAll(`.timer-chip[data-timer="${id}"]`)) {
+        chip.classList.add("over");
+        chip.querySelector("time").textContent = word;
+        const cancel = chip.querySelector("button");
+        if (cancel) cancel.remove();
+      }
+      if (!this.list.length) { clearInterval(this.ticking); this.ticking = 0; }
+    },
+    fire(id) {
+      const timer = this.list.find((t) => t.id === id);
+      if (!timer) return;
+      if (timer.end * 1000 - Date.now() > 400) { this.schedule(timer); return; }   // woken early: not yet
+      this.end(id, "Done");
+      const late = Date.now() / 1000 - timer.end > 20;
+      const done = timer.done || { message: "Time's up.", spoken: "Time's up." };
+      ring();
+      addMessage("ai", late ? `${done.message} (It ended while Jarvis was closed.)` : done.message);
+      if (prefs.speakAlways) speak(done.spoken);
+    },
+    tick() {
+      const now = Date.now() / 1000;
+      for (const chip of document.querySelectorAll(".timer-chip:not(.over)")) chip.querySelector("time").textContent = clock(Number(chip.dataset.end) - now);
+    },
+    chip(timer) {
+      const row = addMessage("ai", "", { noCache: true });
+      const empty = row.querySelector(".text");
+      if (empty) empty.remove();
+      const chip = document.createElement("div");
+      chip.className = "timer-chip"; chip.dataset.timer = timer.id; chip.dataset.end = timer.end;
+      chip.innerHTML = `<i>${ICON_CLOCK}</i><span><b></b><time></time></span><button type="button">Cancel</button>`;
+      chip.querySelector("b").textContent = timer.kind === "reminder" ? (timer.label ? `Reminder: ${timer.label}` : "Reminder") : (timer.label ? `Timer: ${timer.label}` : "Timer");
+      chip.querySelector("time").textContent = clock(timer.end - Date.now() / 1000);
+      chip.querySelector("button").onclick = () => { this.end(timer.id, "Cancelled"); toast("Cancelled"); };
+      row.appendChild(chip);
+      scrollToBottom(true);
+    },
+    /** Back in the app (or just opened): whatever ended meanwhile rings now; the rest keep counting, on screen. */
+    catchUp(show) {
+      for (const timer of [...this.list]) {
+        if (timer.end * 1000 <= Date.now()) this.fire(timer.id);
+        else { this.schedule(timer); if (show && !document.querySelector(`.timer-chip[data-timer="${timer.id}"]`)) this.chip(timer); }
+      }
+    },
+  };
+
+  // ---------------------------------------------------------------- the weather, in the chat
+  const WX_ICONS = {
+    clear: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>',
+    night: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
+    partly: '<circle cx="8" cy="8" r="3"/><path d="M8 2v1.5M2 8h1.5M3.8 3.8l1 1M12.2 3.8l-1 1"/><path d="M8.5 19.5h8.5a3.5 3.5 0 0 0 .5-6.960A5 5 0 0 0 8 13.5a3 3 0 0 0 .5 6z"/>',
+    cloudy: '<path d="M7 18.5h10a4 4 0 0 0 .6-7.960A5.5 5.5 0 0 0 7 11.5a3.5 3.5 0 0 0 0 7z"/>',
+    fog: '<path d="M7 13h10a3.5 3.5 0 0 0 .5-6.960A5 5 0 0 0 8 7a3 3 0 0 0-1 6zM4 16.5h16M6 20h12"/>',
+    drizzle: '<path d="M7 14h10a3.5 3.5 0 0 0 .5-6.960A5 5 0 0 0 8 8a3 3 0 0 0-1 6zM9 17.5v1.5M15 17.5v1.5"/>',
+    rain: '<path d="M7 13h10a3.5 3.5 0 0 0 .5-6.960A5 5 0 0 0 8 7a3 3 0 0 0-1 6zM8 16l-1 4M12.5 16l-1 4M17 16l-1 4"/>',
+    snow: '<path d="M7 13h10a3.5 3.5 0 0 0 .5-6.960A5 5 0 0 0 8 7a3 3 0 0 0-1 6zM8 17v.01M12 19v.01M16 17v.01M10 21v.01M14 21v.01"/>',
+    storm: '<path d="M7 13h10a3.5 3.5 0 0 0 .5-6.960A5 5 0 0 0 8 7a3 3 0 0 0-1 6zM12.5 14.5l-2.5 4h3.5l-2 3.5"/>',
+  };
+  const wxIcon = (kind, isDay) => drawn(WX_ICONS[kind === "clear" && isDay === false ? "night" : kind] || WX_ICONS.cloudy);
+  function addWeatherCard(data) {
+    const row = addMessage("ai", "", { noCache: true });
+    const empty = row.querySelector(".text");
+    if (empty) empty.remove();
+    const now = data.current || {}, today = data.today || {}, deg = (v) => (v == null ? "–" : `${Math.round(v)}°`);
+    const place = String((data.place || {}).name || "").split(",")[0];
+    const hour = (t) => new Date(t).toLocaleTimeString([], { hour: "numeric" });
+    const day = (d, i) => (i === 0 ? "Today" : new Date(d + "T12:00").toLocaleDateString([], { weekday: "short" }));
+    const upcoming = (data.hourly || []).filter((h) => h.time >= (data.observed || "")).slice(0, 12);
+    const card = document.createElement("div");
+    card.className = "wx";
+    card.innerHTML = `
+      <div class="wx-now"><i>${wxIcon(now.kind, now.is_day)}</i><b>${deg(now.temp)}</b>
+        <div><strong>${escapeHtml(now.label || "")}</strong><span>${escapeHtml(place)} · feels like ${deg(now.feels)}</span></div></div>
+      <dl class="wx-facts">
+        <div><dt>High</dt><dd>${deg(today.high)}</dd></div><div><dt>Low</dt><dd>${deg(today.low)}</dd></div>
+        <div><dt>Rain</dt><dd>${today.rain_chance == null ? "–" : today.rain_chance + "%"}</dd></div>
+        <div><dt>Humidity</dt><dd>${now.humidity == null ? "–" : now.humidity + "%"}</dd></div>
+        <div><dt>Wind</dt><dd>${now.wind == null ? "–" : Math.round(now.wind)} <small>${escapeHtml((data.units || {}).wind || "km/h")}</small></dd></div>
+        <div><dt>UV</dt><dd>${now.uv == null ? "–" : Math.round(now.uv)}</dd></div>
+      </dl>
+      <ol class="wx-hours">${upcoming.map((h) => `<li><time>${escapeHtml(hour(h.time))}</time><i>${wxIcon(h.kind, h.is_day)}</i><b>${deg(h.temp)}</b></li>`).join("")}</ol>
+      <ol class="wx-days">${(data.daily || []).slice(0, 7).map((d, i) =>
+        `<li><time>${escapeHtml(day(d.date, i))}</time><i>${wxIcon(d.kind, true)}</i><span>${d.rain_chance ? d.rain_chance + "%" : ""}</span><b>${deg(d.high)}</b><em>${deg(d.low)}</em></li>`).join("")}</ol>
+      <p class="wx-source">${escapeHtml(((data.source || {}).name || "") + (data.stale ? " · an earlier forecast" : ""))}</p>`;
+    row.appendChild(card);
+    scrollToBottom(true);
+  }
+
+  // ---------------------------------------------------------------- the calendar
+  // With the computer on, an event is made there, in your own calendar (it reaches this phone through your account).
+  // Without it: an event for the phone's calendar to add, one tap.
+  const CAL_CREATE = /\b(?:make|create|add|schedule|set up)\b.*\b(?:calendar\s+)?(?:event|meeting|appointment)\b|\b(?:add|put|save|write)\b.+\b(?:to|in|on|into)\s+(?:my\s+|the\s+)?(?:google\s+|apple\s+)?calendar\b|^(?:please\s+)?(?:can you\s+)?(?:schedule|book)\b.+\b(?:tomorrow|today|tonight|on|at|next|this)\b/i;
+  const CAL_READ = /\b(?:check|read|hear|see|show me|what'?s on|what is on)\b.*\b(?:calendar|schedule|agenda)\b|\bmy (?:next|upcoming) events?\b|\bwhat'?s (?:coming up|next) on my calendar\b/i;
+  const stamp = (date, dayOnly) => {
+    const p = (n) => String(n).padStart(2, "0");
+    const day = `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}`;
+    return dayOnly ? day : `${day}T${p(date.getHours())}${p(date.getMinutes())}00`;
+  };
+  function addEventCard(event) {
+    const start = new Date(event.start);
+    if (isNaN(start)) return "I couldn't work out when that is. Tell me the day and the time.";
+    const allDay = !!event.all_day;
+    let end = event.end ? new Date(event.end) : null;
+    if (!end || isNaN(end) || end <= start) end = new Date(start.getTime() + (allDay ? 24 : 1) * 3600000);
+    if (allDay) { start.setHours(0, 0, 0, 0); end = new Date(Math.max(end.getTime(), start.getTime() + 24 * 3600000)); end.setHours(0, 0, 0, 0); }
+    const title = String(event.title || "Event").slice(0, 120), where = String(event.location || "").slice(0, 120);
+    const reminders = (Array.isArray(event.reminder_minutes) ? event.reminder_minutes : []).map(Number).filter((m) => m >= 0 && m <= 40320).slice(0, 4);
+    const text = (s) => s.replace(/[\\;,]/g, "\\$&").replace(/\n/g, "\\n");
+    const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Jarvis//Phone//EN", "BEGIN:VEVENT",
+      `UID:${Date.now()}-${Math.random().toString(36).slice(2)}@jarvis`, `DTSTAMP:${new Date().toISOString().replace(/[-:]|\.\d+/g, "")}`,
+      allDay ? `DTSTART;VALUE=DATE:${stamp(start, true)}` : `DTSTART:${stamp(start)}`, allDay ? `DTEND;VALUE=DATE:${stamp(end, true)}` : `DTEND:${stamp(end)}`,
+      `SUMMARY:${text(title)}`, ...(where ? [`LOCATION:${text(where)}`] : []),
+      ...reminders.flatMap((m) => ["BEGIN:VALARM", `TRIGGER:-PT${m}M`, "ACTION:DISPLAY", `DESCRIPTION:${text(title)}`, "END:VALARM"]),
+      "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+    const google = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${enc(title)}&dates=${stamp(start, allDay)}/${stamp(end, allDay)}${where ? `&location=${enc(where)}` : ""}`;
+    const when = allDay ? start.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }) + ", all day"
+      : start.toLocaleString([], { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }) + " to " + end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    turnExtras.push(() => {
+      const row = addMessage("ai", "", { noCache: true });
+      const empty = row.querySelector(".text");
+      if (empty) empty.remove();
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `<div class="card-head"><i>${ICON_CAL}</i><span><b></b><span></span></span></div>
+        <div class="card-actions"><a class="btn primary" download="event.ics">Add to Calendar</a><a class="btn quiet" target="_blank" rel="noopener">Google Calendar</a></div>`;
+      card.querySelector("b").textContent = title;
+      card.querySelector(".card-head span span").textContent = when + (reminders.length ? ` · reminder ${reminders.map((m) => (m >= 1440 ? `${m / 1440} day` : m >= 60 ? `${m / 60} h` : `${m} min`)).join(", ")} before` : "");
+      const [add, viaGoogle] = card.querySelectorAll("a");
+      add.href = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
+      viaGoogle.href = google;
+      row.appendChild(card);
+      scrollToBottom(true);
+    });
+    return `I've set up “${title}” for ${when}. Tap Add to Calendar to save it on this phone.`;
+  }
+
+  // ---------------------------------------------------------------- writing: a story, a poem, a list, into any app
+  const DOC_APPS = {   // where it's meant to go: a web app can't type into another app, so it hands the text over
+    gdocs: { name: "Google Docs", open: "https://docs.new" }, word: { name: "Word", open: IS_IOS ? "ms-word://" : "" },
+    pages: { name: "Pages", open: "" }, notes: { name: "Notes", open: IS_IOS ? "mobilenotes://" : "" }, textedit: { name: "Notes", open: IS_IOS ? "mobilenotes://" : "" },
+  };
+  const DOC_NAMED = [["gdocs", /\bgoogle (?:docs?|documents?|drive)\b|\b(?:in|into|on|open|to) (?:the )?docs\b/], ["word", /\bmicrosoft(?: office)? word\b|\bms word\b|\bword (?:document|doc|app)\b|\b(?:in|into|on|using|with|open|launch) (?:the )?word\b/],
+    ["pages", /\bapple pages\b|\b(?:in|into|open|using|on) pages\b/], ["textedit", /\btext ?edit\b|\bnote ?pad\b|\btext editor\b/], ["notes", /\bnotes app\b|\b(?:in|into|open|using|to|on) (?:the |my )?notes\b/]];
+  const DOC_WRITE = /\b(write|type|draft|compose|generate|jot down)\b|\bmake (?:me )?(?:a|an) (?:short |long |quick )?(?:story|poem|essay|letter|list|summary|report|note|speech|email|article)\b/;
+  const DOC_EDIT = /\b(make|change|edit|shorten|lengthen|extend|add|remove|delete|rewrite|replace|translate|fix|improve|expand|continue|update|modify|revise|rephrase|summarize|shorter|longer|correct|append|insert|cut|trim)\b/;
+  const DOC_TARGET = /\b(it|this|that|story|poem|document|doc|text|letter|essay|note|title|paragraph|paragraphs|ending|beginning|intro|introduction|conclusion|sentence|sentences|list|email|speech|article|report|grammar|spelling|wording|tone|content|words|everything)\b/;
+  const DOC_NOT = /\b(music|song|songs|video|volume|sound|episode|season|netflix|youtube|stremio|spotify|tab|window|timer|graph|picture|image)\b/;
+  const DOC_READ = /^(?:please )?read (?:it|that|this|the (?:story|poem|document|text|list|letter|essay))(?: (?:to me|aloud|out loud|back))*$/;
+  let lastDocument = null;   // {title, body, app, at}: for "make it shorter", "read it to me"
+  async function writeDocument(request, app, previous) {
+    showTyping(previous ? "Rewriting it…" : "Writing it…");
+    const system = previous
+      ? "You are editing the user's document. Apply their request and answer with the complete new version: first line a short title, then a blank line, then the text. Plain text only: no markdown symbols, no commentary before or after."
+      : "Write what the user asks for, well. First line: a short title. Then a blank line, then the text. Plain text only: no markdown symbols, no commentary before or after. Ignore the part of the request that names an app to put it in.";
+    let written;
+    try {
+      written = await agent().complete(system, previous ? `The document:\n${previous.title}\n\n${previous.body}\n\nThe request: ${request}` : request, 1700, 0.8);
+    } catch (e) {
+      return { text: e && e.message ? e.message : "I couldn't write that just now. Try again?", where: "none" };
+    }
+    const lines = written.trim().split("\n");
+    const title = (lines.shift() || "").replace(/^[#*\s]+|[*\s]+$/g, "").slice(0, 80) || "Untitled";
+    const doc = lastDocument = { title, body: lines.join("\n").trim() || title, app: app || (previous && previous.app) || "", at: Date.now() };
+    turnExtras.push(() => {
+      const row = addMessage("ai", "", { noCache: true });
+      const empty = row.querySelector(".text");
+      if (empty) empty.remove();
+      const where = DOC_APPS[doc.app];
+      const card = document.createElement("div");
+      card.className = "card doc";
+      card.innerHTML = `<h4></h4><div class="doc-body"></div><div class="card-actions"></div>`;
+      card.querySelector("h4").textContent = doc.title;
+      card.querySelector(".doc-body").textContent = doc.body;
+      const actions = card.querySelector(".card-actions"), whole = `${doc.title}\n\n${doc.body}`;
+      const button = (label, kind, run) => { const b = document.createElement("button"); b.type = "button"; b.className = "btn " + kind; b.textContent = label; b.onclick = run; actions.appendChild(b); };
+      if (navigator.share) button(where ? `Share to ${where.name}` : "Share", "primary", () => navigator.share({ title: doc.title, text: whole }).catch(() => { /* closed without sharing */ }));
+      button("Copy", navigator.share ? "quiet" : "primary", () => copyText(whole).then((ok) => toast(ok ? "Copied" : "Couldn't copy")));
+      if (where && where.open) button(`Open ${where.name}`, "quiet", () => copyText(whole).then(async (ok) => {
+        toast(ok ? "Copied. Paste it in the new document" : "Opening it");
+        if (/^https:/.test(where.open)) window.open(where.open, "_blank", "noopener"); else if (!(await launchUrl(where.open))) toast(`${where.name} didn't open on this phone`);
+      }));
+      row.appendChild(card);
+      scrollToBottom(true);
+    });
+    const into = DOC_APPS[doc.app] ? DOC_APPS[doc.app].name : "";
+    return { text: previous ? "Done. Here's the new version." : `I wrote “${title}”.` + (into ? ` ${navigator.share ? "Tap Share" : "Tap Copy"} to put it in ${into}. (I can't type into another app from here.)` : ""), where: "phone" };
+  }
+
+  // ---------------------------------------------------------------- pictures
+  const MAKE_IMAGE = /^(?:(?:hey |ok |okay )?(?:jarvis|jervis)[, ]+)?(?:(?:please|can you|could you|would you|i want you to|i'd like you to|go ahead and)\s+)*(?:generate|create|make|draw|paint|design|render)\s+(?:me\s+|for me\s+)?(?:a\s+|an\s+|another\s+|one\s+)?(?:new\s+)?(?:(?:realistic|cartoon|anime|cute|cool|funny|beautiful|\w+[- ]style)\s+)?(?:image|picture|photo|pic|drawing|painting|illustration|artwork|wallpaper|poster|logo)s?\s*(?:of\s+|showing\s+|that shows\s+|with\s+|where\s+|:\s*|-\s*|about\s+)(.+?)[.!]*$/i;
+  const DRAW_THING = /^(?:(?:please|can you|could you)\s+)*(?:draw|paint)\s+(?:me\s+)?((?:a|an|some)\s+.+?)[.!]*$/i;
+  const IMAGE_PROMPT = "You turn a short request for a picture into one prompt for an image model. Keep exactly what was asked for (every subject, person, place, count, color and style the user named) and add only what makes it look great: the composition, the setting's details, lighting, lens or art medium, mood and quality cues. Photorealistic unless the user asked for a style. No text or letters in the picture unless asked. Answer with the prompt only, one paragraph, at most 70 words.";
+  async function makeImage(what) {
+    showTyping("Creating it…");
+    let detailed = what;   // a short request made into a full description: the biggest single difference to the result
+    try {
+      const better = (await agent().complete(IMAGE_PROMPT, what, 400, 0.7)).replace(/^"|"$/g, "");
+      if (better.length >= 10 && better.length <= 1200) detailed = better;
+    } catch { /* drawn from the request as said */ }
+    // Loaded once and that same picture is what goes in the chat (asking the service twice for it gets the second
+    // one refused). The free service turns away requests that come too close together: one more try, a bit later.
+    const load = () => new Promise((resolve) => {
+      const picture = new Image();
+      const timer = setTimeout(() => resolve(null), 120000);
+      picture.alt = what;
+      picture.onload = () => { clearTimeout(timer); resolve(picture); };
+      picture.onerror = () => { clearTimeout(timer); resolve(null); };
+      picture.src = `https://image.pollinations.ai/prompt/${enc(detailed)}?width=1024&height=1024&seed=${Math.floor(Math.random() * 1e9)}&nologo=true&model=sana`;
+    });
+    let picture = await load();
+    if (!picture) {
+      showTyping("Still creating it…");
+      await new Promise((resolve) => setTimeout(resolve, 16000));
+      picture = await load();
+    }
+    if (!picture) return { text: "I couldn't make that picture just now: the picture service is busy. Try again in a minute.", where: "none" };
+    return { text: `Here's your picture of ${what}. Press and hold it to save it.`, image: picture, where: "phone" };
+  }
+  // a photo to ask about: made small enough to send, kept only until the message goes
+  let attached = "";
+  function setAttached(dataUrl) {
+    attached = dataUrl || "";
+    $("attachPreview").hidden = !attached;
+    if (attached) $("attachThumb").src = attached;
+    refreshAction();
+  }
+  $("attachBtn").onclick = () => $("attachInput").click();
+  $("attachRemove").onclick = () => setAttached("");
+  $("attachInput").addEventListener("change", () => {
+    const file = $("attachInput").files && $("attachInput").files[0];
+    $("attachInput").value = "";
+    if (!file) return;
+    const picture = new Image(), source = URL.createObjectURL(file);
+    picture.onload = () => {
+      const scale = Math.min(1, 1280 / Math.max(picture.naturalWidth, picture.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(picture.naturalWidth * scale); canvas.height = Math.round(picture.naturalHeight * scale);
+      canvas.getContext("2d").drawImage(picture, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(source);
+      setAttached(canvas.toDataURL("image/jpeg", 0.85));
+      input.focus();
+    };
+    picture.onerror = () => { URL.revokeObjectURL(source); toast("That picture couldn't be opened"); };
+    picture.src = source;
+  });
+
+  // ---------------------------------------------------------------- one message, on the phone
+  let turnExtras = [];        // cards to show under this turn's answer (a forecast, a running timer, a document)
+  let computerFollowUp = 0;   // the computer asked a question back (its calendar steps): the next message is its answer
+  const ONLY_COMPUTER = /^(?!.*\bsend\b).*(?:\b(?:google )?classroom\b|\bwhatsapp\b.*\b(?:unread|messages?|wrote|said|read)\b|\b(?:unread|read|new)\b.*\bwhatsapp\b)/i;
+  async function viaComputer(said) {
+    showTyping("Working on it on your computer…");
+    const answer = await askComputer(said);
+    computerFollowUp = answer.ok && /\?/.test(answer.text || "") ? Date.now() : 0;   // it asked something back ("Do you want a reminder? …")
+    return { text: answer.text, where: "computer" };
+  }
+  /** The skills that don't need the AI to be understood. null: not one of them. */
+  async function directSkill(said) {
+    const n = said.toLowerCase().replace(/[^a-z0-9' :]/g, " ").replace(/\s+/g, " ").trim();
+    if (ONLY_COMPUTER.test(n)) {
+      return conn.ready ? viaComputer(said) : { text: "That's something only your computer can read, and I can't reach it right now.", where: "none" };
+    }
+    if (CAL_CREATE.test(n) || CAL_READ.test(n)) {
+      if (conn.ready) return viaComputer(said);
+      if (!CAL_CREATE.test(n)) return { text: "I can only read your calendar through your computer, and I can't reach it right now.", where: "none" };
+      return null;   // made here: the AI reads the event out of the sentence (add_calendar_event)
+    }
+    if (lastDocument && Date.now() - lastDocument.at < 60 * 60000) {
+      if (DOC_READ.test(n)) return { text: "Here it is, read aloud.", spoken: `${lastDocument.title}. ${lastDocument.body}`, where: "phone" };
+      if (DOC_EDIT.test(n) && DOC_TARGET.test(n) && !DOC_NOT.test(n)) return writeDocument(said, lastDocument.app, lastDocument);
+    }
+    const docApp = DOC_WRITE.test(n) && !/^(?:i |we |he |she |they |you )/.test(n) && (DOC_NAMED.find(([, pattern]) => pattern.test(n)) || [])[0];
+    if (docApp) return writeDocument(said, docApp);
+    const picture = MAKE_IMAGE.exec(said.replace(/\s+/g, " ").trim()) || DRAW_THING.exec(said.replace(/\s+/g, " ").trim());
+    if (picture && picture[1].length > 1) return makeImage(picture[1].trim());
+    if (PLAYBACK.test(n) && n.split(" ").length <= 9) { const controlled = await musicControl(said); if (controlled) return controlled; }
+    const video = parseVideo(said);
+    if (video) return playVideo(video);
+    const play = /^(?:(?:hey |ok |okay )?(?:jarvis|jervis)[, ]+)?(?:(?:please|can you|could you|i want to|i wanna|let'?s)\s+)*(?:play|put on|listen to)\s+(?!it\b|this\b|that\b|them\b|a game\b)(.+?)(?:\s+please)?[.!?]*$/i.exec(said.replace(/\s+/g, " ").trim());
+    if (play) {
+      const named = Object.keys(MUSIC_APPS).find((id) => new RegExp(`\\b(?:on|in|from|with|using)\\s+${MUSIC_APPS[id].name}\\b`, "i").test(play[1])) || "";
+      const query = play[1].replace(/\b(?:on|in|from|with|using)\s+(?:spotify|apple music|youtube music|soundcloud|deezer|tidal|amazon music)\b/gi, " ")
+        .replace(/\b(?:the )?(?:song|track)\b/gi, " ").replace(/\s+/g, " ").trim();
+      if (query) return { text: await playMusic(said, { query, service: named }), where: "phone" };
+    }
+    return null;
+  }
+  async function phoneTurn(said, history, image) {
+    if (image) return { text: await agent().see(said, image), where: "none" };
+    const out = await brain.ask(said);
+    const text = (out && out.text) || said;   // with its typos fixed
+    if (out && out.music) return { text: await playMusic(text, out.music), where: "phone" };
+    if (out && out.reply != null) {
+      if (out.visual) await handleVisual(out.visual, true);
+      if (out.timer) timers.apply(out.timer);
+      if (out.weather) turnExtras.push(() => addWeatherCard(out.weather));
+      return { text: out.reply, where: "phone" };
+    }
+    // The computer asked something back a moment ago ("Do you want a reminder?"), and this reads like the answer
+    // ("10 minutes", "no", "never mind"): it goes there. A new request ("play…", "what's…") never does.
+    const answering = computerFollowUp && Date.now() - computerFollowUp < 3 * 60000 && conn.ready && text.trim().split(/\s+/).length <= 8
+      && !/^(?:play|open|generate|create|make|write|draw|graph|plot|solve|set|show|what|how|who|why|where|when|tell|search|call|text|remind|turn)\b/i.test(text.trim());
+    if (answering) return viaComputer(text);
+    computerFollowUp = 0;
+    const direct = await directSkill(text);
+    if (direct) return direct;
+    return agent().respond({
+      text, mode: prefs.mode, history,
+      computer: { online: conn.ready, name: computerName, status: $("connText").textContent || "not connected" },
+      confirm: async (title, detail) => window.confirm(detail ? `${title}\n${detail}` : title),
+      onActivity: (a) => { if (a.where === "computer" && a.status === "running") showTyping("Working on it on your computer…"); },
+    });
+  }
+
+  // ---- the same skills, for when the AI is the one that understood the request (said another way, or mid-conversation)
+  const PHONE_NOTE = "This is the Jarvis web app on the phone. It can't read contacts (calls and texts need a number), open Settings, " +
+    "switch Wi-Fi or Bluetooth, close other apps or tabs, or change the phone's volume: say so plainly when asked. " +
+    "It CAN, with its tools: timers and reminders, the weather, graphs, equations step by step, distances and flights on a 3D globe, " +
+    "planets (jarvis_skill); music (play_music, music_control); videos, Netflix and trailers (play_video); calendar events " +
+    "(add_calendar_event); stories, poems, lists and letters for Notes, Google Docs, Word or Pages (write_document); pictures (make_image).";
+  const S = (description) => ({ type: "string", description });
+  const N = (description) => ({ type: "number", description });
+  function phoneTools() {
+    const done = (reply) => ({ ok: true, message: reply.text, final: true, data: reply });
+    return [
+      { name: "jarvis_skill", where: "phone",
+        description: "Jarvis's own skills, shown on this phone: graph a function; solve an equation step by step; the distance, route or flight time between two places on a 3D globe; countries a route crosses; cities near a place; day, night, sunrise and sunset on the globe; a planet, the Sun or the Moon in 3D; the weather forecast; timers and reminders (set, cancel, time left). Give one plain command, e.g. \"graph y = sin(x)/x\", \"solve 2x + 4 = 24\", \"distance between Tokyo and New York\", \"tell me about Saturn\", \"weather in Paris\", \"set a timer for 10 minutes\", \"remind me in 1 hour to call Mom\".",
+        parameters: { type: "object", properties: { command: S("The request as one plain English command") }, required: ["command"] },
+        label: (a) => String(a.command || ""),
+        run: async (a) => {
+          const out = await brain.ask(String(a.command || ""));
+          if (!out) return { ok: false, message: "That skill isn't loaded on this phone yet. Try again in a moment.", final: true };
+          if (out.music) return { ok: true, message: await playMusic(out.text, out.music), final: true };
+          if (out.reply == null) return { ok: false, message: "I couldn't work that out from the way it was put." };
+          if (out.visual) await handleVisual(out.visual, true);
+          if (out.timer) timers.apply(out.timer);
+          if (out.weather) turnExtras.push(() => addWeatherCard(out.weather));
+          return { ok: true, message: out.reply, final: true };
+        } },
+      { name: "play_music", where: "phone",
+        description: "Play music on this phone: a song, an artist, an album, a playlist (the user's own or any), their liked songs. Spotify unless another service is named.",
+        parameters: { type: "object", properties: { query: S("Song, artist, album or playlist name"), kind: { type: "string", enum: ["song", "artist", "album", "playlist", "liked"] },
+          service: { type: "string", enum: Object.keys(MUSIC_APPS) }, mine: { type: "boolean", description: "The user's own playlist" }, shuffle: { type: "boolean" } }, required: ["query"] },
+        label: (a) => `Playing ${String(a.query || "")}`,
+        run: async (a) => {
+          const kind = a.kind || "song", query = String(a.query || "").trim(), service = a.service && MUSIC_APPS[a.service] ? a.service : "";
+          const said = kind === "liked" ? `${a.shuffle ? "shuffle" : "play"} my liked songs`
+            : `${a.shuffle ? "shuffle" : "play"} ${kind === "playlist" ? `${a.mine ? "my" : "the"} ${query} playlist` : kind === "album" ? `the album ${query}` : kind === "artist" ? `songs by ${query}` : query}${service ? ` on ${MUSIC_APPS[service].name}` : ""}`;
+          return { ok: true, message: await playMusic(said, { query, kind, service }), final: true };
+        } },
+      { name: "music_control", where: "phone",
+        description: "Control what's playing in Spotify on this phone: pause, resume, next, previous, restart, jump to a time, volume.",
+        parameters: { type: "object", properties: { action: { type: "string", enum: ["pause", "resume", "next", "previous", "restart", "seek", "volume_up", "volume_down", "set_volume"] },
+          seconds: N("For seek: where to jump to, in seconds"), percent: N("For set_volume") }, required: ["action"] },
+        label: (a) => String(a.action || ""),
+        run: async (a) => {
+          const said = { pause: "pause", resume: "resume", next: "next song", previous: "previous song", restart: "start it over", volume_up: "volume up", volume_down: "volume down",
+            seek: `skip to ${Math.floor((a.seconds || 0) / 60)}:${String(Math.floor(a.seconds || 0) % 60).padStart(2, "0")}`, set_volume: `set the volume to ${Math.round(a.percent || 50)}` }[a.action] || "pause";
+          const reply = await musicControl(said);
+          return reply ? { ok: reply.where === "phone", message: reply.text, final: true } : { ok: false, message: "Nothing is playing in Spotify on this phone." };
+        } },
+      { name: "play_video", where: "phone",
+        description: "Play or find a video, show, film or trailer on this phone: YouTube, Netflix or Stremio. Trailers play on YouTube unless Netflix is named.",
+        parameters: { type: "object", properties: { title: S("What to play"), service: { type: "string", enum: ["youtube", "netflix", "stremio"] }, season: N("Season number"), episode: N("Episode number"),
+          trailer: { type: "boolean" } }, required: ["title"] },
+        label: (a) => `Finding ${String(a.title || "")}`,
+        run: async (a) => done(await playVideo({ title: String(a.title || "").trim(), service: a.service || "youtube", season: a.season || null, episode: a.episode || null, trailer: !!a.trailer })) },
+      { name: "youtube", where: "phone", description: "Search YouTube on this phone.",
+        parameters: { type: "object", properties: { query: S("What to search for") }, required: ["query"] },
+        label: (a) => `Searching YouTube for ${String(a.query || "")}`,
+        run: async (a) => done(await playVideo({ title: String(a.query || "").trim(), service: "youtube" })) },
+      { name: "spotify", where: "phone", description: "Play or find music on Spotify on this phone.",
+        parameters: { type: "object", properties: { query: S("What to play") }, required: ["query"] },
+        label: (a) => `Playing ${String(a.query || "")}`,
+        run: async (a) => ({ ok: true, message: await playMusic(`play ${String(a.query || "")} on Spotify`, { query: String(a.query || "").trim(), service: "spotify" }), final: true }) },
+      { name: "add_calendar_event", where: "phone",
+        description: "Make a calendar event for the user to add to this phone's calendar. Work out the title, start and end from what they said; ask only for what's truly missing.",
+        parameters: { type: "object", properties: { title: S("Short event title"), start: S("Start as local ISO time, e.g. 2026-10-12T17:00"), end: S("End as local ISO time; leave out for one hour"),
+          all_day: { type: "boolean" }, reminder_minutes: { type: "array", items: { type: "number" }, description: "Reminders, in minutes before (10, 60, 1440 for a day)" }, location: S("Where") }, required: ["title", "start"] },
+        label: (a) => `Setting up ${String(a.title || "the event")}`,
+        run: async (a) => ({ ok: true, message: addEventCard(a), final: true }) },
+      { name: "write_document", where: "phone",
+        description: "Write a story, poem, list, letter, essay, note or email for the user, to put in Notes, Google Docs, Word or Pages. Pass their request; the text is written and shown with a Share button.",
+        parameters: { type: "object", properties: { request: S("What to write, in the user's words"), app: { type: "string", enum: ["notes", "gdocs", "word", "pages"] } }, required: ["request"] },
+        label: () => "Writing it",
+        run: async (a) => done(await writeDocument(String(a.request || ""), a.app || "")) },
+      { name: "make_image", where: "phone",
+        description: "Create a picture from a description (generate, draw, paint, design).",
+        parameters: { type: "object", properties: { description: S("What the picture shows") }, required: ["description"] },
+        label: () => "Creating the picture",
+        run: async (a) => { const made = await makeImage(String(a.description || "").trim()); turnImage = made.image || null; return { ok: !!made.image, message: made.text, final: true }; } },
+    ];
+  }
+  let turnImage = null;   // a picture made this turn by the AI's own choice of tool, shown with its answer
 
   // ===================================================================================================== graphs, globe, planets
   // The computer sends its window's pictures here too ("visual"): drawn by the very same code, which the phone loads
@@ -1718,7 +2570,6 @@
     }
     return visualsLoading;
   }
-  const drawn = (paths) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   const VISUAL_KINDS = {
     graph: { show: "showGraph", reopen: "reopenGraph", hide: "hideGraph", close: "graphClose", name: "Graph",
              icon: drawn('<path d="M3.5 3.5v17h17"/><path d="M6.5 17c2.4 0 3-10 5.4-10s3 7.5 6.6 7.5"/>'),
@@ -1778,7 +2629,8 @@
   function toComputer(text) {
     if (!phoneAI()) return true;                                   // no AI here yet: the computer's remote, as always
     const named = window.JarvisCore.explicitTarget(text);
-    if (named !== "phone" && prefs.mode === "phone" && conn.ready && VISUAL_REQUEST.test(text)) return true;   // a graph, globe, planet
+    // a graph, globe or planet while the phone's own brain isn't up yet (or can't run here): the computer draws it
+    if (named !== "phone" && prefs.mode === "phone" && conn.ready && brain.state !== "ready" && VISUAL_REQUEST.test(text)) return true;
     if (named === "phone" || prefs.mode === "phone") return false;
     if (conn.ready) return true;                                   // Computer mode, computer on
     return ["connecting", "waiting", "starting"].includes(conn.state);   // a moment away: wait for it, as before
@@ -1797,6 +2649,7 @@
     haptic(8);
     refreshModeSwitch();
     toast(prefs.mode === "phone" ? "Jarvis acts here on your phone" : "Jarvis acts on your computer");
+    if (prefs.mode === "phone") brain.start();
     if (prefs.mode === "computer" && !conn.ready) conn.start(true);   // open Jarvis on the computer now
     conn.renderStatus();
   });
@@ -1805,11 +2658,11 @@
   // ===================================================================================================== chat: messages out
   function sendText(raw, opts = {}) {
     const text = String(raw || "").trim();
-    if (!text) return;
+    if (!text && !opts.image) return;
     haptic(6);
-    if (!toComputer(text)) {
+    if (opts.image || !toComputer(text)) {   // a picture is always looked at here, by the phone's own Jarvis
       stickToBottom = true;
-      turns = turns.then(() => runOnPhone(text, opts.voice)).catch(() => {});
+      turns = turns.then(() => runOnPhone(text || "What's in this picture?", opts.voice, opts.image)).catch(() => {});
       return;
     }
     const p = { text, ts: Date.now(), sent: false, el: null };
@@ -1841,7 +2694,8 @@
     input.style.height = Math.min(input.scrollHeight, 154) + "px";
   }
   function refreshAction() {
-    const hasText = input.value.trim().length > 0;
+    const hasText = input.value.trim().length > 0 || !!attached;
+    $("attachBtn").hidden = !phoneAI();   // looking at pictures is the phone's own Jarvis
     const mode = hasText || !micAvailable() ? "send" : "mic";
     actionBtn.classList.toggle("send", mode === "send");
     actionBtn.setAttribute("aria-label", mode === "send" ? "Send" : "Hold to talk");
@@ -1853,12 +2707,12 @@
   });
   $("composer").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
   function submit() {
-    const text = input.value;
-    if (!text.trim()) return;
+    const text = input.value, image = attached;
+    if (!text.trim() && !image) return;
     input.value = "";
+    setAttached("");
     autosize();
-    refreshAction();
-    sendText(text);
+    sendText(text, { image });
   }
   input.addEventListener("focus", () => { if (stickToBottom) setTimeout(() => scrollToBottom(false), 250); });
 
@@ -2243,6 +3097,7 @@
   const ASK_AGAIN_AFTER = 10 * 60 * 1000;   // away this long: opening the app again is a new start, so it asks again
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (currentView === "chatView") timers.catchUp(false);   // one that ended while the app was away rings now
     if (chosen && saved() && hiddenAt && Date.now() - hiddenAt > ASK_AGAIN_AFTER && currentView === "chatView") {
       chosen = false;
       conn.stop("idle");
@@ -2829,6 +3684,8 @@
     refreshMenu();
     refreshModeSwitch();
     if (saved()) conn.start(prefs.mode === "computer"); else conn.setState("idle");
+    timers.catchUp(true);
+    if (phoneAI() && prefs.mode === "phone") setTimeout(() => brain.start(), 600);   // his own brain, ready before it's asked
   }
   function showChooser() {
     const phoneReady = phoneAI();

@@ -10,7 +10,9 @@ import { WEB_APP_NOTE, webPhoneTools } from "./webTools.ts";
 
 export type AskComputer = (request: string) => Promise<{ ok: boolean; text: string }>;
 
-export function createAgent(getConfig: () => AiConfig | null, askComputer: AskComputer) {
+/** extra: what the page itself adds, since that's where the app's own screen is (timers, cards, the globe): more
+ *  tools (one with a name already taken replaces it), and what to tell the AI about this copy of Jarvis. */
+export function createAgent(getConfig: () => AiConfig | null, askComputer: AskComputer, extra: { tools?: Tool[]; note?: string } = {}) {
   const registry = new ToolRegistry();
   const computer: Tool = {
     name: "run_on_computer", where: "computer",
@@ -24,9 +26,12 @@ export function createAgent(getConfig: () => AiConfig | null, askComputer: AskCo
     },
   };
   const platform = /iPad|iPhone|iPod/.test(navigator.userAgent) ? "ios" : /Android/i.test(navigator.userAgent) ? "android" : "web";
-  const agent = new JarvisAgent({ registry, platform, getConfig, fetch: (u, init) => fetch(u, init as RequestInit) as any, note: WEB_APP_NOTE });
-  registry.register(...webPhoneTools(), computer, webAnswerTool((q) => agent.searchWeb(q)));
+  const agent = new JarvisAgent({ registry, platform, getConfig, fetch: (u, init) => fetch(u, init as RequestInit) as any,
+                                  note: extra.note || WEB_APP_NOTE });
+  registry.register(...webPhoneTools(), computer, webAnswerTool((q) => agent.searchWeb(q)), ...(extra.tools || []));
   return {
+    complete: (system: string, user: string, maxTokens?: number, temperature?: number) => agent.complete(system, user, maxTokens, temperature),
+    see: (question: string, image: string) => agent.see(question, image),
     respond: (req: { text: string; mode: Mode; history: Turn[]; computer: { online: boolean; name?: string; status: string };
                      confirm: (title: string, detail?: string) => Promise<boolean>; onActivity?: (a: Activity) => void }) =>
       agent.respond({ ...req, ctx: { platform, confirm: req.confirm } }),

@@ -37,9 +37,28 @@ def test_every_listed_file_exists():
 def test_jarvis_wake_and_the_relay_serve_the_same_list():
     wake = _load("wake/jarvis_wake.py", "jarvis_wake_for_test")
     relay = _load("relay/server.py", "relay_server_for_test")
-    ours = (phone_visuals.SCRIPTS, phone_visuals.IMAGES, phone_visuals.FONTS)
-    assert (wake.VISUAL_SCRIPTS, wake.VISUAL_IMAGES, wake.VISUAL_FONTS) == ours
-    assert (relay.VISUAL_SCRIPTS, relay.VISUAL_IMAGES, relay.VISUAL_FONTS) == ours
+    ours = (phone_visuals.SCRIPTS, phone_visuals.IMAGES, phone_visuals.FONTS, phone_visuals.BRAIN)
+    assert (wake.VISUAL_SCRIPTS, wake.VISUAL_IMAGES, wake.VISUAL_FONTS, wake.BRAIN) == ours
+    assert (relay.VISUAL_SCRIPTS, relay.VISUAL_IMAGES, relay.VISUAL_FONTS, relay.BRAIN) == ours
+
+
+def test_the_phones_brain_gets_every_module_it_imports():
+    """The worker loads exactly the BRAIN list: a module phone_brain (or one of its modules) imports must be on it,
+    apart from Python's own and the three the worker stands in for (paths, osal, requests)."""
+    import ast
+    import sys
+    listed = {name[:-3] for name in phone_visuals.BRAIN if name.endswith(".py")}
+    stood_in, missing = {"paths", "osal", "requests"}, set()
+    for module in listed:
+        tree = ast.parse(open(os.path.join(ROOT, module + ".py"), encoding="utf-8").read())
+        for node in ast.walk(tree):
+            names = ([a.name for a in node.names] if isinstance(node, ast.Import)
+                     else [node.module] if isinstance(node, ast.ImportFrom) and node.module and not node.level else [])
+            for name in (n.split(".")[0] for n in names):
+                if name not in listed | stood_in and name not in sys.stdlib_module_names:
+                    missing.add(f"{module} imports {name}")
+    assert not missing, missing
+    assert "phone_brain_worker.js" in phone_visuals.SCRIPTS
 
 
 def test_nothing_else_in_the_project_is_reachable():

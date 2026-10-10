@@ -66,6 +66,8 @@ class H(BaseHTTPRequestHandler):
             out["devices"] = app.phone_server.registry.list()
             out["history"] = [{"role": m["role"], "content": m["content"]} for m in (app.chat_history or [])[-4:]]
             out["window"] = list(app.phone_chat_history)[-4:]
+        elif u.path == "/quit":   # the computer switched off, mid-test
+            threading.Timer(0.2, lambda: os._exit(0)).start()
         elif u.path == "/set_history":
             app.chat_history = [{"role": "system", "content": "x"}]
         body = json.dumps(out).encode()

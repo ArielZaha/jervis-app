@@ -173,6 +173,35 @@ export class JarvisAgent {
     return tidy(response.choices?.[0]?.message?.content) || "I couldn't find anything on that.";
   }
 
+  /** Plain writing with no tools: a story, a poem, a better description for a picture (the web app's documents and images). */
+  async complete(system: string, user: string, maxTokens = 1400, temperature = 0.7, signal?: AbortSignal): Promise<string> {
+    const config = this.opts.getConfig();
+    if (!config?.apiKey) throw new Error("I need to be set up first.");
+    const body = { model: config.model, messages: [{ role: "system", content: system }, { role: "user", content: user }],
+                   temperature, max_completion_tokens: maxTokens, reasoning_effort: "low" };
+    let response: any;
+    try {
+      response = await this.chat(config, body, signal);
+    } catch (e) {
+      if (!(e instanceof GroqError) || e.status !== 429 || !config.fallbackModel) throw e;
+      response = await this.chat(config, { ...body, model: config.fallbackModel }, signal);
+    }
+    return String(response.choices?.[0]?.message?.content || "").trim();
+  }
+
+  /** A question about a picture (a data: URL), answered by the vision model. */
+  async see(question: string, image: string, signal?: AbortSignal): Promise<string> {
+    const config = this.opts.getConfig();
+    if (!config?.apiKey) throw new Error("I need to be set up first.");
+    const response = await this.chat(config, {
+      model: config.visionModel || "meta-llama/llama-4-scout-17b-16e-instruct",
+      messages: [{ role: "user", content: [{ type: "text", text: question || "What's in this picture? Describe it briefly." },
+                                           { type: "image_url", image_url: { url: image } }] }],
+      temperature: 0.2, max_completion_tokens: 700,
+    }, signal);
+    return tidy(response.choices?.[0]?.message?.content) || "I couldn't make that picture out.";
+  }
+
   // ---------------------------------------------------------------- without the AI (offline / not set up)
   private async withoutAI(req: AgentRequest, why: string): Promise<AgentReply> {
     const call = fallbackIntent(req.text);

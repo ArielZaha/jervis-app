@@ -233,10 +233,33 @@ Every time you open it, it asks **"Which Jarvis?"**:
 - **On my computer:** a chat with the Jarvis on your computer. Everything you send runs there, exactly as if you had
   typed it at the computer: music, apps, documents, computer control. If Jarvis is closed on the computer, he is
   opened. Graphs, planets and the 3D globe **also open on the phone**, full screen, drawn by the same code.
-- **On this phone:** Jarvis acts on the phone itself: opens apps, starts calls and messages, opens maps and
-  directions, searches, and answers questions with his own AI. Nothing is opened on the computer. This works even
-  when the computer is off. Graph, planet and globe questions are sent to the computer when it is reachable and come
-  back as pictures on the phone.
+- **On this phone:** Jarvis acts on the phone itself, and nothing is opened on the computer. He carries his own
+  copy of his brain (the same code as on the computer, running inside the app), so this works even when the
+  computer is off. On the phone he can:
+  - **Math:** solve equations step by step, draw the graph of any function, answer follow-ups ("what is the vertex?").
+  - **The Earth and planets:** distances and flights on the 3D globe, countries on the way, nearby cities, day and
+    night, sunrise and sunset, and every planet in 3D.
+  - **Weather:** the forecast as a card in the chat: now, the next hours, and 7 days.
+  - **Timers and reminders:** "set a timer for 10 minutes", "remind me in an hour to call Mom", "how much time is
+    left?", "cancel the timer". They count down in the chat. A timer rings while the app is open; one that ends
+    while the phone is locked rings as soon as you open Jarvis again.
+  - **Music:** opens the phone's Spotify (or Apple Music, YouTube Music, SoundCloud, Deezer, Tidal, Amazon Music) on
+    the song, album, artist or playlist. When the computer is on and your Spotify account is connected in its
+    Settings, the music **starts by itself on the phone's Spotify**, including your own playlists and mixes, and
+    "pause", "next song", "skip to 2:30" control it.
+  - **Video:** YouTube, Netflix, Stremio and trailers open in the phone's own apps. With the computer on, Netflix
+    opens on the exact show or episode.
+  - **Calendar:** with the computer on, events are made in your calendar exactly as on the computer (with the
+    reminder question). With it off, Jarvis prepares the event and you tap "Add to Calendar".
+  - **Writing:** stories, poems, lists and letters, with a Share button to put them in Notes, Google Docs, Word or
+    Pages. "Make it shorter" and "read it to me" work afterwards.
+  - **Pictures:** attach a photo and ask about it; "generate an image of a dog in space" makes one.
+  - **Apps and the web:** opens apps and websites, searches, starts calls and messages, maps and directions.
+  - Typos are fixed the same way as on the computer.
+
+  What a phone doesn't let an app like this do, and Jarvis says so when asked: change the phone's volume, close
+  other apps, press play inside another app (you tap play once), read WhatsApp or Google Classroom (those are read
+  on the computer, when it is on), and control the computer's screen (that is "On my computer").
 
 You can switch between the two at the top of the chat at any time. "On my computer" or "on my phone" in a sentence
 always wins for that one request.

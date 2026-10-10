@@ -112,7 +112,7 @@ class PhoneSessionRouter:
 
     def __init__(self, phone_server, transcribe_pcm16, deliver_voice_text,
                  on_push_subscribe=None, on_push_unsubscribe=None, get_history=None, on_presence=None,
-                 get_vapid_key=None, get_ai_config=None, on_phone_turn=None, on_secure_pair=None):
+                 get_vapid_key=None, get_ai_config=None, on_phone_turn=None, on_secure_pair=None, on_assist=None):
         self.phone_server = phone_server
         self.transcribe_pcm16 = transcribe_pcm16
         self.deliver_voice_text = deliver_voice_text
@@ -124,6 +124,8 @@ class PhoneSessionRouter:
         self.get_ai_config = get_ai_config   # () -> dict, what the phone app's own Jarvis agent needs (mobile/)
         # (secret, device_name, replaces) -> the paired answer (dict) or None: pairing through the relay, see _pair_secure
         self.on_secure_pair = on_secure_pair
+        # (message) -> dict: help for the phone's own Jarvis that only this computer can give (see "assist" below)
+        self.on_assist = on_assist
         self.on_phone_turn = on_phone_turn   # (user, reply, device_name) -> None, a turn handled on the phone itself
         self._conns = {}   # conn_id -> {"device_id","key","session_id","voice","schedule_send","schedule_end"}
         self._presence = None
@@ -216,6 +218,14 @@ class PhoneSessionRouter:
         if message is None:
             return
         await self._on_decrypted(conn_id, state, message)
+
+    def _assist(self, message: dict, session_id: str, request_id: str) -> None:
+        try:
+            result = self.on_assist(message) or {}
+        except Exception as e:
+            print(f"Phone assist failed: {e!r}", flush=True)
+            result = {"ok": False, "reason": "error"}
+        self.send(session_id, {"type": "assist_result", "requestId": request_id, **result})
 
     def _pair_secure(self, payload: dict, schedule_send) -> None:
         """Pairing through the relay, for the phone's always-on app: the request is an envelope sealed with the open
@@ -330,7 +340,7 @@ class PhoneSessionRouter:
         # Everything the phone app needs to look like the same conversation as the computer's window, in one
         # message right behind session_ready (kept separate so session_ready itself stays the bare signal it was).
         info = {"type": "session_info", "deviceName": self.phone_server.registry.name_of(device_id),
-                "computerName": _computer_name()}
+                "computerName": _computer_name(), "assist": bool(self.on_assist)}
         try:
             info["history"] = list(self.get_history()) if self.get_history else []
         except Exception:
@@ -386,6 +396,14 @@ class PhoneSessionRouter:
                     self.deliver_voice_text(text, state["session_id"], request_id=request_id)
                 else:
                     self.deliver_voice_text(text, state["session_id"])
+        elif kind == "assist" and self.on_assist:
+            # Jarvis on the phone ("On this phone") asking for something only this computer has: the user's Spotify
+            # account, to play on the phone itself, or where a title is on Netflix. Nothing happens on this
+            # computer's screen or speakers; the answer goes back to the phone. It can take a few seconds (it waits
+            # for the phone's Spotify to come up), so it never runs on the connection's own loop.
+            request_id = str(message.get("requestId") or "")[:64]
+            threading.Thread(target=self._assist, daemon=True, name="phone-assist",
+                             args=(dict(message), state["session_id"], request_id)).start()
         elif kind == "get_ai_config" and self.get_ai_config:
             # The phone app runs its own Jarvis agent (Phone Mode works with this computer off), with the same AI.
             # Its key only ever goes out over an encrypted session, to a paired device.

@@ -1130,13 +1130,21 @@ def tool_get_weather(city: str = "", **_ignored) -> str:
     return show_weather(str(city or "").strip())
 
 
+_spotify_target = threading.local()   # .phone: this thread is playing for the phone's own Jarvis (handle_phone_music)
+
+
 def get_device_id():
     """The Spotify device to control: the one playing right now, else this computer's Spotify app (a phone or
-    speaker listed first may be asleep, and commands sent to it fail), else whatever is listed."""
+    speaker listed first may be asleep, and commands sent to it fail), else whatever is listed. For music asked
+    for on the phone itself (handle_phone_music): the phone's Spotify, and nothing else."""
     if not sp:
         return None
     try:
         devices = sp.devices()["devices"]
+        if getattr(_spotify_target, "phone", False):
+            phones = [d for d in devices if (d.get("type") or "").lower() in ("smartphone", "tablet")
+                      and not d.get("is_restricted")]
+            return (sorted(phones, key=lambda d: not d["is_active"]) or [{"id": None}])[0]["id"]
         if not devices:
             return None
         for d in devices:
@@ -1176,10 +1184,13 @@ def ensure_spotify_device(timeout: float = 20.0):
     device_id = get_device_id()
     if device_id or not sp:
         return device_id
-    try:
-        open_application("Spotify")
-    except Exception:
-        return None
+    if getattr(_spotify_target, "phone", False):
+        timeout = min(timeout, 15.0)   # the phone is opening its own Spotify right now: wait for it, open nothing here
+    else:
+        try:
+            open_application("Spotify")
+        except Exception:
+            return None
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(1)
@@ -4345,7 +4356,116 @@ def _phone_ai_config() -> dict:
         return {"error": "This computer has no Groq API key (Settings, AI)."}
     return {"provider": "groq", "apiKey": GROQ_KEY, "model": PHONE_AI_MODEL, "fallbackModel": GROQ_MODEL,
             "transcribeModel": "whisper-large-v3-turbo",
-            "userName": os.getenv("JARVIS_USER_NAME", "")}
+            "userName": os.getenv("JARVIS_USER_NAME", ""),
+            # for the phone's own weather, pictures and music: the same city, vision model, and whether this
+            # computer can play on the phone's Spotify for it (handle_phone_music)
+            "weatherCity": os.getenv("WEATHER_CITY", ""), "visionModel": images._groq_vision_model(),
+            "spotify": bool(sp)}
+
+
+_PLAIN_PLAY = re.compile(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis)[, ]+)?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
+                         r"(?:play|put on|listen to)\s+(?!it\b|this\b|that\b|them\b)(.+?)(?:\s+please)?[.!?]*$", re.I)
+
+
+def handle_phone_music(text: str, wait: bool = False) -> dict:
+    """Music asked for on the phone ("On this phone"), played on the phone: Jarvis there has no way into the user's
+    Spotify account, so it asks here, and this starts it on the phone's own Spotify (Spotify Connect) with the same
+    handling as on the computer: a song, the user's playlists and mixes, an album or artist, liked songs, pause,
+    resume, next, previous, jump to a time. Only that: no other command runs, and nothing plays, opens or changes
+    on this computer. {"ok": True, "reply"} or {"ok": False, "reason"} for the phone to do what it can by itself.
+    wait: the phone is opening its Spotify app right now; give it a moment to show up."""
+    global youtube_active, netflix_active, stremio_active, spotify_active
+    if not sp:
+        return {"ok": False, "reason": "no_spotify"}
+    text = fix_typos(text)
+    n = " ".join(re.sub(r"[^a-z0-9' ]", " ", text.lower()).split())
+    was_playing = (youtube_active, netflix_active, stremio_active, spotify_active)
+    _spotify_target.phone = True
+    try:
+        request = music.parse_music_request(text)
+        if request and request.service not in ("", "spotify"):
+            return {"ok": False, "reason": "other_service"}
+        if not get_device_id() and not (wait and ensure_spotify_device()):
+            return {"ok": False, "reason": "no_device"}
+        if request:
+            return {"ok": True, "reply": play_music(**vars(request))}
+        volume = parse_volume_command(text)
+        if volume:
+            return {"ok": True, "reply": _phone_spotify_volume(*volume)}
+        seek_to = parse_seek_command(text)
+        if seek_to is not None:
+            return {"ok": True, "reply": seek_music(seek_to)}
+        another_by = parse_another_by_artist(text)
+        if another_by is not None:
+            return {"ok": True, "reply": play_another_by_artist(another_by)}
+        direction = parse_track_skip(text)
+        if direction:
+            return {"ok": True, "reply": skip_track(direction)}
+        if is_restart_command(text):
+            seek_music(0)
+            return {"ok": True, "reply": "Starting the song over."}
+        if len(n.split()) <= 7 and re.search(r"\b(?:pause|stop|halt|silence|hold on|be quiet)\b", n):
+            return {"ok": True, "reply": pause_music()}
+        if len(n.split()) <= 7 and re.search(r"\b(?:resume|unpause|continue|keep playing)\b", n):
+            return {"ok": True, "reply": resume_music()}
+        song = parse_spotify_request(text)
+        if not song and (plain := _PLAIN_PLAY.match(" ".join(text.split()))):
+            seconds, title = timeparse.strip_start_time(plain.group(1))
+            song = (title or plain.group(1), seconds)
+        if song:
+            return {"ok": True, "reply": play_song(song[0], start_seconds=song[1])}
+        return {"ok": False, "reason": "not_music"}
+    except SpotifyNotReady:
+        return {"ok": False, "reason": "no_device"}
+    except Exception as e:
+        print(f"Spotify on the phone failed: {e!r}", flush=True)
+        return {"ok": False, "reason": "error"}
+    finally:
+        _spotify_target.phone = False
+        # what is playing on the phone says nothing about this computer: "pause" said here keeps meaning what it did
+        youtube_active, netflix_active, stremio_active, spotify_active = was_playing
+
+
+def _phone_spotify_volume(action: str, amount) -> str:
+    """Spotify's own volume on the phone. iPhones don't let Spotify be turned up or down from outside."""
+    device = next((d for d in sp.devices()["devices"] if d["id"] == get_device_id()), None)
+    if not device:
+        return "No active Spotify device found."
+    if not device.get("supports_volume"):
+        return "Spotify doesn't let me change the volume on this phone. Use its volume buttons."
+    now = int(device.get("volume_percent") or 0)
+    level = {"set": amount, "mute": 0, "unmute": max(now, 40), "up": now + (amount or 10), "down": now - (amount or 10)}[action]
+    level = max(0, min(100, int(level)))
+    sp.volume(level, device_id=device["id"])
+    return f"Spotify volume is at {level} percent."
+
+
+def find_netflix_for_phone(title: str, season=None, episode=None, trailer: bool = False) -> dict:
+    """Where a show or film is on Netflix, for Jarvis on the phone to open in the phone's Netflix app."""
+    found = netflix.find_title(title) if title else None
+    if not found:
+        return {"ok": False, "reason": "not_found"}
+    title_id, name = found
+    if trailer:
+        return {"ok": True, "url": netflix.title_url(title_id), "name": name}
+    if season or episode:
+        found_episode = netflix.find_episode(title_id, season, episode)
+        if found_episode:
+            return {"ok": True, "url": netflix.watch_url(found_episode[0]), "name": name, "episode": found_episode[1]}
+        return {"ok": False, "reason": "no_episode", "name": name}
+    return {"ok": True, "url": netflix.watch_url(title_id), "name": name}
+
+
+def _on_phone_assist(message: dict) -> dict:
+    """session_router's callback for the phone's own Jarvis asking for what only this computer has."""
+    kind = str(message.get("kind") or "")
+    if kind == "music":
+        return handle_phone_music(str(message.get("text") or "")[:300], wait=message.get("wait") is True)
+    if kind == "netflix":
+        number = lambda v: int(v) if str(v or "").isdigit() and 0 < int(v) < 1000 else None
+        return find_netflix_for_phone(str(message.get("title") or "").strip()[:120], number(message.get("season")),
+                                      number(message.get("episode")), message.get("trailer") is True)
+    return {"ok": False, "reason": "unknown"}
 
 
 def _on_phone_turn(user: str, reply: str, device_name: str) -> None:
@@ -4374,7 +4494,8 @@ session_router = phone_session.PhoneSessionRouter(phone_server, _transcribe_phon
                                                    on_push_unsubscribe=push_store.remove,
                                                    get_history=phone_history, on_presence=_on_phone_presence,
                                                    get_vapid_key=_vapid_key_b64, get_ai_config=_phone_ai_config,
-                                                   on_phone_turn=_on_phone_turn, on_secure_pair=_on_secure_pair)
+                                                   on_phone_turn=_on_phone_turn, on_secure_pair=_on_secure_pair,
+                                                   on_assist=_on_phone_assist)
 relay = relay_client.RelayClient(RELAY_URL, session_router,
                                  is_enabled=lambda: bool(RELAY_URL) and phone_control_mode() != "off",
                                  get_vapid_key=_vapid_key_b64, get_local_address=_local_address)
@@ -4735,52 +4856,7 @@ pending_dictation = None  # {"app", "at"}: Jarvis asked what to write, and the n
 pending_spotify_request = None  # {"at"}: Jarvis asked what to listen to, and the next thing you say is a song/artist
 pending_spotify_play = None     # {"query", "at"}: Spotify is showing a search, and "play it" plays it
 
-# Words people mistype when giving orders ("take contorl"), matched loosely so a typo doesn't send a command to the AI.
-_TYPO_TARGETS = ("control", "computer", "spotify", "search")
-
-
-# Misspellings seen in real requests ("the distence between…", "drew the greph", "30 seconeds"): fixed exactly, word
-# by word, so only these words change — a loose match would turn "plant" into "planet" or "instance" into "distance".
-_MISSPELLINGS = {
-    "distence": "distance", "distanse": "distance", "disstance": "distance", "distnace": "distance",
-    "greph": "graph", "grapgh": "graph", "grahp": "graph", "garph": "graph", "graf": "graph", "graoh": "graph",
-    "seconeds": "seconds", "secondes": "seconds", "secnds": "seconds", "seonds": "seconds", "secs": "seconds",
-    "minuts": "minutes", "minuets": "minutes", "mintues": "minutes", "minuites": "minutes",
-    "wrtie": "write", "wirte": "write", "writte": "write", "wrtite": "write",
-    "calender": "calendar", "calandar": "calendar", "calander": "calendar", "calnder": "calendar",
-    "trailor": "trailer", "trialer": "trailer", "traler": "trailer", "triler": "trailer",
-    "netflex": "netflix", "netfilx": "netflix", "netflx": "netflix",
-    "documnet": "document", "docuemnt": "document", "doucment": "document",
-    "storie": "story", "stroy": "story", "sotry": "story",
-    "planit": "planet", "plannet": "planet", "planent": "planet",
-    "seturn": "saturn", "saturen": "saturn", "jupitor": "jupiter", "jupiler": "jupiter", "nepture": "neptune",
-    "isreal": "israel", "isarel": "israel", "googel": "google", "gogle": "google",
-    "genearte": "generate", "generete": "generate", "genrate": "generate", "gnerate": "generate", "genarate": "generate",
-    "imgae": "image", "iamge": "image", "imag": "image", "pictuer": "picture", "picure": "picture", "pitcure": "picture",
-    "evnet": "event", "evnt": "event", "meating": "meeting", "apointment": "appointment",
-}
-_MISSPELLED_PHRASES = [
-    (re.compile(r"\btell my about\b", re.I), "tell me about"),
-    (re.compile(r"\bshow my\b(?= (?:the|a|an|it|on|how)\b)", re.I), "show me"),
-    (re.compile(r"\bdrew\b(?= (?:the|a|an|me|it|this|that|its|her|his|my)?\s*(?:graph|model|function|line|plot|chart|parabola|globe)\b)", re.I), "draw"),
-]
-
-
-def fix_typos(text: str) -> str:
-    import difflib
-    def fix(match):
-        word = match.group(0)
-        exact = _MISSPELLINGS.get(word.lower())
-        if exact:
-            return exact.capitalize() if word[:1].isupper() else exact
-        if len(word) < 5 or word.lower() in _TYPO_TARGETS:
-            return word
-        close = difflib.get_close_matches(word.lower(), _TYPO_TARGETS, n=1, cutoff=0.8)
-        return close[0] if close else word
-    text = re.sub(r"[A-Za-z]+", fix, text or "")
-    for pattern, replacement in _MISSPELLED_PHRASES:
-        text = pattern.sub(replacement, text)
-    return text
+from typos import fix_typos, _MISSPELLINGS, _TYPO_TARGETS   # noqa: E402,F401  (kept under their old names here)
 
 
 # "Take control (of my computer) and …", said before something Jarvis can do directly: the preamble adds nothing.
