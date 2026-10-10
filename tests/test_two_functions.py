@@ -116,3 +116,41 @@ def test_the_view_holds_every_point_that_matters():
 ])
 def test_questions_about_the_two_just_drawn(question, answer):
     assert graphs.pair_followup(question, pair_for("graph y = x^2 and y = x + 1")) == answer
+
+
+# ---------------------------------------------------------------- however it is put
+@pytest.mark.parametrize("sentence, labels", [
+    ("draw the two functions: y = 2x + 7 and g = 4x^2 + 6x + 3", ["f(x) = 2x + 7", "g(x) = 4x² + 6x + 3"]),     # as it was first typed
+    ("draw two functions y = 2x+7 and y = 4x^2", ["f(x) = 2x + 7", "g(x) = 4x²"]),
+    ("graph two functions: f(x) = x^2 - 4 and g(x) = 2x - 1", ["f(x) = x² − 4", "g(x) = 2x − 1"]),
+    ("make a graph of the two functions y = 2x + 7 and g = 4x^2 + 6x + 3", ["f(x) = 2x + 7", "g(x) = 4x² + 6x + 3"]),
+    ("draw a graph with two functions y=2x+7 and y=x^2", ["f(x) = 2x + 7", "g(x) = x²"]),
+    ("draw these two graphs: 2x+7, 4x^2+6x+3", ["f(x) = 2x + 7", "g(x) = 4x² + 6x + 3"]),
+    ("graph y = 2x + 7, y = 4x^2 + 6x + 3", ["f(x) = 2x + 7", "g(x) = 4x² + 6x + 3"]),
+    ("graph f(x) = 2x + 7 ; g(x) = x^2", ["f(x) = 2x + 7", "g(x) = x²"]),
+    ("graph y = 2x + 7 and also y = x^2", ["f(x) = 2x + 7", "g(x) = x²"]),
+    ("graph the line y = 2x + 7 and the parabola y = x^2", ["f(x) = 2x + 7", "g(x) = x²"]),
+    ("the two functions y = 2x + 7 and g = 4x^2 + 6x + 3, draw them", ["f(x) = 2x + 7", "g(x) = 4x² + 6x + 3"]),
+    ("y = 2x + 7 and g = 4x^2 + 6x + 3 graph", ["f(x) = 2x + 7", "g(x) = 4x² + 6x + 3"]),
+    ("show me y = 2x + 7 together with y = x^2 on one graph", ["f(x) = 2x + 7", "g(x) = x²"]),
+    ("graph y = x^2 and y = 4", ["f(x) = x²", "g(x) = 4"]),                       # a number alone is a flat line
+    ("can you graph f(x)=x^2, g(x)=2x+1 and h(x) = 3", ["f(x) = x²", "g(x) = 2x + 1", "h(x) = 3"]),
+])
+def test_however_two_functions_are_asked_for(sentence, labels):
+    assert [f["label"] for f in pair_for(sentence)["functions"]] == labels
+
+
+@pytest.mark.parametrize("sentence", ["draw two circles", "graph the two", "draw 2 cats and 3 dogs", "show me pictures of cats and dogs",
+                                      "I made tea and drew a line", "graph y = 1,5x"])
+def test_what_is_not_two_functions_is_not_taken_for_them(sentence):
+    request = graphs.parse_request(sentence)
+    assert request is None or request["action"] != "several"
+
+
+def test_when_one_cannot_be_read_jarvis_says_which():
+    request = graphs.parse_request("graph y = x^2 and y = banana + 1")
+    assert request["action"] == "several" and len(request["requests"]) == 1 and request["unreadText"] == "y = banana + 1"
+    info, _ = graphs.build(request["requests"][0])
+    assert graphs.describe_several([info], 1, request["unreadText"]) == (
+        "I could only read one of those as a function of x, so I drew y = x². The part I couldn't read was “y = banana + 1”. "
+        "Give me the other one again, like: graph y equals x plus 1.")

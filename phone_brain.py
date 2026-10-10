@@ -263,7 +263,7 @@ class Brain:
                 info, _ = graphs.build(request["requests"][0])
                 self._show({"type": "graph", "data": info})
                 self.drawn["graph"] += 1
-                return graphs.describe_several([info], request["unread"])
+                return graphs.describe_several([info], request["unread"], request.get("unreadText", ""))
             # both on the same axes, everything about each, and how they relate
             pair = graphs.build_pair(request["requests"], request.get("names"))
             self.last_pair.update(info=pair, at=time.time())
