@@ -407,10 +407,15 @@ document.addEventListener('DOMContentLoaded', () => {
       // typed input — see its own comments) — so the one fallback for a phone that can't scan is the full link,
       // not a separately-typed code.
       const info = data.data;
-      $('phonePairingAddress').textContent = info.pairUrl || info.address || '';
+      // Typed by hand, the address is the Wi-Fi one (the QR's own link is long, and its one-time key only fits a scan).
+      $('phonePairingAddress').textContent = info.localPairUrl || info.pairUrl || info.address || '';
+      $('phonePairingTitle').textContent = info.secure ? 'Scan this with your phone' : "Scan this with your phone's camera";
+      $('phonePairingSub').textContent = info.secure
+        ? 'With your phone’s camera, or with Scan in the Jarvis app. It pairs your phone and opens the Jarvis app that works anywhere, even when this computer is off.'
+        : 'Same Wi-Fi as this computer. The link opens Jarvis on your phone and pairs it, then you can add it to your Home Screen.';
       // The same code, readable: an installed Jarvis app (its own storage on iPhone) can pair by typing it.
       const code = String(info.code || '');
-      $('phonePairingCodeRow').hidden = !code;
+      $('phonePairingCodeRow').hidden = !code || Boolean(info.secure);   // the code is for the Wi-Fi page only
       $('phonePairingCode').textContent = code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code;
       const qrEl = $('phonePairingQr');
       qrEl.innerHTML = '';

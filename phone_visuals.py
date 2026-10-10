@@ -2,7 +2,8 @@
 the window's own drawing scripts and their imagery. A fixed list, served by path: never a path taken from a request.
 (Jarvis Wake and the relay keep the same list; tests/test_phone_visuals.py checks they agree.)"""
 
-SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js")
+SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js", "vendor/jsqr/jsQR.js")   # jsQR: the in-app code scanner
+FONTS = ("vendor/fonts/orbitron-latin.woff2",)   # the window's display face, so the phone reads as the same Jarvis
 IMAGES = (
     "vendor/earth/blue_marble_5400.jpg", "vendor/earth/clouds_2048.jpg", "vendor/earth/night_lights_3600.jpg",
     "vendor/earth/earth_atmos_2048.jpg",
@@ -19,4 +20,6 @@ def files() -> dict:
     out = {f"/{name}": (name, "text/javascript; charset=utf-8", "no-cache") for name in SCRIPTS}
     for name in IMAGES:
         out[f"/{name}"] = (name, "image/png" if name.endswith(".png") else "image/jpeg", WEEK)
+    for name in FONTS:
+        out[f"/{name}"] = (name, "font/woff2", WEEK)
     return out

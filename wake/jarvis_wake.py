@@ -184,7 +184,8 @@ _STATIC = {   # path -> (file in the project, content type, cache) — a fixed l
 for _icon in ("icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png", "favicon-64.png"):
     _STATIC[f"/icons/{_icon}"] = (f"phone_icons/{_icon}", "image/png", "public, max-age=86400")
 # The phone app's graphs, globe and planets (phone_visuals.py keeps the same list; a test checks they agree)
-VISUAL_SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js")
+VISUAL_SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js", "vendor/jsqr/jsQR.js")
+VISUAL_FONTS = ("vendor/fonts/orbitron-latin.woff2",)
 VISUAL_IMAGES = (
     "vendor/earth/blue_marble_5400.jpg", "vendor/earth/clouds_2048.jpg", "vendor/earth/night_lights_3600.jpg",
     "vendor/earth/earth_atmos_2048.jpg",
@@ -197,6 +198,8 @@ for _name in VISUAL_SCRIPTS:
     _STATIC[f"/{_name}"] = (_name, "text/javascript; charset=utf-8", "no-cache")
 for _name in VISUAL_IMAGES:
     _STATIC[f"/{_name}"] = (_name, "image/png" if _name.endswith(".png") else "image/jpeg", "public, max-age=604800")
+for _name in VISUAL_FONTS:
+    _STATIC[f"/{_name}"] = (_name, "font/woff2", "public, max-age=604800")
 
 
 class PhoneDoor:
@@ -404,9 +407,16 @@ async def _relay_door(config: dict, url: str, ident: str, should_hold) -> None:
                                           "vapidKey": "", "localAddress": ""}))
                 continue
             payload = data.get("payload") if kind == "frame" else None
-            if not isinstance(payload, dict) or payload.get("type") not in ("auto_attach", "session_attach"):
+            if not isinstance(payload, dict):
                 continue
             reply = lambda message: ws.send(json.dumps({"type": "frame", "connId": data.get("connId"), "payload": message}))
+            if payload.get("type") == "pair_secure":
+                # A phone scanning a pairing code: only Jarvis himself pairs, and he's closed (so the code is an old
+                # one). Said plainly, so the app can tell the user at once instead of waiting for an answer.
+                await reply({"type": "jarvis_closed"})
+                continue
+            if payload.get("type") not in ("auto_attach", "session_attach"):
+                continue
             if not proof_is_from_paired_phone(config, str(payload.get("deviceId") or ""), payload.get("proof")):
                 log.info("Relay door: something that isn't a paired phone tried to open Jarvis; ignored.")
                 await reply({"type": "wake_refused", "message": "Jarvis isn't open on your computer."})

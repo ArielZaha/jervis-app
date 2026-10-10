@@ -216,8 +216,17 @@ Every graph, globe and planet is kept for the session:
 
 ## 5. Jarvis on your phone
 
-A chat app for iPhone and Android that you add to your Home Screen. You connect it once by saying **"Connect my
-phone"** on the computer and scanning the QR code.
+A chat app for iPhone and Android that you add to your Home Screen. It looks and moves like Jarvis's window on the
+computer: the same dark HUD, the same orb, and one accent colour that changes with what he is doing (listening,
+thinking, speaking, asleep).
+
+The first time you open it, it offers two ways to start:
+
+- **Scan the code on my computer:** say **"Connect my phone"** on the computer, then point the app's own camera at
+  the QR code on the screen. This works from anywhere, not only on your home Wi-Fi. (Scanning the code with the
+  phone's normal Camera app works too, and then shows how to add Jarvis to the Home Screen.)
+- **Use Jarvis on this phone only:** no computer at all. You paste your own Groq key (free at console.groq.com) and
+  Jarvis answers and acts on the phone. You can connect a computer later from the menu.
 
 Every time you open it, it asks **"Which Jarvis?"**:
 
@@ -277,8 +286,9 @@ and predictable.
 - **Screenshots** for computer control are looked at only by the local AI unless you turn the online option on
   yourself.
 - **The microphone** in his window only measures loudness for the orb. Muting stops listening completely.
-- **Phone connection:** pairing happens only on your own Wi-Fi, with a single-use code. After that, everything is
-  encrypted. You can list or forget paired phones by voice ("what phones are paired", "forget my paired phones").
+- **Phone connection:** pairing needs the code on your computer's screen, which is single-use and expires after a
+  few minutes. The QR code holds a one-time key, so the pairing itself is sealed end to end (the relay in between
+  cannot read it); the typed 6-digit code only works on your own Wi-Fi. After that, everything is encrypted. You can list or forget paired phones by voice ("what phones are paired", "forget my paired phones").
 - **Computer control** always shows when it is active, stops the moment you move the mouse, and asks before risky
   steps.
 - **Honesty rules built into him:** he never says he did something unless it actually happened, never invents

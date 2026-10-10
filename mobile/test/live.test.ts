@@ -33,17 +33,37 @@ before(async () => {
 after(() => { for (const p of procs) p.kill(); });
 
 let device: DeviceCredentials;
+let firstPairing: DeviceCredentials;
 
-test("pairing straight from the QR link", async () => {
-  const { pairUrl } = await ctl("/pair");
-  const target = parsePairingInput(pairUrl.replace(/\/\/[^:/]+:/, "//127.0.0.1:"));
-  assert.ok(target, "QR link understood");
-  device = await pair(target!, "Samsung Galaxy", makeSocket);
-  assert.equal(device.name, "Samsung Galaxy");
-  assert.equal(device.localUrl, `ws://127.0.0.1:${PORT}/`);
-  assert.equal(device.relayUrl, `ws://127.0.0.1:${RELAY_PORT}/`);
+test("the 6-digit code link pairs on the home Wi-Fi, once", async () => {
+  const { localPairUrl } = await ctl("/pair");
+  const target = parsePairingInput(localPairUrl.replace(/\/\/[^:/]+:/, "//127.0.0.1:"));
+  assert.ok(target && "code" in target, "code link understood");
+  firstPairing = await pair(target!, "Samsung Galaxy", makeSocket);
+  assert.equal(firstPairing.localUrl, `ws://127.0.0.1:${PORT}/`);
   assert.equal((await ctl("/state")).devices.length, 1);
   await assert.rejects(pair(target!, "Again", makeSocket), /expired|No pairing/);   // single use
+});
+
+test("pairing straight from the QR link: through the relay, sealed with its one-time key", async () => {
+  const { pairUrl, secure } = await ctl("/pair");
+  assert.equal(secure, true);
+  const target = parsePairingInput(pairUrl);
+  assert.ok(target && "secret" in target, "QR link understood");
+  assert.equal((target as any).relayUrl, `ws://127.0.0.1:${RELAY_PORT}/`);
+  // pairing again from the same phone: its earlier pairing (named inside the sealed request) is replaced, not kept
+  device = await pair(target!, "Samsung Galaxy", makeSocket, firstPairing);
+  assert.notEqual(device.id, firstPairing.id);
+  assert.equal(device.name, "Samsung Galaxy");
+  assert.match(device.localUrl, new RegExp(`^ws://[\\d.]+:${PORT}/$`));
+  assert.equal(device.relayUrl, `ws://127.0.0.1:${RELAY_PORT}/`);
+  assert.equal((await ctl("/state")).devices.length, 1);
+  await assert.rejects(pair(target!, "Again", makeSocket), /expired/);   // single use
+  const wrongKey = { ...(target as any), secret: "A".repeat(43) };
+  await ctl("/pair");
+  await assert.rejects(pair(wrongKey, "Stranger", makeSocket), /expired/);   // a key that isn't the one on screen
+  assert.equal((await ctl("/state")).devices.length, 1);
+  device = { ...device, localUrl: `ws://127.0.0.1:${PORT}/` };   // this machine, for the tests below
 });
 
 test("encrypted session on the home Wi-Fi: computer requests, AI key, phone turns, reconnects", async () => {

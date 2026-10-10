@@ -37,8 +37,9 @@ def test_every_listed_file_exists():
 def test_jarvis_wake_and_the_relay_serve_the_same_list():
     wake = _load("wake/jarvis_wake.py", "jarvis_wake_for_test")
     relay = _load("relay/server.py", "relay_server_for_test")
-    assert (wake.VISUAL_SCRIPTS, wake.VISUAL_IMAGES) == (phone_visuals.SCRIPTS, phone_visuals.IMAGES)
-    assert (relay.VISUAL_SCRIPTS, relay.VISUAL_IMAGES) == (phone_visuals.SCRIPTS, phone_visuals.IMAGES)
+    ours = (phone_visuals.SCRIPTS, phone_visuals.IMAGES, phone_visuals.FONTS)
+    assert (wake.VISUAL_SCRIPTS, wake.VISUAL_IMAGES, wake.VISUAL_FONTS) == ours
+    assert (relay.VISUAL_SCRIPTS, relay.VISUAL_IMAGES, relay.VISUAL_FONTS) == ours
 
 
 def test_nothing_else_in_the_project_is_reachable():

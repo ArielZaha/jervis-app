@@ -47,7 +47,7 @@ export function PairScreen() {
 
         <View style={styles.steps}>
           <Step n="1" text={<>On your computer, say <Text style={styles.b}>“Connect my phone”</Text>.</>} />
-          <Step n="2" text={<>Scan the QR code it shows. Same Wi-Fi, just this once.</>} />
+          <Step n="2" text={<>Scan the QR code it shows. Just this once.</>} />
         </View>
 
         <Pressable onPress={openScanner} disabled={busy} style={({ pressed }) => [pressed && { transform: [{ scale: 0.98 }] }]}>

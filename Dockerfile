@@ -16,5 +16,7 @@ COPY phone_icons ./phone_icons
 COPY sphere_gl.js graph.js earth.js planet.js ./
 COPY vendor/earth ./vendor/earth
 COPY vendor/planets ./vendor/planets
+COPY vendor/jsqr ./vendor/jsqr
+COPY vendor/fonts ./vendor/fonts
 EXPOSE 8080
 CMD ["python", "server.py"]

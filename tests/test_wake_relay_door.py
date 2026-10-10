@@ -131,6 +131,14 @@ def test_nothing_else_can_start_jarvis(world, how):
     assert world["launches"] == []
 
 
+def test_a_phone_trying_to_pair_is_told_jarvis_is_closed(world):
+    """Pairing needs Jarvis himself (and the code on his screen). With only Wake there, the app hears so at once."""
+    envelope = phone_crypto.encrypt(phone_crypto.new_key(), {"type": "pair", "ts": time.time() * 1000})
+    assert _knock(world["port"], {"type": "pair_secure", "envelope": envelope}) == {"type": "jarvis_closed"}
+    time.sleep(0.3)
+    assert world["launches"] == []
+
+
 def test_wake_leaves_the_relay_to_jarvis_while_he_runs(world):
     world["running"][0] = True
     assert _wait_for(lambda: COMPUTER not in relay_server.computers)

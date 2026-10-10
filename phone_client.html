@@ -7,7 +7,7 @@
      handled in script (see fitToVisualViewport). -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#05070f">
+<meta name="theme-color" content="#02040a">
 <meta name="application-name" content="Jarvis">
 <meta name="description" content="Talk to Jarvis on your computer from your phone.">
 <!-- Home Screen app on iPhone: full screen, content drawn under a transparent status bar (safe-area padding below
@@ -22,21 +22,37 @@
 <!-- The web app manifest is linked from script on everything except iOS — see linkManifest() for why. -->
 <title>Jarvis</title>
 <style>
+  /* The phone app wears the same HUD as Jarvis's window on the computer (style.css there): the near-black field, the
+     cut-corner panels with a lit edge, Orbitron for the display voice, magenta for you and the accent for Jarvis, and
+     one accent colour that follows what Jarvis is doing (listening, thinking, speaking, asleep). */
+  @font-face {
+    font-family: "Orbitron"; src: url("/vendor/fonts/orbitron-latin.woff2") format("woff2");
+    font-weight: 400 900; font-style: normal; font-display: swap;
+  }
+  @property --accent-rgb { syntax: '<number>+'; inherits: true; initial-value: 79 216 255; }
   :root {
     color-scheme: dark;
-    --bg: #05070f; --bg-raise: #0a0e1b; --surface: #10162a; --surface-2: #161d35; --surface-3: #1d2542;
-    --line: rgb(255 255 255 / .07); --line-2: rgb(255 255 255 / .12);
-    --text: #eef2fb; --text-2: #a5afc8; --text-3: #6b7592;
-    --cyan: #4fd8ff; --violet: #a58bff; --mint: #3df2c0; --amber: #ffc861; --red: #ff6b81;
-    --brand: linear-gradient(135deg, #5ee0ff 0%, #7d9dff 55%, #a58bff 100%);
-    --you-text: #050c1c;
-    --r-lg: 22px; --r-md: 16px; --r-sm: 12px;
-    --ease: cubic-bezier(.2, .8, .2, 1); --spring: cubic-bezier(.34, 1.4, .64, 1);
+    --accent-rgb: 79 216 255; --magenta-rgb: 255 92 214;
+    --bg: #02040a; --panel: #060c18; --panel-2: #0a1324; --panel-3: #111d35;
+    --text: #e8f4ff; --muted: #8fa3c4; --faint: #7184a6; --ink: #021019;
+    --ok: #3df2c0; --warn: #ffc861; --danger: #ff6b81;
+    --accent: rgb(var(--accent-rgb)); --line: rgb(var(--accent-rgb) / .14); --line-2: rgb(var(--accent-rgb) / .32);
+    --cut: 14px;
+    --display: "Orbitron", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, "Roboto Mono", monospace;
+    /* Motion: everything arrives fast and settles (exponential ease-out); what leaves goes quicker than it came. */
+    --out: cubic-bezier(.16, 1, .3, 1); --leave: cubic-bezier(.5, 0, .9, .5);
     --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
     --sal: env(safe-area-inset-left, 0px); --sar: env(safe-area-inset-right, 0px);
     --app-h: 100dvh;
     --gutter: 16px;
+    transition: --accent-rgb .7s var(--out);
   }
+  :root[data-state="listening"] { --accent-rgb: 61 242 192; }
+  :root[data-state="thinking"] { --accent-rgb: 165 139 255; }
+  :root[data-state="speaking"] { --accent-rgb: 90 169 255; }
+  :root[data-state="sleeping"] { --accent-rgb: 120 135 172; }
+  :root[data-state="alert"] { --accent-rgb: 255 107 129; }
   @supports not (height: 100dvh) { :root { --app-h: 100vh; } }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; margin: 0; background: var(--bg); }
@@ -45,19 +61,26 @@
     font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Samsung Sans",
       "MiSans", "Helvetica Neue", sans-serif;
     -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
-    font-feature-settings: "cv11", "ss01";
+    caret-color: var(--accent); accent-color: var(--accent);
   }
+  ::selection { background: rgb(var(--accent-rgb) / .32); color: var(--text); }
   button, input, textarea { font: inherit; color: inherit; }
   button { -webkit-user-select: none; user-select: none; touch-action: manipulation; }
   svg { display: block; }
   [hidden] { display: none !important; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  h1, h2, h3 { text-wrap: balance; }
 
-  /* A single static glow behind everything — painted once, never animated (cheap on every phone). */
+  /* The field: a faint grid and the accent's glow from the top. Painted, never animated: it only recolours with
+     Jarvis's state. */
   .backdrop {
     position: fixed; inset: 0; pointer-events: none; z-index: 0;
     background:
-      radial-gradient(120% 60% at 50% -12%, rgb(79 216 255 / .13), transparent 62%),
-      radial-gradient(90% 50% at 100% 0%, rgb(165 139 255 / .10), transparent 60%),
+      radial-gradient(120% 56% at 50% -12%, rgb(var(--accent-rgb) / .17), transparent 64%),
+      radial-gradient(80% 40% at 100% 104%, rgb(var(--magenta-rgb) / .06), transparent 66%),
+      radial-gradient(ellipse at 50% 46%, transparent 38%, var(--bg) 96%),
+      linear-gradient(rgb(var(--accent-rgb) / .05) 1px, transparent 1px) 50% 0 / 100% 44px,
+      linear-gradient(90deg, rgb(var(--accent-rgb) / .05) 1px, transparent 1px) 50% 0 / 44px 100%,
       var(--bg);
   }
 
@@ -66,216 +89,282 @@
     position: fixed; left: 0; top: 0; width: 100%; height: var(--app-h); z-index: 1;
     transform: translate3d(0, var(--vv-top, 0px), 0);
     display: flex; flex-direction: column; overflow: hidden;
+    view-transition-name: app;   /* the screens change inside it; the field behind and the sheets above stay put */
+  }
+
+  /* ---------------------------------------------------------------- the HUD panel
+     One shape for everything that's a surface: a lit edge (::before) around a fill (::after), both cut at the
+     corners. Drawn on the pseudo-elements so the element itself keeps its focus ring. --c is the size of the cut. */
+  :where(.choice, .btn, .field, .inputbox, .action, .suggestion, .steps li, .install-steps li, .vis-facts li, .codeblock,
+         .install-card, .vis-chip, .always-on, .bubble, .row.jarvis .text, .pill, .toast, .to-bottom, .mode, .recbar,
+         .vis-actions button, .vis-controls button, .journey-hud, .scan-note, .back) {
+    position: relative; isolation: isolate; border: 0; background: none;
+    --edge: linear-gradient(135deg, rgb(var(--accent-rgb) / .62), rgb(var(--accent-rgb) / .16) 36%, rgb(var(--accent-rgb) / .1) 64%, rgb(var(--accent-rgb) / .44));
+    --fill: var(--panel); --c: var(--cut);
+  }
+  :where(.choice, .btn, .field, .inputbox, .action, .suggestion, .steps li, .install-steps li, .vis-facts li, .codeblock,
+         .install-card, .vis-chip, .always-on, .bubble, .row.jarvis .text, .pill, .toast, .to-bottom, .mode, .recbar,
+         .vis-actions button, .vis-controls button, .journey-hud, .scan-note, .back)::before {
+    content: ""; position: absolute; inset: 0; z-index: -2; background: var(--edge); --k: var(--c);
+    clip-path: polygon(var(--k) 0, 100% 0, 100% calc(100% - var(--k)), calc(100% - var(--k)) 100%, 0 100%, 0 var(--k));
+  }
+  :where(.choice, .btn, .field, .inputbox, .action, .suggestion, .steps li, .install-steps li, .vis-facts li, .codeblock,
+         .install-card, .vis-chip, .always-on, .bubble, .row.jarvis .text, .pill, .toast, .to-bottom, .mode, .recbar,
+         .vis-actions button, .vis-controls button, .journey-hud, .scan-note, .back)::after {
+    content: ""; position: absolute; inset: 1px; z-index: -1; background: var(--fill); --k: calc(var(--c) - .59px);
+    clip-path: polygon(var(--k) 0, 100% 0, 100% calc(100% - var(--k)), calc(100% - var(--k)) 100%, 0 100%, 0 var(--k));
+  }
+  /* Jarvis's words: cut at the top right. Yours: at the top left. (As in the window on the computer.) */
+  .row.jarvis .text::before, .row.jarvis .text::after { clip-path: polygon(0 0, calc(100% - var(--k)) 0, 100% var(--k), 100% 100%, 0 100%); }
+  .bubble::before, .bubble::after { clip-path: polygon(var(--k) 0, 100% 0, 100% 100%, 0 100%, 0 var(--k)); }
+
+  /* Everything you can press answers the finger at once (80ms in), then lets go slowly. */
+  .choice, .btn, .action, .suggestion, .vis-chip, .always-on, .icon-btn, .back, .to-bottom, .menu button, .menu a,
+  .vis-actions button, .vis-controls button, .pill button, .mode button, .codeblock header button {
+    cursor: pointer; transition: transform .5s var(--out), filter .5s var(--out), opacity .3s, color .3s;
+  }
+  .choice:active, .btn:active, .suggestion:active, .vis-chip:active, .always-on:active {
+    transform: scale(.972); filter: brightness(1.35); transition-duration: .08s;
+  }
+  .icon-btn:active, .back:active, .to-bottom:active, .action:active, .vis-actions button:active,
+  .vis-controls button:active, .pill button:active {
+    transform: scale(.9); filter: brightness(1.4); transition-duration: .08s;
   }
 
   /* ---------------------------------------------------------------- shared bits */
+  /* The orb: Jarvis himself, drawn live (see the orb section of the script). It's one continuous object: it travels
+     between the big one on the opening screens and the small one in the chat's header. */
   .orb { position: relative; width: 40px; height: 40px; flex-shrink: 0; }
-  .orb svg { width: 100%; height: 100%; overflow: visible; }
+  .orb canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .orb-hero { width: 148px; height: 148px; margin: 0 auto 26px; }
+  .orb-hero, .topbar .orb { view-transition-name: jarvis; }
+  .orb-hero::before, .orb-hero::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; pointer-events: none; }
+  .orb-hero::before { border: 1px solid rgb(var(--accent-rgb) / .16); }
+  .orb-hero::after {
+    border: 1.5px solid transparent; border-top-color: rgb(var(--accent-rgb) / .85); border-bottom-color: rgb(var(--accent-rgb) / .3);
+    animation: spin 11s linear infinite;
+  }
   .btn {
-    appearance: none; border: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-    gap: 8px; min-height: 52px; padding: 0 22px; border-radius: 999px; font-size: 16px; font-weight: 620;
-    letter-spacing: -.01em; transition: transform .16s var(--ease), background-color .16s, opacity .16s;
-    text-decoration: none; width: 100%;
+    appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    width: 100%; min-height: 54px; padding: 0 22px; font-size: 16px; font-weight: 620; letter-spacing: .005em;
+    color: var(--text); text-decoration: none; --c: 11px; --fill: var(--panel-2);
   }
-  .btn:active { transform: scale(.97); }
-  .btn.primary { background: var(--text); color: var(--bg); }
-  .btn.brand { background: var(--brand); color: var(--you-text); }
-  .btn.quiet { background: var(--surface-2); color: var(--text); }
-  .btn.ghost { background: transparent; color: var(--text-2); min-height: 44px; }
-  .btn:disabled { opacity: .45; transform: none; }
-  .icon-btn {
-    appearance: none; border: 0; background: transparent; width: 44px; height: 44px; border-radius: 50%;
-    display: grid; place-items: center; color: var(--text-2); cursor: pointer; flex-shrink: 0;
-    transition: background-color .15s, transform .15s var(--ease);
+  .btn.primary, .btn.brand {
+    color: var(--ink); --edge: var(--accent);
+    --fill: linear-gradient(135deg, rgb(var(--accent-rgb)), rgb(var(--accent-rgb) / .8)), var(--bg);
   }
-  .icon-btn:active { background: var(--surface-2); transform: scale(.92); }
-  .icon-btn svg { width: 22px; height: 22px; }
+  .btn.danger { color: #1c0409; --edge: var(--danger); --fill: var(--danger); }
+  .btn.ghost { min-height: 46px; color: var(--muted); --edge: none; --fill: none; }
+  .btn:disabled { opacity: .42; }
+  .btn:disabled:active { transform: none; filter: none; }
+  .icon-btn, .back {
+    appearance: none; border: 0; background: transparent; width: 44px; height: 44px; flex-shrink: 0;
+    display: grid; place-items: center; color: var(--muted);
+  }
+  .icon-btn svg, .back svg { width: 22px; height: 22px; }
+  .back { position: absolute; z-index: 3; top: calc(var(--sat) + 10px); left: calc(var(--sal) + 12px); color: var(--text); --c: 9px; }
   .spinner {
     width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent;
     animation: spin .8s linear infinite; flex-shrink: 0;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes rise { from { opacity: 0; transform: translateY(16px); } }
+  @keyframes fade { from { opacity: 0; } }
 
-  /* ---------------------------------------------------------------- full-screen views (welcome / pairing) */
+  /* ---------------------------------------------------------------- full-screen views
+     Showing a view assembles it: its parts rise into place one after another, a few hundredths of a second apart. */
   .view {
-    flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    position: relative; flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
     display: flex; flex-direction: column;
     padding: calc(var(--sat) + 28px) calc(var(--sar) + 24px) calc(var(--sab) + 24px) calc(var(--sal) + 24px);
-    animation: fadeUp .45s var(--ease) both;
   }
   .view-inner { width: 100%; max-width: 420px; margin: auto; display: flex; flex-direction: column; }
+  .view-inner > * { animation: rise .7s var(--out) both; }
+  .view-inner > :nth-child(2) { animation-delay: .06s; }
+  .view-inner > :nth-child(3) { animation-delay: .11s; }
+  .view-inner > :nth-child(4) { animation-delay: .15s; }
+  .view-inner > :nth-child(n + 5) { animation-delay: .18s; }
   .hero { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 30px; }
-  .hero .orb { width: 92px; height: 92px; margin-bottom: 22px; }
-  .hero h1 { font-size: 30px; line-height: 1.15; font-weight: 720; letter-spacing: -.03em; margin: 0 0 10px; }
-  .hero p { margin: 0; color: var(--text-2); font-size: 16px; max-width: 300px; }
-  /* ---------------------------------------------------------------- graphs, the globe, planets (full screen) */
-  .vis-layer { position: fixed; inset: 0; z-index: 60; background: #03050c; display: flex; animation: fadeUp .3s var(--ease) both; }
-  .vis-layer[hidden] { display: none; }
-  .vis-card { flex: 1; min-width: 0; display: flex; flex-direction: column;
-    padding: calc(var(--sat) + 10px) calc(var(--sar) + 14px) calc(var(--sab) + 12px) calc(var(--sal) + 14px); }
-  .vis-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
-  .vis-heading { flex: 1; min-width: 0; }
-  .vis-kicker { margin: 0 0 2px; font-size: 11px; font-weight: 650; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); }
-  .vis-heading h2 { margin: 0; font-size: 19px; line-height: 1.25; font-weight: 680; letter-spacing: -.01em; overflow-wrap: anywhere; }
-  .vis-sub { margin: 3px 0 0; font-size: 12.5px; color: var(--text-2); }
-  .vis-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-  .vis-actions button, .vis-controls button { height: 36px; min-width: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-2);
-    background: var(--surface); color: var(--text); font: 600 13px/1 inherit; font-family: inherit; }
-  .vis-actions button[hidden], .vis-controls button[hidden] { display: none; }
-  .vis-close { width: 36px; padding: 0 !important; font-size: 15px !important; }
-  .vis-nav { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); }
-  .vis-nav[hidden] { display: none; }
-  .vis-stage { position: relative; flex: 1; min-height: 0; border-radius: var(--r-md); overflow: hidden; background: #02040a; }
-  .vis-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
-  .vis-controls { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 6px; }
-  .vis-controls button { height: 32px; font-size: 12px; background: rgb(10 16 30 / .75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-  .vis-facts { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-height: 30vh; overflow-y: auto; }
-  .vis-facts li { display: grid; gap: 1px; padding: 7px 11px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
-  .vis-facts li.wide { flex: 1 1 100%; }
-  .vis-facts span { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); }
-  .vis-facts b { font-size: 13.5px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
-  .journey-hud { position: absolute; left: 10px; right: 10px; top: 10px; display: grid; grid-template-columns: auto minmax(40px, 1fr) auto;
-    grid-template-rows: auto auto; align-items: center; gap: 4px 10px; padding: 8px 14px; border-radius: 16px;
-    background: rgb(4 10 22 / .6); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); pointer-events: none; }
-  .journey-hud[hidden] { display: none; }
-  .journey-end { font-size: 12px; font-weight: 650; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .journey-track { position: relative; height: 3px; border-radius: 3px; background: rgb(255 255 255 / .14); }
-  .journey-fill { position: absolute; inset: 0; border-radius: 3px; transform-origin: left center; transform: scaleX(0);
-    background: linear-gradient(90deg, #ff5cd6, #5ed6ff); }
-  .journey-plane { position: absolute; top: 50%; left: 0; width: 15px; height: 15px; transform: translate(-50%, -50%) rotate(90deg); fill: #fff; }
-  .journey-km { grid-column: 1 / -1; justify-self: center; font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
-  .vis-chip { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 8px; padding: 12px 14px; text-align: left;
-    border-radius: var(--r-md); border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: inherit; }
-  .vis-chip i { width: 38px; height: 38px; flex-shrink: 0; border-radius: 12px; display: grid; place-items: center; font-style: normal; font-size: 19px;
-    background: linear-gradient(135deg, rgb(94 224 255 / .18), rgb(165 139 255 / .18)); }
-  .vis-chip b { display: block; font-size: 14.5px; font-weight: 640; }
-  .vis-chip span { display: block; font-size: 12.5px; color: var(--text-2); }
-  .vis-chip:active { transform: scale(.98); }
-  .always-on { display: grid; gap: 2px; width: 100%; margin-top: 18px; padding: 13px 16px; text-align: left; border-radius: var(--r-md);
-    border: 1px solid rgb(255 200 97 / .35); background: rgb(255 200 97 / .08); color: var(--text); font: inherit; cursor: pointer; }
-  .always-on[hidden] { display: none; }
-  .always-on b { font-size: 14px; font-weight: 640; color: var(--amber); }
-  .always-on span { font-size: 13.5px; color: var(--text-2); }
-  .choose-hero { margin-bottom: 26px; }
-  .choose-hero .orb { width: 76px; height: 76px; margin-bottom: 18px; }
-  .choices { display: grid; gap: 12px; }
-  .choice {
-    display: flex; align-items: center; gap: 16px; width: 100%; min-height: 92px; padding: 18px 20px; text-align: left;
-    border-radius: var(--r-lg); border: 1px solid var(--line-2); background: var(--surface); color: var(--text);
-    font: inherit; cursor: pointer; transition: transform .18s var(--ease), background .2s, border-color .2s;
-  }
-  .choice:active { transform: scale(.975); background: var(--surface-2); }
-  .choice:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-  .choice[disabled] { opacity: .5; cursor: default; }
-  .choice-ic { width: 52px; height: 52px; flex-shrink: 0; display: grid; place-items: center; border-radius: 16px;
-    background: linear-gradient(135deg, rgb(94 224 255 / .16), rgb(165 139 255 / .16)); color: var(--cyan); }
-  .choice-ic svg { width: 28px; height: 28px; }
-  .choice-text { display: grid; gap: 3px; min-width: 0; }
-  .choice-text b { font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
-  .choice-text span { font-size: 14px; color: var(--text-2); line-height: 1.35; }
-  .steps { list-style: none; padding: 0; margin: 0 0 22px; display: grid; gap: 10px; }
-  .steps li {
-    display: flex; gap: 14px; align-items: flex-start; padding: 16px; border-radius: var(--r-md);
-    background: var(--surface); border: 1px solid var(--line);
-  }
-  .steps .n {
-    width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
-    background: var(--surface-3); color: var(--text); font-size: 14px; font-weight: 700;
-  }
-  .steps b { font-weight: 640; color: var(--text); }
-  .steps span { color: var(--text-2); font-size: 15px; line-height: 1.45; padding-top: 2px; }
-  .code-entry { display: grid; gap: 10px; margin-top: 6px; }
-  .code-entry input {
-    width: 100%; height: 60px; border-radius: var(--r-md); border: 1px solid var(--line-2); background: var(--surface);
-    text-align: center; font-size: 26px; font-weight: 650; letter-spacing: .4em; padding-left: .4em; outline: none;
-    font-variant-numeric: tabular-nums; transition: border-color .15s, box-shadow .15s;
-  }
-  .code-entry input:focus { border-color: var(--cyan); box-shadow: 0 0 0 4px rgb(79 216 255 / .15); }
-  .form-error { color: var(--red); font-size: 14px; text-align: center; min-height: 20px; margin-top: 10px; }
-  .fine { color: var(--text-3); font-size: 13px; text-align: center; margin-top: 18px; line-height: 1.5; }
+  .hero h1 { font: 600 25px/1.22 var(--display); letter-spacing: .015em; margin: 0 0 12px; }
+  .hero p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.5; max-width: 320px; }
 
-  /* the pairing moment: orb breathing while it connects, then a check */
-  .status-visual { position: relative; width: 120px; height: 120px; margin: 0 auto 28px; display: grid; place-items: center; }
-  .status-visual .orb { width: 92px; height: 92px; animation: breathe 2.2s ease-in-out infinite; }
+  .choices { display: grid; gap: 12px; }
+  .choices > :nth-child(2) { animation: rise .7s var(--out) .07s both; }
+  .choice {
+    appearance: none; display: flex; align-items: center; gap: 16px; width: 100%; min-height: 96px;
+    padding: 18px 16px 18px 20px; text-align: left; color: var(--text); font: inherit;
+    --fill: linear-gradient(135deg, rgb(var(--accent-rgb) / .1), rgb(var(--accent-rgb) / .02) 58%), var(--panel);
+  }
+  .choice[disabled] { opacity: .45; cursor: default; }
+  .choice[disabled]:active { transform: none; filter: none; }
+  .choice-ic { width: 50px; height: 50px; flex-shrink: 0; display: grid; place-items: center; color: var(--accent); }
+  .choice-ic svg { width: 32px; height: 32px; }
+  .choice-text { flex: 1; display: grid; gap: 4px; min-width: 0; }
+  .choice-text b { font-size: 17.5px; font-weight: 650; letter-spacing: -.005em; line-height: 1.25; }
+  .choice-text span { font-size: 14px; color: var(--muted); line-height: 1.4; }
+  .choice-go { width: 18px; height: 18px; flex-shrink: 0; color: rgb(var(--accent-rgb) / .7); }
+  .always-on {
+    appearance: none; display: grid; gap: 2px; width: 100%; margin-top: 18px; padding: 14px 18px; text-align: left;
+    color: var(--text); font: inherit; --edge: rgb(255 200 97 / .5); --fill: linear-gradient(rgb(255 200 97 / .09), rgb(255 200 97 / .09)), var(--panel);
+  }
+  .always-on b { font-size: 14.5px; font-weight: 640; color: var(--warn); }
+  .always-on span { font-size: 13.5px; color: var(--muted); }
+
+  .steps { list-style: none; padding: 0; margin: 0 0 22px; display: grid; gap: 10px; }
+  .steps li { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; }
+  .steps .n { font: 600 15px/1.6 var(--display); color: var(--accent); flex-shrink: 0; width: 16px; }
+  .steps b { font-weight: 640; color: var(--text); }
+  .steps span { color: var(--muted); font-size: 15px; line-height: 1.5; }
+  .code-entry, .key-entry { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 6px; }
+  .inputbox { display: flex; min-width: 0; --fill: var(--panel); transition: filter .3s; }
+  .inputbox:focus-within { --edge: var(--accent); }
+  .inputbox input {
+    flex: 1; min-width: 0; width: 100%; height: 60px; border: 0; outline: 0; background: transparent; padding: 0 18px;
+    font-size: 16px; /* 16px: below this iOS zooms the page in on focus */
+  }
+  .inputbox input::placeholder { color: var(--faint); }
+  .code-entry input { text-align: center; font: 600 26px/1 var(--mono); letter-spacing: .4em; padding-left: calc(18px + .4em); font-variant-numeric: tabular-nums; }
+  .key-entry input { font: 15px/1 var(--mono); letter-spacing: .01em; }
+  .label { font-size: 13.5px; font-weight: 600; color: var(--muted); margin: 0 2px -2px; }
+  .form-error { color: var(--danger); font-size: 14px; text-align: center; min-height: 21px; margin-top: 10px; }
+  .fine { color: var(--faint); font-size: 13px; text-align: center; margin: 18px 0 0; line-height: 1.55; }
+  .fine a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgb(var(--accent-rgb) / .45); }
+
+  /* the pairing moment: the orb at work while it connects, then a check */
+  .status-visual { position: relative; width: 148px; height: 148px; margin: 0 auto 30px; display: grid; place-items: center; }
+  .status-visual .orb-hero { margin: 0; }
   .status-visual .ring {
-    position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid rgb(79 216 255 / .35);
-    animation: ripple 2.2s var(--ease) infinite;
+    position: absolute; inset: 0; border-radius: 50%; border: 1px solid rgb(var(--accent-rgb) / .4);
+    animation: ripple 2.2s var(--out) infinite;
   }
   .status-visual .ring:nth-child(2) { animation-delay: 1.1s; }
-  .status-visual.done .orb, .status-visual.done .ring { animation: none; }
-  .status-visual.done .ring { opacity: 0; }
+  .status-visual.done .ring { animation: none; opacity: 0; }
   .check {
-    position: absolute; width: 44px; height: 44px; right: 6px; bottom: 6px; border-radius: 50%; background: var(--mint);
-    color: #04140f; display: grid; place-items: center; transform: scale(0); transition: transform .45s var(--spring);
+    position: absolute; width: 46px; height: 46px; right: 0; bottom: 0; border-radius: 50%; background: var(--ok);
+    color: #04140f; display: grid; place-items: center; transform: scale(0); transition: transform .6s var(--out);
     box-shadow: 0 0 0 5px var(--bg);
   }
   .status-visual.done .check { transform: scale(1); }
   .check svg { width: 24px; height: 24px; }
-  @keyframes breathe { 50% { transform: scale(.94); } }
-  @keyframes ripple { from { transform: scale(.7); opacity: .9; } to { transform: scale(1.35); opacity: 0; } }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes ripple { from { transform: scale(.72); opacity: .9; } to { transform: scale(1.5); opacity: 0; } }
+
+  /* ---------------------------------------------------------------- scanning the code on the computer's screen */
+  .view.scan { padding: 0; overflow: hidden; background: #000; }
+  .scan video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: fade .6s ease-out both; }
+  .scan-frame { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .reticle {
+    position: relative; width: min(70vw, 46vh, 320px); aspect-ratio: 1; margin-bottom: 6vh;
+    box-shadow: 0 0 0 100vmax rgb(2 4 10 / .66);   /* the dimmed surround: a hole in the dark, sized by the reticle */
+    animation: lock .8s var(--out) both;
+  }
+  .reticle svg { position: absolute; inset: -2px; width: calc(100% + 4px); height: calc(100% + 4px); overflow: visible; color: var(--accent); }
+  .reticle i {
+    position: absolute; left: 5%; right: 5%; top: 8%; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: sweep 2.2s ease-in-out infinite alternate;
+  }
+  @keyframes sweep { to { top: 92%; } }
+  @keyframes lock { from { opacity: 0; transform: scale(1.18); } }
+  .scan-head {
+    position: absolute; z-index: 2; left: 0; right: 0; top: 0; text-align: center;
+    padding: calc(var(--sat) + 20px) 70px 0; font: 600 16px/1.3 var(--display); letter-spacing: .04em;
+  }
+  .scan-note {
+    position: absolute; z-index: 2; left: calc(var(--sal) + 20px); right: calc(var(--sar) + 20px); bottom: calc(var(--sab) + 22px);
+    padding: 16px 18px; text-align: center; --fill: rgb(4 9 20 / .94); animation: rise .7s var(--out) .1s both;
+  }
+  .scan-note b { display: block; font-size: 15.5px; font-weight: 640; line-height: 1.35; }
+  .scan-note span { display: block; margin-top: 3px; font-size: 13.5px; color: var(--muted); line-height: 1.45; }
+  .scan-note.warn b { color: var(--warn); }
+  .scan-note .btn { margin-top: 14px; }
+
+  /* ---------------------------------------------------------------- adding the app to the Home Screen */
+  .install-app { display: flex; align-items: center; gap: 16px; margin-bottom: 26px; }
+  .install-app img { width: 64px; height: 64px; border-radius: 15px; box-shadow: 0 10px 28px rgb(0 0 0 / .55); }
+  .install-app div { font-size: 14px; color: var(--muted); }
+  .install-app div b { display: block; font: 600 19px/1.3 var(--display); letter-spacing: .06em; color: var(--text); }
+  .view h1.plain { font: 600 23px/1.25 var(--display); letter-spacing: .015em; margin: 0 0 10px; }
+  .view .lead { margin: 0 0 20px; color: var(--muted); font-size: 15.5px; line-height: 1.5; }
+  .install-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .install-steps li { display: flex; align-items: center; gap: 14px; padding: 14px 16px; font-size: 15.5px; line-height: 1.4; }
+  .install-steps .glyph { width: 30px; height: 30px; display: grid; place-items: center; flex-shrink: 0; color: var(--accent); font: 600 15px/1 var(--display); }
+  .install-steps .glyph svg { width: 23px; height: 23px; }
+  .install-steps b { font-weight: 650; }
+  .install-steps small { font-size: inherit; color: var(--faint); }
+  .actions { display: grid; gap: 10px; margin-top: 20px; }
 
   /* ---------------------------------------------------------------- chat: header */
   .chat { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
   .topbar {
     position: relative; z-index: 5; flex-shrink: 0; display: flex; align-items: center; gap: 12px;
-    padding: calc(var(--sat) + 8px) calc(var(--sar) + 8px) 8px calc(var(--sal) + var(--gutter));
-    background: rgb(5 7 15 / .92); border-bottom: 1px solid transparent; transition: border-color .2s;
+    padding: calc(var(--sat) + 8px) calc(var(--sar) + 8px) 9px calc(var(--sal) + var(--gutter));
+    background: rgb(2 4 10 / .9); animation: fade .5s ease-out both;
   }
-  .topbar.scrolled { border-bottom-color: var(--line); }
+  .topbar::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; opacity: .35; transition: opacity .4s;
+    background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / .7) 22%, rgb(var(--accent-rgb) / .7) 78%, transparent);
+  }
+  .topbar.scrolled::after { opacity: 1; }
   /* iOS: translucent material, like the system's own bars. Android: solid — blur is costly on mid-range GPUs. */
-  .ios .topbar { background: rgb(5 7 15 / .72); -webkit-backdrop-filter: saturate(160%) blur(20px); backdrop-filter: saturate(160%) blur(20px); }
-  .topbar .orb { width: 38px; height: 38px; }
+  .ios .topbar { background: rgb(2 4 10 / .68); -webkit-backdrop-filter: saturate(150%) blur(20px); backdrop-filter: saturate(150%) blur(20px); }
+  .topbar .orb { width: 42px; height: 42px; margin: -2px 0 -2px -3px; }
   .presence {
-    position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 50%;
-    background: var(--text-3); box-shadow: 0 0 0 2.5px var(--bg); transition: background-color .3s;
+    position: absolute; right: 1px; bottom: 1px; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--faint); box-shadow: 0 0 0 2.5px var(--bg); transition: background-color .4s;
   }
-  [data-conn="ready"] .presence { background: var(--mint); }
-  [data-conn="connecting"] .presence, [data-conn="waiting"] .presence, [data-conn="starting"] .presence { background: var(--amber); animation: blink 1.4s ease-in-out infinite; }
-  [data-conn="offline"] .presence, [data-conn="unreachable"] .presence, [data-conn="closed"] .presence { background: var(--red); }
+  [data-conn="ready"] .presence { background: var(--ok); }
+  [data-conn="connecting"] .presence, [data-conn="waiting"] .presence, [data-conn="starting"] .presence { background: var(--warn); animation: blink 1.4s ease-in-out infinite; }
+  [data-conn="offline"] .presence, [data-conn="unreachable"] .presence, [data-conn="closed"] .presence { background: var(--danger); }
+  .app[data-here] .presence { background: var(--ok); animation: none; }
   @keyframes blink { 50% { opacity: .35; } }
   .who { flex: 1; min-width: 0; }
-  .who .name { font-size: 17px; font-weight: 680; letter-spacing: -.02em; line-height: 1.2; }
+  .who .name { font: 700 15px/1.25 var(--display); letter-spacing: .22em; text-transform: uppercase; }
   .who .sub {
-    font-size: 13px; color: var(--text-3); line-height: 1.3; white-space: nowrap; overflow: hidden;
-    text-overflow: ellipsis; transition: color .2s;
+    font-size: 12.5px; color: var(--faint); line-height: 1.35; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; transition: color .4s;
   }
-  [data-conn="ready"] .who .sub { color: var(--text-2); }
+  [data-conn="ready"] .who .sub { color: var(--muted); }
 
-  .mode { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); flex-shrink: 0; }
+  /* Computer / Phone: the lit half slides under your finger */
+  .mode { display: grid; grid-template-columns: 1fr 1fr; flex-shrink: 0; padding: 3px; --c: 9px; }
+  .mode i {
+    position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); background: var(--accent);
+    clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+    transition: transform .55s var(--out);
+  }
+  .mode[data-mode="phone"] i { transform: translateX(100%); }
   .mode button {
-    appearance: none; border: 0; background: transparent; color: var(--text-2); display: inline-flex; align-items: center; gap: 5px;
-    font-size: 13px; font-weight: 640; padding: 7px 11px; border-radius: 999px; cursor: pointer; transition: background-color .2s, color .2s;
+    appearance: none; border: 0; background: transparent; color: var(--muted); display: inline-flex; align-items: center;
+    justify-content: center; gap: 5px; font-size: 12.5px; font-weight: 650; padding: 7px 11px; min-height: 32px;
+    position: relative; z-index: 1;
   }
   .mode button svg { width: 15px; height: 15px; }
-  .mode button[aria-selected="true"] { background: var(--brand); color: var(--you-text); }
-  @media (max-width: 400px) { .mode button span { display: none; } .mode button { padding: 7px 10px; } }
+  .mode button[aria-selected="true"] { color: var(--ink); }
+  @media (max-width: 420px) { .mode button span { display: none; } .mode button { padding: 7px 12px; } }
 
   /* a slim strip under the header, only while something about the connection needs saying */
   .banner {
     position: absolute; left: 0; right: 0; top: 100%; z-index: 4; display: flex; justify-content: center;
-    padding: 8px 12px 0; pointer-events: none; transform: translateY(-6px); opacity: 0;
-    transition: transform .25s var(--ease), opacity .25s;
+    padding: 10px 12px 0; pointer-events: none; transform: translateY(-10px); opacity: 0;
+    transition: transform .3s var(--leave), opacity .25s;
   }
-  .banner.show { transform: none; opacity: 1; }
-  .banner .pill {
+  .banner.show { transform: none; opacity: 1; transition: transform .6s var(--out), opacity .3s; }
+  .pill {
     pointer-events: auto; display: inline-flex; align-items: center; gap: 10px; max-width: 100%;
-    padding: 8px 8px 8px 14px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-2);
-    font-size: 13.5px; color: var(--text); box-shadow: 0 8px 28px rgb(0 0 0 / .45);
+    padding: 7px 7px 7px 15px; font-size: 13.5px; color: var(--text); --c: 9px; --fill: var(--panel-2);
   }
-  .banner .pill > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .banner .pill .spinner { width: 14px; height: 14px; color: var(--amber); }
-  .banner .pill button {
-    border: 0; border-radius: 999px; background: var(--text); color: var(--bg); font-size: 13px; font-weight: 650;
-    padding: 7px 13px; cursor: pointer; flex-shrink: 0;
+  .pill > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill .spinner { width: 14px; height: 14px; color: var(--warn); }
+  .pill button {
+    border: 0; background: var(--accent); color: var(--ink); font-size: 13px; font-weight: 650; padding: 7px 12px; flex-shrink: 0;
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
   }
-  .banner .pill button:active { transform: scale(.95); }
-  .banner .pill:not(.has-action) { padding-right: 14px; }
+  .pill:not(.has-action) { padding: 9px 15px; }
 
   /* ---------------------------------------------------------------- chat: thread */
   .scroller {
     flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
-    overscroll-behavior-y: contain; scrollbar-width: none; position: relative;
+    overscroll-behavior-y: contain; scrollbar-width: none; position: relative; animation: fade .5s ease-out .05s both;
   }
   .scroller::-webkit-scrollbar { display: none; }
   .thread {
@@ -283,269 +372,307 @@
     padding: 18px calc(var(--sar) + var(--gutter)) 12px calc(var(--sal) + var(--gutter));
     max-width: 760px; margin: 0 auto;
   }
-  .row { display: flex; flex-direction: column; margin-top: 14px; contain: layout paint; }
-  .row.cont { margin-top: 4px; }
-  .row.enter { animation: msgIn .32s var(--ease) both; }
-  @keyframes msgIn { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+  .row { display: flex; flex-direction: column; margin-top: 16px; }
+  .row.cont { margin-top: 5px; }
+  /* A new message is drawn in from its speaker's side: yours from the right, Jarvis's from the left. */
+  .row.enter { animation: msgIn .55s var(--out) both; transform-origin: left bottom; }
+  .row.you.enter { animation-name: msgInYou; transform-origin: right bottom; }
+  @keyframes msgIn { from { opacity: 0; transform: translate(-14px, 8px) scale(.97); } }
+  @keyframes msgInYou { from { opacity: 0; transform: translate(14px, 8px) scale(.97); } }
 
-  /* You: a filled bubble in the brand gradient, on the right, within easy thumb reach. */
   .row.you { align-items: flex-end; }
-  .row.you .bubble {
-    max-width: min(82%, 560px); padding: 10px 15px; border-radius: var(--r-lg); border-bottom-right-radius: 8px;
-    background: var(--brand); color: var(--you-text); font-size: 16px; line-height: 1.42; font-weight: 450;
-    white-space: pre-wrap; overflow-wrap: anywhere; transition: opacity .25s;
+  .bubble {
+    max-width: min(84%, 560px); padding: 11px 15px 11px 17px; font-size: 16px; line-height: 1.45; color: var(--text);
+    white-space: pre-wrap; overflow-wrap: anywhere; transition: opacity .3s; --c: 12px;
+    --edge: linear-gradient(225deg, rgb(var(--magenta-rgb) / .72), rgb(var(--magenta-rgb) / .2) 60%);
+    --fill: linear-gradient(225deg, rgb(var(--magenta-rgb) / .24), rgb(var(--magenta-rgb) / .07)), var(--panel);
   }
-  .row.you.cont .bubble { border-top-right-radius: 8px; }
   .row.you.queued .bubble { opacity: .55; }
-  .row.you .meta { font-size: 11.5px; color: var(--text-3); margin-top: 4px; padding-right: 4px; display: flex; gap: 5px; align-items: center; }
+  .row.you .meta { font-size: 11.5px; color: var(--faint); margin-top: 5px; padding-right: 2px; display: flex; gap: 5px; align-items: center; }
   .row.you .meta svg { width: 13px; height: 13px; }
-  .row.you .meta .fail { color: var(--red); }
+  .row.you .meta .fail { color: var(--danger); }
 
-  /* Jarvis: no bubble — reads like a document, with a thin gradient rule echoing the desktop app's HUD. */
-  .row.jarvis { align-items: stretch; }
-  .speaker { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--text-2); font-size: 13px; font-weight: 620; }
-  .speaker .orb { width: 20px; height: 20px; }
-  .speaker time { color: var(--text-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .row.jarvis { align-items: flex-start; }
+  .speaker { display: flex; align-items: baseline; gap: 9px; margin: 0 0 6px 2px; }
+  .speaker b { font: 700 11px/1 var(--display); letter-spacing: .2em; text-transform: uppercase; color: var(--accent); }
+  .speaker time { font: 11px/1 var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
   .row.jarvis .text {
-    position: relative; padding: 1px 0 1px 15px; font-size: 16.5px; line-height: 1.55; color: var(--text);
-    overflow-wrap: anywhere; max-width: 680px;
+    max-width: min(100%, 680px); padding: 12px 17px 12px 15px; font-size: 16.5px; line-height: 1.55; color: var(--text);
+    overflow-wrap: anywhere; --c: 12px;
+    --edge: linear-gradient(135deg, rgb(var(--accent-rgb) / .5), rgb(var(--accent-rgb) / .12) 55%);
+    --fill: linear-gradient(135deg, rgb(var(--accent-rgb) / .11), rgb(var(--accent-rgb) / .03)), var(--panel);
   }
-  .row.jarvis .text::before {
-    content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px; border-radius: 2px;
-    background: linear-gradient(180deg, var(--cyan), var(--violet)); opacity: .75;
-  }
+  .row.jarvis .text:empty { display: none; }
   .text p { margin: 0 0 .65em; } .text p:last-child { margin-bottom: 0; }
   .text ul, .text ol { margin: .2em 0 .7em; padding-left: 1.3em; } .text li { margin: .2em 0; }
-  .text a { color: var(--cyan); text-decoration: none; border-bottom: 1px solid rgb(79 216 255 / .35); }
+  .text li::marker { color: var(--accent); }
+  .text a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgb(var(--accent-rgb) / .45); }
   .text strong { font-weight: 680; }
   .text hr { border: 0; height: 1px; background: var(--line-2); margin: .9em 0; }
-  .text code {
-    font: 14px/1.4 ui-monospace, "SF Mono", Menlo, "Roboto Mono", monospace; background: var(--surface-2);
-    padding: 2px 6px; border-radius: 6px; overflow-wrap: anywhere;
-  }
-  .codeblock { margin: .5em 0 .8em; border-radius: var(--r-sm); background: #0b1020; border: 1px solid var(--line); overflow: hidden; }
+  .text code { font: 14px/1.4 var(--mono); background: rgb(var(--accent-rgb) / .12); padding: 2px 6px; overflow-wrap: anywhere; }
+  .codeblock { margin: .5em 0 .8em; --c: 9px; --fill: #04080f; }
   .codeblock header {
-    display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 4px 12px;
-    font-size: 12px; color: var(--text-3); border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 4px 14px;
+    font: 11.5px/1 var(--mono); color: var(--faint); border-bottom: 1px solid var(--line);
   }
-  .codeblock header button {
-    border: 0; background: transparent; color: var(--text-2); font-size: 12.5px; font-weight: 600; padding: 7px 10px;
-    border-radius: 8px; cursor: pointer;
-  }
-  .codeblock header button:active { background: var(--surface-2); }
-  .codeblock pre { margin: 0; padding: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .codeblock header button { border: 0; background: transparent; color: var(--muted); font: 600 12.5px/1 inherit; font-family: inherit; padding: 9px 10px; }
+  .codeblock pre { margin: 0; padding: 12px 14px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .codeblock pre code { background: none; padding: 0; font-size: 13.5px; white-space: pre; overflow-wrap: normal; }
-  .text img { display: block; max-width: 100%; max-height: 60vh; border-radius: var(--r-md); margin-top: 6px; background: var(--surface); }
-  .row.you img { display: block; max-width: 100%; border-radius: 14px; margin-bottom: 6px; }
+  .text img { display: block; max-width: 100%; max-height: 60vh; margin-top: 6px; background: var(--panel-2); }
+  .row.you img { display: block; max-width: 100%; margin-bottom: 6px; }
+
+  /* A picture Jarvis drew (a graph, the globe, a planet): tap to open it full screen. */
+  .vis-chip {
+    appearance: none; display: flex; align-items: center; gap: 14px; width: min(100%, 420px); padding: 13px 16px; text-align: left;
+    color: var(--text); font: inherit; --c: 12px;
+    --fill: linear-gradient(135deg, rgb(var(--accent-rgb) / .14), rgb(var(--accent-rgb) / .03)), var(--panel);
+  }
+  .vis-chip i { width: 34px; height: 34px; flex-shrink: 0; display: grid; place-items: center; color: var(--accent); }
+  .vis-chip i svg { width: 28px; height: 28px; }
+  .vis-chip b { display: block; font-size: 15px; font-weight: 640; line-height: 1.3; }
+  .vis-chip span { display: block; font-size: 12.5px; color: var(--muted); }
 
   /* Small system-level notes: what happened on the computer (an action done or failed), connection events. */
-  .note { align-self: center; display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; max-width: 92%;
-    font-size: 13px; color: var(--text-3); padding: 6px 12px; border-radius: 999px; background: rgb(255 255 255 / .03); text-align: center; }
+  .note { align-self: center; display: inline-flex; align-items: center; gap: 7px; margin-top: 16px; max-width: 92%;
+    font-size: 12.5px; color: var(--faint); text-align: center; animation: fade .5s ease-out both; }
   .note svg { width: 15px; height: 15px; flex-shrink: 0; }
-  .note.ok { color: var(--mint); } .note.err { color: var(--red); background: rgb(255 107 129 / .08); }
+  .note.ok { color: var(--ok); } .note.err { color: var(--danger); }
 
-  /* Jarvis is working on it */
-  .typing { margin-top: 14px; }
-  .typing .dots { display: flex; gap: 5px; padding: 8px 0 6px 15px; position: relative; }
-  .typing .dots::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px; border-radius: 2px; background: linear-gradient(180deg, var(--cyan), var(--violet)); opacity: .5; }
-  .typing .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); animation: dot 1.2s ease-in-out infinite; }
-  .typing .dots i:nth-child(2) { animation-delay: .15s; background: #7d9dff; }
-  .typing .dots i:nth-child(3) { animation-delay: .3s; background: var(--violet); }
-  @keyframes dot { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-5px); opacity: 1; } }
-  .typing .label { font-size: 13px; color: var(--text-3); padding-left: 15px; opacity: 0; transition: opacity .4s; }
+  /* Jarvis is working on it: the line he's about to write on, scanning */
+  .typing { margin-top: 16px; }
+  .typing .dots { display: flex; align-items: center; gap: 5px; height: 26px; padding-left: 2px; }
+  .typing .dots i { width: 14px; height: 3px; background: var(--accent); animation: scan 1.1s ease-in-out infinite; }
+  .typing .dots i:nth-child(2) { animation-delay: .14s; }
+  .typing .dots i:nth-child(3) { animation-delay: .28s; }
+  @keyframes scan { 0%, 70%, 100% { opacity: .22; transform: scaleX(.6); } 35% { opacity: 1; transform: scaleX(1); } }
+  .typing .label { font-size: 13px; color: var(--faint); padding-left: 2px; opacity: 0; transition: opacity .5s; }
   .typing.long .label { opacity: 1; }
 
-  /* empty state: a calm hello and a few things to try */
-  .empty { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 6px; animation: fadeUp .5s var(--ease) both; }
-  .empty .hello { display: flex; flex-direction: column; align-items: flex-start; margin-bottom: 26px; }
-  .empty .orb { width: 52px; height: 52px; margin-bottom: 18px; }
-  .empty h2 { margin: 0 0 6px; font-size: 28px; line-height: 1.15; font-weight: 720; letter-spacing: -.03em; }
-  .empty h2 .grad { background: var(--brand); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .empty p { margin: 0; color: var(--text-2); font-size: 15.5px; }
-  .empty .credit { color: var(--text-3); font-size: 12.5px; margin-top: 8px; }
-  .suggestions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  /* empty state: a hello, and a few things to say */
+  .empty { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 6px; }
+  .empty .hello { margin-bottom: 26px; animation: rise .8s var(--out) both; }
+  .empty h2 { margin: 0 0 8px; font: 600 26px/1.2 var(--display); letter-spacing: .015em; }
+  .empty p { margin: 0; color: var(--muted); font-size: 15.5px; }
+  .empty .credit { display: block; color: var(--faint); font-size: 12.5px; margin-top: 10px; }
+  .suggestions { display: grid; gap: 8px; }
   .suggestion {
-    appearance: none; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-md);
-    padding: 13px 14px; min-height: 68px; cursor: pointer; display: flex; flex-direction: column; gap: 3px;
-    transition: transform .15s var(--ease), background-color .15s;
+    appearance: none; text-align: left; padding: 12px 16px 12px 38px; min-height: 60px; display: grid; gap: 1px; align-content: center;
+    --c: 11px; animation: rise .7s var(--out) both;
   }
-  .suggestion:active { transform: scale(.97); background: var(--surface-2); }
-  .suggestion b { font-size: 14.5px; font-weight: 620; color: var(--text); }
-  .suggestion span { font-size: 13px; color: var(--text-3); line-height: 1.3; }
-  .install-card {
-    display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; margin-bottom: 14px;
-    border-radius: var(--r-md); background: linear-gradient(135deg, rgb(79 216 255 / .10), rgb(165 139 255 / .10));
-    border: 1px solid rgb(125 157 255 / .25);
+  .suggestion:nth-child(1) { animation-delay: .08s; } .suggestion:nth-child(2) { animation-delay: .13s; }
+  .suggestion:nth-child(3) { animation-delay: .18s; } .suggestion:nth-child(4) { animation-delay: .23s; }
+  .suggestion > i {   /* the command line's prompt mark */
+    position: absolute; left: 17px; top: 50%; width: 8px; height: 8px; margin-top: -4px;
+    border: solid var(--accent); border-width: 1.8px 1.8px 0 0; transform: rotate(45deg);
   }
+  .suggestion b { font-size: 15px; font-weight: 630; color: var(--text); }
+  .suggestion span { font-size: 13px; color: var(--muted); line-height: 1.35; }
+  .install-card { display: flex; align-items: center; gap: 12px; padding: 12px 10px 12px 14px; margin-bottom: 12px; --c: 11px; animation: rise .7s var(--out) .04s both; }
   .install-card img { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; }
-  .install-card div { flex: 1; min-width: 0; font-size: 14px; color: var(--text-2); line-height: 1.35; }
+  .install-card div { flex: 1; min-width: 0; font-size: 13.5px; color: var(--muted); line-height: 1.35; }
   .install-card div b { display: block; color: var(--text); font-size: 15px; font-weight: 640; }
-  .install-card .btn { width: auto; min-height: 36px; padding: 0 14px; font-size: 14px; }
-  .install-card .icon-btn { width: 32px; height: 32px; }
+  .install-card .btn { width: auto; min-height: 38px; padding: 0 16px; font-size: 14px; --c: 8px; }
+  .install-card .icon-btn { width: 34px; height: 34px; }
   .install-card .icon-btn svg { width: 16px; height: 16px; }
 
   .to-bottom {
-    position: absolute; right: calc(var(--sar) + 14px); bottom: 12px; z-index: 3; width: 40px; height: 40px;
-    border-radius: 50%; border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text);
-    display: grid; place-items: center; box-shadow: 0 6px 20px rgb(0 0 0 / .5); cursor: pointer;
-    transform: translateY(12px) scale(.8); opacity: 0; pointer-events: none;
-    transition: transform .22s var(--spring), opacity .18s;
+    position: absolute; right: calc(var(--sar) + 14px); bottom: 12px; z-index: 3; width: 42px; height: 42px;
+    color: var(--text); display: grid; place-items: center; --c: 10px; --fill: var(--panel-2);
+    transform: translateY(14px) scale(.8); opacity: 0; pointer-events: none;
   }
   .to-bottom.show { transform: none; opacity: 1; pointer-events: auto; }
   .to-bottom svg { width: 20px; height: 20px; }
-  .to-bottom i { position: absolute; top: -2px; right: -2px; width: 11px; height: 11px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 0 2px var(--bg); display: none; }
+  .to-bottom i { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: rgb(var(--magenta-rgb)); box-shadow: 0 0 0 2px var(--bg); display: none; }
   .to-bottom.unread i { display: block; }
 
-  /* ---------------------------------------------------------------- chat: composer */
-  .composer-wrap { position: relative; flex-shrink: 0; z-index: 4; }
+  /* ---------------------------------------------------------------- chat: composer (the command line) */
+  .composer-wrap { position: relative; flex-shrink: 0; z-index: 4; animation: rise .7s var(--out) .05s both; }
   .composer {
     display: flex; align-items: flex-end; gap: 8px;
     padding: 8px calc(var(--sar) + 10px) calc(max(var(--sab), 10px)) calc(var(--sal) + 10px);
     max-width: 760px; margin: 0 auto;
   }
   .kb-open .composer { padding-bottom: 8px; }
-  .field {
-    flex: 1; min-width: 0; display: flex; align-items: flex-end; min-height: 50px; border-radius: 25px;
-    background: var(--surface); border: 1px solid var(--line-2); transition: border-color .2s, background-color .2s;
+  .field-wrap { flex: 1; min-width: 0; position: relative; display: flex; }
+  .field { flex: 1; min-width: 0; display: flex; align-items: flex-end; min-height: 52px; --c: 12px; }
+  .field:focus-within {
+    --edge: linear-gradient(135deg, rgb(var(--accent-rgb)), rgb(var(--accent-rgb) / .4) 40%, rgb(var(--accent-rgb) / .3) 60%, rgb(var(--accent-rgb) / .85));
+    --fill: linear-gradient(rgb(var(--accent-rgb) / .06), rgb(var(--accent-rgb) / .06)), var(--panel);
   }
-  .field:focus-within { border-color: rgb(125 157 255 / .55); background: var(--surface-2); }
+  .field > i {
+    align-self: flex-start; flex-shrink: 0; width: 8px; height: 8px; margin: 22px 0 0 17px;
+    border: solid var(--accent); border-width: 1.8px 1.8px 0 0; transform: rotate(45deg); opacity: .8;
+  }
   .field textarea {
     flex: 1; min-width: 0; resize: none; border: 0; outline: none; background: transparent;
     font-size: 16px; /* 16px: below this iOS zooms the page in on focus */ line-height: 22px;
-    padding: 13px 4px 13px 18px; max-height: 154px; overflow-y: auto; scrollbar-width: none;
+    padding: 15px 8px 15px 12px; max-height: 154px; overflow-y: auto; scrollbar-width: none;
   }
-  .field textarea::placeholder { color: var(--text-3); }
-  .field textarea:disabled::placeholder { color: var(--text-3); opacity: .7; }
+  .field textarea::placeholder { color: var(--faint); }
   .action {
-    width: 50px; height: 50px; border-radius: 50%; border: 0; flex-shrink: 0; cursor: pointer; position: relative;
-    display: grid; place-items: center; background: var(--surface-2); color: var(--text);
-    transition: transform .2s var(--spring), background-color .2s, color .2s, box-shadow .2s;
-    touch-action: none; -webkit-touch-callout: none;
+    appearance: none; width: 52px; height: 52px; flex-shrink: 0; display: grid; place-items: center; color: var(--accent);
+    --c: 12px; --fill: var(--panel-2); touch-action: none; -webkit-touch-callout: none;
   }
-  .action svg { width: 23px; height: 23px; position: absolute; transition: transform .22s var(--spring), opacity .15s; }
-  .action .i-send { transform: scale(.4) rotate(-45deg); opacity: 0; }
-  .action.send { background: var(--text); color: var(--bg); }
+  .action svg { width: 23px; height: 23px; position: absolute; transition: transform .5s var(--out), opacity .2s; }
+  .action .i-send { transform: translateY(10px) scale(.5); opacity: 0; }
+  .action.send { color: var(--ink); --edge: var(--accent); --fill: var(--accent); }
   .action.send .i-send { transform: none; opacity: 1; }
-  .action.send .i-mic { transform: scale(.4); opacity: 0; }
-  .action:active { transform: scale(.92); }
+  .action.send .i-mic { transform: translateY(-10px) scale(.5); opacity: 0; }
   .action:disabled { opacity: .4; }
-  .action.recording { background: var(--red); color: #fff; transform: scale(1.1); box-shadow: 0 0 0 7px rgb(255 107 129 / .18); }
+  .action.recording { color: #1c0409; --edge: var(--danger); --fill: var(--danger); transform: scale(1.12); }
 
-  /* push-to-talk: the text field turns into the recording bar while the mic is held */
+  /* push-to-talk: the command line turns into the recording bar while the mic is held */
   .recbar {
     position: absolute; inset: 0; display: flex; align-items: center; gap: 10px; padding: 0 18px;
-    border-radius: 25px; background: var(--surface-2); font-size: 15px; color: var(--text-2);
-    opacity: 0; pointer-events: none; transition: opacity .15s;
+    font-size: 15px; color: var(--muted); --c: 12px; --edge: var(--accent); --fill: var(--panel-2);
+    opacity: 0; pointer-events: none; transition: opacity .2s;
   }
-  .field-wrap { flex: 1; min-width: 0; position: relative; display: flex; }
   .recording-on .recbar { opacity: 1; }
-  .recbar .rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--red); animation: blink 1s infinite; }
-  .recbar time { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
-  .recbar .slide { margin-left: auto; color: var(--text-3); font-size: 14px; transition: color .15s; }
-  .recbar.cancel .slide { color: var(--red); }
+  .recbar .rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); animation: blink 1s infinite; }
+  .recbar time { color: var(--text); font: 600 15px/1 var(--mono); font-variant-numeric: tabular-nums; }
+  .recbar .slide { margin-left: auto; color: var(--faint); font-size: 14px; transition: color .2s; }
+  .recbar.cancel .slide { color: var(--danger); }
 
   /* ---------------------------------------------------------------- bottom sheets */
   .scrim {
-    position: fixed; inset: 0; z-index: 20; background: rgb(0 0 0 / .55); opacity: 0; pointer-events: none;
-    transition: opacity .25s;
+    position: fixed; inset: 0; z-index: 20; background: rgb(1 2 6 / .66); opacity: 0; pointer-events: none;
+    transition: opacity .3s;
   }
-  .scrim.show { opacity: 1; pointer-events: auto; }
+  .ios .scrim { -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
+  .scrim.show { opacity: 1; pointer-events: auto; transition: opacity .45s var(--out); }
+  /* The sheet is clipped itself (it scrolls, so its edge can't live on pseudo-elements): a lit line along the top
+     and down both cut corners, drawn as backgrounds. Up with the long ease-out; down faster than it came. */
   .sheet {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; max-height: 88%; overflow-y: auto;
-    margin: 0 auto; max-width: 560px; background: var(--bg-raise); border: 1px solid var(--line);
-    border-bottom: 0; border-radius: 26px 26px 0 0;
-    padding: 8px calc(var(--sar) + 18px) calc(var(--sab) + 18px) calc(var(--sal) + 18px);
-    transform: translateY(105%); transition: transform .34s var(--ease); visibility: hidden;
-    overscroll-behavior: contain;
+    margin: 0 auto; max-width: 560px; --c: 22px; --e: rgb(var(--accent-rgb) / .75);
+    background:
+      linear-gradient(to bottom right, transparent 50%, var(--e) 50%, var(--e) calc(50% + 1.2px), transparent calc(50% + 1.2px)) 0 0 / var(--c) var(--c) no-repeat,
+      linear-gradient(to bottom left, transparent 50%, var(--e) 50%, var(--e) calc(50% + 1.2px), transparent calc(50% + 1.2px)) 100% 0 / var(--c) var(--c) no-repeat,
+      linear-gradient(90deg, var(--e), rgb(var(--accent-rgb) / .16) 32%, rgb(var(--accent-rgb) / .16) 68%, var(--e)) var(--c) 0 / calc(100% - 2 * var(--c)) 1px no-repeat,
+      linear-gradient(rgb(var(--accent-rgb) / .08), transparent 140px),
+      var(--panel);
+    clip-path: polygon(var(--c) 0, calc(100% - var(--c)) 0, 100% var(--c), 100% 100%, 0 100%, 0 var(--c));
+    padding: 10px calc(var(--sar) + 18px) calc(var(--sab) + 18px) calc(var(--sal) + 18px);
+    transform: translateY(104%); visibility: hidden; overscroll-behavior: contain;
+    transition: transform .3s var(--leave), visibility 0s .3s;
   }
-  .sheet.show { transform: none; visibility: visible; }
-  .sheet .grip { width: 38px; height: 5px; border-radius: 3px; background: var(--surface-3); margin: 2px auto 14px; }
-  .sheet h3 { margin: 4px 4px 4px; font-size: 21px; font-weight: 700; letter-spacing: -.02em; }
-  .sheet .lead { margin: 0 4px 18px; color: var(--text-2); font-size: 15px; }
+  .sheet.show { transform: none; visibility: visible; transition: transform .62s var(--out), visibility 0s; }
+  .sheet .grip { width: 44px; height: 3px; background: rgb(var(--accent-rgb) / .4); margin: 4px auto 16px; }
+  .sheet h2 { margin: 6px 4px 8px; font: 600 19px/1.3 var(--display); letter-spacing: .015em; }
+  .sheet .lead { margin: 0 4px 18px; color: var(--muted); font-size: 15px; line-height: 1.5; }
   .menu { display: grid; gap: 2px; margin: 0 -6px; }
   .menu button, .menu a {
     appearance: none; border: 0; background: transparent; width: 100%; display: flex; align-items: center; gap: 14px;
-    min-height: 54px; padding: 0 12px; border-radius: 14px; text-align: left; cursor: pointer; font-size: 16px;
-    color: var(--text); text-decoration: none; transition: background-color .12s;
+    min-height: 56px; padding: 0 12px; text-align: left; font-size: 16px; color: var(--text); text-decoration: none;
   }
-  .menu button:active, .menu a:active { background: var(--surface-2); }
-  .menu .ic { width: 36px; height: 36px; border-radius: 10px; background: var(--surface-2); display: grid; place-items: center; color: var(--text-2); flex-shrink: 0; }
-  .menu .ic svg { width: 19px; height: 19px; }
+  .menu button:active, .menu a:active { background: rgb(var(--accent-rgb) / .1); transition-duration: .08s; }
+  .sheet.show .menu > * { animation: rise .6s var(--out) both; }
+  .sheet.show .menu > :nth-child(2) { animation-delay: .03s; } .sheet.show .menu > :nth-child(3) { animation-delay: .06s; }
+  .sheet.show .menu > :nth-child(4) { animation-delay: .09s; } .sheet.show .menu > :nth-child(5) { animation-delay: .12s; }
+  .sheet.show .menu > :nth-child(n + 6) { animation-delay: .15s; }
+  .menu .ic { width: 36px; height: 36px; display: grid; place-items: center; color: var(--accent); flex-shrink: 0; }
+  .menu .ic svg { width: 21px; height: 21px; }
   .menu .lbl { flex: 1; min-width: 0; }
-  .menu .lbl small { display: block; font-size: 13px; color: var(--text-3); line-height: 1.3; }
-  .menu .danger { color: var(--red); } .menu .danger .ic { color: var(--red); background: rgb(255 107 129 / .1); }
+  .menu .lbl small { display: block; font-size: 13px; color: var(--faint); line-height: 1.35; }
+  .menu .danger, .menu .danger .ic { color: var(--danger); }
   .menu .sep { height: 1px; background: var(--line); margin: 6px 12px; }
-  .switch { width: 46px; height: 28px; border-radius: 14px; background: var(--surface-3); position: relative; flex-shrink: 0; transition: background-color .2s; }
-  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .22s var(--spring); }
-  [aria-checked="true"] .switch { background: var(--mint); }
-  [aria-checked="true"] .switch::after { transform: translateX(18px); }
-  .sheet-foot { margin: 14px 4px 0; font-size: 12.5px; color: var(--text-3); text-align: center; }
-  .sheet .actions { display: grid; gap: 10px; margin-top: 18px; }
-
-  .install-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-  .install-steps li { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: var(--r-md); background: var(--surface); font-size: 15.5px; line-height: 1.4; }
-  .install-steps .glyph { width: 40px; height: 40px; border-radius: 12px; background: var(--surface-2); display: grid; place-items: center; flex-shrink: 0; color: var(--cyan); }
-  .install-steps .glyph svg { width: 21px; height: 21px; }
-  .install-steps b { font-weight: 650; }
-  .install-app { display: flex; align-items: center; gap: 14px; padding: 4px 4px 18px; }
-  .install-app img { width: 60px; height: 60px; border-radius: 15px; box-shadow: 0 6px 20px rgb(0 0 0 / .4); }
-  .install-app div { font-size: 14px; color: var(--text-3); }
-  .install-app div b { display: block; font-size: 18px; color: var(--text); font-weight: 700; }
+  .switch { width: 46px; height: 26px; background: rgb(var(--accent-rgb) / .13); position: relative; flex-shrink: 0; transition: background-color .4s;
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); }
+  .switch::after { content: ""; position: absolute; top: 4px; left: 4px; width: 18px; height: 18px; background: var(--faint);
+    clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+    transition: transform .5s var(--out), background-color .3s; }
+  [aria-checked="true"] .switch { background: rgb(var(--accent-rgb) / .38); }
+  [aria-checked="true"] .switch::after { transform: translateX(20px); background: var(--accent); }
+  .sheet-foot { margin: 14px 4px 0; font-size: 12.5px; color: var(--faint); text-align: center; }
 
   .toast {
-    position: fixed; left: 50%; z-index: 30; bottom: calc(var(--sab) + 92px); transform: translate(-50%, 16px);
-    background: var(--text); color: var(--bg); font-size: 14px; font-weight: 600; padding: 10px 16px; border-radius: 999px;
-    opacity: 0; pointer-events: none; transition: opacity .2s, transform .25s var(--ease); white-space: nowrap;
+    position: fixed; left: 50%; z-index: 70; bottom: calc(var(--sab) + 96px); transform: translate(-50%, 18px);
+    color: var(--text); font-size: 14px; font-weight: 600; padding: 11px 18px; --c: 9px; --fill: var(--panel-3); --edge: var(--accent);
+    opacity: 0; pointer-events: none; transition: opacity .25s, transform .3s var(--leave); white-space: nowrap;
     max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis;
   }
-  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); transition: opacity .3s, transform .6s var(--out); }
 
-  /* Android: Material-style pressed state (a tint, no bounce) instead of iOS's scale-down, and slightly squarer
-     sheets — the same Jarvis, behaving the way each platform's own apps do. */
-  .android .btn:active, .android .suggestion:active { transform: none; filter: brightness(1.18); }
-  .android .sheet { border-radius: 28px 28px 0 0; }
+  /* ---------------------------------------------------------------- graphs, the globe, planets (full screen) */
+  .vis-layer { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: flex; animation: visIn .6s var(--out) both; }
+  .vis-layer[hidden] { display: none; }
+  .vis-layer.closing { animation: visOut .23s var(--leave) both; }
+  @keyframes visIn { from { opacity: 0; transform: scale(.96); } }
+  @keyframes visOut { to { opacity: 0; transform: scale(.97); } }
+  .vis-card { flex: 1; min-width: 0; display: flex; flex-direction: column;
+    padding: calc(var(--sat) + 10px) calc(var(--sar) + 14px) calc(var(--sab) + 12px) calc(var(--sal) + 14px); }
+  .vis-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+  .vis-heading { flex: 1; min-width: 0; }
+  .vis-kicker { margin: 0 0 4px; font: 700 11px/1.2 var(--display); letter-spacing: .2em; text-transform: uppercase; color: var(--accent); }
+  .vis-heading h2 { margin: 0; font: 600 18px/1.3 var(--display); letter-spacing: .01em; overflow-wrap: anywhere; }
+  .vis-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
+  .vis-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .vis-actions button, .vis-controls button { appearance: none; height: 38px; min-width: 38px; padding: 0 13px; color: var(--text); font: 600 13px/1 inherit; font-family: inherit; --c: 8px; --fill: var(--panel-2); }
+  .vis-actions button[hidden], .vis-controls button[hidden] { display: none; }
+  .vis-actions button svg { width: 16px; height: 16px; margin: 0 auto; }
+  .vis-close { width: 38px; padding: 0 !important; }
+  .vis-nav { display: inline-flex; align-items: center; gap: 6px; font: 12px/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .vis-nav[hidden] { display: none; }
+  .vis-nav button { padding: 0 !important; }
+  .vis-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #010207; outline: 1px solid var(--line); outline-offset: -1px; }
+  .vis-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  .vis-controls { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 6px; }
+  .vis-controls button { height: 34px; font-size: 12px; --fill: rgb(4 9 20 / .9); }
+  .vis-facts { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-height: 30vh; overflow-y: auto; }
+  .vis-facts li { display: grid; gap: 2px; padding: 8px 12px; min-width: 0; --c: 8px; --edge: var(--line-2); }
+  .vis-facts li.wide { flex: 1 1 100%; }
+  .vis-facts span { font: 11px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .vis-facts b { font-size: 13.5px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+  .journey-hud { position: absolute; left: 10px; right: 10px; top: 10px; display: grid; grid-template-columns: auto minmax(40px, 1fr) auto;
+    grid-template-rows: auto auto; align-items: center; gap: 4px 10px; padding: 9px 15px; --c: 10px; --fill: rgb(4 9 20 / .82); pointer-events: none; }
+  .journey-hud[hidden] { display: none; }
+  .journey-end { font-size: 12px; font-weight: 650; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .journey-track { position: relative; height: 3px; background: rgb(255 255 255 / .14); }
+  .journey-fill { position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0);
+    background: linear-gradient(90deg, rgb(var(--magenta-rgb)), #5ed6ff); }
+  .journey-plane { position: absolute; top: 50%; left: 0; width: 15px; height: 15px; transform: translate(-50%, -50%) rotate(90deg); fill: #fff; }
+  .journey-km { grid-column: 1 / -1; justify-self: center; font: 11px/1.2 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ---------------------------------------------------------------- moving between screens
+     Where the browser can (View Transitions), a change of screen is one continuous move: the old screen dissolves as
+     the new one assembles, and the orb travels to wherever it lives next. Elsewhere the new screen simply assembles. */
+  ::view-transition-old(app) { animation: vtOut .2s ease-in both; }
+  ::view-transition-new(app) { animation: vtIn .34s ease-out both; }
+  ::view-transition-group(jarvis) { animation-duration: .68s; animation-timing-function: var(--out); }
+  @keyframes vtOut { to { opacity: 0; transform: scale(.985); } }
+  @keyframes vtIn { from { opacity: 0; } }
+  :root[data-nav="back"]::view-transition-old(app) { animation-name: vtOutBack; }
+  @keyframes vtOutBack { to { opacity: 0; transform: translateY(12px); } }
 
   @media (min-width: 700px) { :root { --gutter: 28px; } }
   @media (max-width: 350px) {
     :root { --gutter: 12px; }
-    .empty h2, .hero h1 { font-size: 24px; }
-    .suggestions { grid-template-columns: 1fr; }
-    .suggestion { min-height: 0; }
+    .empty h2, .hero h1 { font-size: 21px; }
+    .orb-hero, .status-visual { width: 120px; height: 120px; }
+    .choice { padding-left: 14px; gap: 12px; }
   }
+  @media (max-height: 640px) { .orb-hero, .status-visual { width: 112px; height: 112px; } .orb-hero { margin-bottom: 20px; } .hero { margin-bottom: 22px; } }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition-duration: .001s !important; }
+    ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   }
 </style>
 </head>
 <body>
 <div class="backdrop" aria-hidden="true"></div>
 
-<!-- The orb mark, defined once and reused everywhere with <use> (no duplicated gradient ids). -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <linearGradient id="orbGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5ee0ff"/><stop offset="1" stop-color="#a58bff"/></linearGradient>
-    <radialGradient id="orbGlow"><stop offset="0" stop-color="#4fd8ff" stop-opacity=".45"/><stop offset="1" stop-color="#4fd8ff" stop-opacity="0"/></radialGradient>
-    <symbol id="orbMark" viewBox="0 0 32 32">
-      <circle cx="16" cy="16" r="13" fill="url(#orbGlow)"/>
-      <circle cx="16" cy="16" r="6" fill="url(#orbGrad)"/>
-      <ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#orbGrad)" stroke-width="1.4" transform="rotate(-25 16 16)" opacity=".9"/>
-      <ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#orbGrad)" stroke-width="1.4" transform="rotate(35 16 16)" opacity=".5"/>
-    </symbol>
-  </defs>
-</svg>
-
 <div class="app" id="app" data-conn="idle">
 
-  <!-- ============ Not paired yet ============ -->
+  <!-- ============ Not paired yet (the page on the computer's own Wi-Fi address) ============ -->
   <section class="view" id="welcomeView" hidden>
     <div class="view-inner">
       <div class="hero">
-        <div class="orb"><svg><use href="#orbMark"/></svg></div>
+        <div class="orb orb-hero"><canvas aria-hidden="true"></canvas></div>
         <h1>Jarvis, in your pocket</h1>
         <p id="welcomeLead">Chat with Jarvis and control your computer from anywhere in the house.</p>
       </div>
       <div id="welcomePairNow" hidden>
-        <button class="btn brand" id="pairNowBtn" type="button">Pair this phone</button>
+        <button class="btn primary" id="pairNowBtn" type="button">Pair this phone</button>
         <p class="fine">Your computer is waiting for a phone to pair right now.</p>
       </div>
       <div id="welcomeSteps">
@@ -554,7 +681,7 @@
           <li><span class="n">2</span><span>Scan the QR code it shows with your phone's <b>camera</b>. That's it.</span></li>
         </ol>
         <form class="code-entry" id="codeForm" autocomplete="off">
-          <input id="codeInput" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" aria-label="Pairing code" enterkeyhint="go">
+          <div class="inputbox"><input id="codeInput" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" aria-label="Pairing code" enterkeyhint="go"></div>
           <button class="btn quiet" id="codeBtn" type="submit" disabled>Pair with code</button>
         </form>
       </div>
@@ -563,12 +690,12 @@
     </div>
   </section>
 
-  <!-- ============ Pairing right now (the scanned QR link) ============ -->
+  <!-- ============ Pairing right now (a scanned code) ============ -->
   <section class="view" id="pairView" hidden>
     <div class="view-inner" style="text-align:center">
       <div class="status-visual" id="pairVisual">
         <span class="ring"></span><span class="ring"></span>
-        <div class="orb"><svg><use href="#orbMark"/></svg></div>
+        <div class="orb orb-hero"><canvas aria-hidden="true"></canvas></div>
         <span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
       </div>
       <div class="hero" style="margin-bottom:18px">
@@ -581,39 +708,105 @@
     </div>
   </section>
 
-  <!-- ============ Relay-hosted page this phone isn't recognized on yet (see setUpRelayUnknown) ============ -->
+  <!-- ============ The always-on app, not connected to anything yet: pair with the computer by scanning its code,
+       or run Jarvis on the phone alone (see showConnect) ============ -->
   <section class="view" id="relayView" hidden>
+    <button class="back" id="relayBack" type="button" aria-label="Back" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
     <div class="view-inner">
       <div class="hero">
-        <div class="orb"><svg><use href="#orbMark"/></svg></div>
-        <h1 id="relayTitle">Almost there</h1>
-        <p id="relayLead"></p>
+        <div class="orb orb-hero"><canvas aria-hidden="true"></canvas></div>
+        <h1 id="relayTitle">Connect this phone</h1>
+        <p id="relayLead">Pair it with Jarvis on your computer, or run Jarvis right here on the phone.</p>
       </div>
-      <a class="btn primary" id="relayLocalLink" href="#" hidden>Finish setup on this Wi-Fi</a>
-      <p class="fine">Pairing always happens on the same Wi-Fi as your computer, so nobody else can.</p>
+      <div class="choices">
+        <button class="choice" id="scanBtn" type="button">
+          <span class="choice-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="6.5" height="6.5"/><rect x="14" y="3.5" width="6.5" height="6.5"/><rect x="3.5" y="14" width="6.5" height="6.5"/><path d="M14 14h2.6v2.6M20.5 14v.01M14 20.5h.01M17.6 17.6h2.9v2.9"/></svg></span>
+          <span class="choice-text"><b>Scan the code on my computer</b><span>Say “Connect my phone” to Jarvis there first</span></span>
+          <svg class="choice-go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <button class="choice" id="soloBtn" type="button">
+          <span class="choice-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg></span>
+          <span class="choice-text"><b>Use Jarvis on this phone only</b><span>No computer needed. Uses your own Groq key</span></span>
+          <svg class="choice-go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+      <a class="btn ghost" id="relayLocalLink" href="#" hidden style="margin-top:14px">Already paired in Safari? Bring it over</a>
+      <p class="fine">The code on your computer's screen is the key: only a phone that sees it can pair.</p>
+    </div>
+  </section>
+
+  <!-- ============ Jarvis on the phone alone, with the user's own Groq key ============ -->
+  <section class="view" id="soloView" hidden>
+    <button class="back" id="soloBack" type="button" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <div class="view-inner">
+      <div class="hero">
+        <div class="orb orb-hero"><canvas aria-hidden="true"></canvas></div>
+        <h1>Jarvis on this phone</h1>
+        <p>Jarvis thinks with Groq. Paste your key and he runs right here, with no computer.</p>
+      </div>
+      <form class="key-entry" id="soloForm" autocomplete="off">
+        <label class="label" for="soloKey">Groq API key</label>
+        <div class="inputbox"><input id="soloKey" type="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="gsk_…" enterkeyhint="go"></div>
+        <button class="btn primary" id="soloStart" type="submit" disabled>Start Jarvis</button>
+      </form>
+      <div class="form-error" id="soloError" role="alert"></div>
+      <p class="fine">The key is free at <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">console.groq.com</a>: sign in, create an API key, copy it here. It's kept on this phone and only ever sent to Groq.</p>
+    </div>
+  </section>
+
+  <!-- ============ The camera, pointed at the code on the computer's screen (see openScanner) ============ -->
+  <section class="view scan" id="scanView" hidden>
+    <video id="scanVideo" playsinline muted autoplay></video>
+    <div class="scan-frame" id="scanFrame" aria-hidden="true">
+      <div class="reticle"><svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="3"><path vector-effect="non-scaling-stroke" d="M0 17V0h17M83 0h17v17M100 83v17H83M17 100H0V83"/></svg><i></i></div>
+    </div>
+    <button class="back" id="scanBack" type="button" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <h1 class="scan-head">Scan the code</h1>
+    <div class="scan-note" id="scanNote" role="status">
+      <b id="scanStatus">Starting the camera…</b>
+      <span id="scanHint">On your computer, say “Connect my phone”. Jarvis shows a code on the screen.</span>
+      <button class="btn quiet" id="scanRetry" type="button" hidden>Try again</button>
+    </div>
+  </section>
+
+  <!-- ============ Add to Home Screen: a screen of its own, so nothing closes it by accident while the browser's
+       own menus are in use (on iPhone the address carries this phone's pairing for as long as it's up) ============ -->
+  <section class="view" id="installView" hidden>
+    <div class="view-inner">
+      <div class="install-app"><img src="/apple-touch-icon.png" alt="" width="64" height="64"><div><b>Jarvis</b>Your own assistant</div></div>
+      <h1 class="plain" id="installTitle">Add Jarvis to your Home Screen</h1>
+      <p class="lead" id="installLead">Open it straight from your Home Screen, like any app. It reconnects on its own. Nothing to confirm.</p>
+      <ol class="install-steps" id="installSteps"></ol>
+      <div class="actions">
+        <button class="btn primary" id="installNative" type="button" hidden>Install Jarvis</button>
+        <a class="btn primary" id="installSecure" href="#" hidden>Continue to install</a>
+        <button class="btn ghost" id="installClose" type="button">Not now</button>
+      </div>
     </div>
   </section>
 
   <!-- ============ Which Jarvis: asked each time the app is opened ============ -->
   <section class="view" id="chooseView" hidden>
     <div class="view-inner">
-      <div class="hero choose-hero">
-        <div class="orb"><svg><use href="#orbMark"/></svg></div>
+      <div class="hero">
+        <div class="orb orb-hero"><canvas aria-hidden="true"></canvas></div>
         <h1>Which Jarvis?</h1>
       </div>
       <div class="choices">
         <button class="choice" id="choosePhone" type="button" data-mode="phone">
-          <span class="choice-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="3"/><path d="M11 18.5h2"/></svg></span>
+          <span class="choice-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg></span>
           <span class="choice-text"><b>On this phone</b><span id="choosePhoneSub">Jarvis does it here, on your phone</span></span>
+          <svg class="choice-go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
         </button>
         <button class="choice" id="chooseComputer" type="button" data-mode="computer">
-          <span class="choice-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2.2"/><path d="M8.5 20h7M12 16v4"/></svg></span>
+          <span class="choice-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="1.6"/><path d="M8.5 20h7M12 16v4"/></svg></span>
           <span class="choice-text"><b>On my computer</b><span>Chat with Jarvis on your computer</span></span>
+          <svg class="choice-go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
         </button>
       </div>
       <!-- Shown only in the app that loads from the computer itself: that one can't open while the computer is off. -->
       <button class="always-on" id="alwaysOnBtn" type="button" hidden>
-        <b>This app only opens while your computer is on</b><span>Get the one that always opens  ›</span>
+        <b>This app only opens while your computer is on</b><span>Get the one that always opens</span>
       </button>
     </div>
   </section>
@@ -621,7 +814,7 @@
   <!-- ============ The app: chat ============ -->
   <section class="chat" id="chatView" hidden>
     <header class="topbar" id="topbar">
-      <div class="orb"><svg><use href="#orbMark"/></svg><i class="presence"></i></div>
+      <div class="orb"><canvas aria-hidden="true"></canvas><i class="presence"></i></div>
       <div class="who">
         <div class="name">Jarvis</div>
         <div class="sub" id="connText" aria-live="polite">Connecting…</div>
@@ -629,11 +822,12 @@
       <!-- Where Jarvis acts when the message doesn't say: the computer, or right here on the phone. Shown once the
            phone has its own Jarvis (the AI settings); "on my phone" / "on my computer" always wins either way. -->
       <div class="mode" id="modeSwitch" role="tablist" aria-label="Where Jarvis acts" hidden>
-        <button type="button" role="tab" data-mode="computer" aria-label="Computer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2.2"/><path d="M8.5 20h7M12 16v4"/></svg><span>Computer</span></button>
-        <button type="button" role="tab" data-mode="phone" aria-label="Phone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="3"/><path d="M11 18.5h2"/></svg><span>Phone</span></button>
+        <i aria-hidden="true"></i>
+        <button type="button" role="tab" data-mode="computer" aria-label="Computer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="1.6"/><path d="M8.5 20h7M12 16v4"/></svg><span>Computer</span></button>
+        <button type="button" role="tab" data-mode="phone" aria-label="Phone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span>Phone</span></button>
       </div>
       <button class="icon-btn" id="menuBtn" type="button" aria-label="Menu" aria-haspopup="dialog">
-        <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M10 17h10"/></svg>
       </button>
       <div class="banner" id="banner" role="status"><div class="pill" id="bannerPill"><span class="spinner" id="bannerSpin"></span><span id="bannerText"></span><button type="button" id="bannerBtn" hidden></button></div></div>
     </header>
@@ -649,9 +843,10 @@
       <form class="composer" id="composer" autocomplete="off">
         <div class="field-wrap">
           <div class="field">
+            <i aria-hidden="true"></i>
             <textarea id="input" rows="1" placeholder="Message Jarvis" enterkeyhint="send" aria-label="Message Jarvis" autocapitalize="sentences" autocorrect="on" spellcheck="true"></textarea>
           </div>
-          <div class="recbar" id="recbar" aria-hidden="true"><span class="rec-dot"></span><time id="recTime">0:00</time><span class="slide" id="recHint">‹ Slide to cancel</span></div>
+          <div class="recbar" id="recbar" aria-hidden="true"><span class="rec-dot"></span><time id="recTime">0:00</time><span class="slide" id="recHint">Slide left to cancel</span></div>
         </div>
         <button class="action" id="actionBtn" type="button" aria-label="Hold to talk">
           <svg class="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
@@ -668,48 +863,35 @@
 <div class="sheet" id="menuSheet" role="dialog" aria-modal="true" aria-label="Jarvis menu">
   <div class="grip"></div>
   <div class="menu">
-    <button type="button" id="mInstall" hidden><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M12 7.5v7M9 11.5l3 3 3-3"/></svg></span><span class="lbl">Add Jarvis to Home Screen<small>Open it like an app, connected instantly</small></span></button>
-    <button type="button" id="mNotify" hidden><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></span><span class="lbl">Turn on notifications<small id="mNotifySub">So Jarvis can reach you when the app is closed</small></span></button>
-    <button type="button" id="mSpeak" role="switch" aria-checked="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg></span><span class="lbl">Read replies aloud<small>Always — not just after you talk</small></span><span class="switch"></span></button>
-    <button type="button" id="mClear"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></span><span class="lbl">Clear chat on this phone</span></button>
-    <button type="button" id="mConnect"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6M10.5 6.5l1.8-1.8a4.2 4.2 0 0 1 6 6l-1.8 1.8M13.5 17.5l-1.8 1.8a4.2 4.2 0 0 1-6-6l1.8-1.8"/></svg></span><span class="lbl" id="mConnectLbl">Disconnect</span></button>
+    <button type="button" id="mInstall" hidden><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 7.5v7M9 11.5l3 3 3-3"/></svg></span><span class="lbl">Add Jarvis to Home Screen<small>Open it like an app, connected instantly</small></span></button>
+    <button type="button" id="mNotify" hidden><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></span><span class="lbl">Turn on notifications<small id="mNotifySub">So Jarvis can reach you when the app is closed</small></span></button>
+    <button type="button" id="mSpeak" role="switch" aria-checked="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg></span><span class="lbl">Read replies aloud<small>Always, not just after you talk</small></span><span class="switch"></span></button>
+    <button type="button" id="mClear"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></span><span class="lbl">Clear chat on this phone</span></button>
+    <button type="button" id="mConnect"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6M10.5 6.5l1.8-1.8a4.2 4.2 0 0 1 6 6l-1.8 1.8M13.5 17.5l-1.8 1.8a4.2 4.2 0 0 1-6-6l1.8-1.8"/></svg></span><span class="lbl" id="mConnectLbl">Disconnect</span></button>
     <div class="sep"></div>
-    <button type="button" class="danger" id="mUnpair"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg></span><span class="lbl">Unpair this phone<small>You'll need to scan a new QR code</small></span></button>
+    <button type="button" class="danger" id="mUnpair"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg></span><span class="lbl"><span id="mUnpairLbl">Unpair this phone</span><small id="mUnpairSub">You'll need to scan a new code</small></span></button>
   </div>
   <p class="sheet-foot" id="menuFoot"></p>
 </div>
 
 <div class="sheet" id="unpairSheet" role="dialog" aria-modal="true" aria-labelledby="unpairTitle">
   <div class="grip"></div>
-  <h3 id="unpairTitle">Unpair this phone?</h3>
-  <p class="lead">It won't be able to reach Jarvis again until you say “Connect my phone” on your computer and scan the code.</p>
+  <h2 id="unpairTitle">Unpair this phone?</h2>
+  <p class="lead" id="unpairLead">It won't be able to reach Jarvis again until you say “Connect my phone” on your computer and scan the code.</p>
   <div class="actions">
-    <button class="btn" style="background:var(--red);color:#fff" id="unpairYes" type="button">Unpair</button>
+    <button class="btn danger" id="unpairYes" type="button">Unpair</button>
     <button class="btn quiet" id="unpairNo" type="button">Cancel</button>
-  </div>
-</div>
-
-<div class="sheet" id="installSheet" role="dialog" aria-modal="true" aria-labelledby="installTitle">
-  <div class="grip"></div>
-  <div class="install-app"><img src="/apple-touch-icon.png" alt="" width="60" height="60"><div><b>Jarvis</b>Your computer's assistant</div></div>
-  <h3 id="installTitle">Add Jarvis to your Home Screen</h3>
-  <p class="lead" id="installLead">Open it straight from your Home Screen, like any app. It reconnects on its own. Nothing to confirm.</p>
-  <ol class="install-steps" id="installSteps"></ol>
-  <div class="actions">
-    <button class="btn brand" id="installNative" type="button" hidden>Install Jarvis</button>
-    <a class="btn quiet" id="installSecure" href="#" hidden>Install the full app</a>
-    <button class="btn ghost" id="installClose" type="button">Not now</button>
   </div>
 </div>
 
 <div class="sheet" id="alwaysOnSheet" role="dialog" aria-modal="true" aria-labelledby="alwaysOnTitle">
   <div class="grip"></div>
-  <h3 id="alwaysOnTitle">Jarvis that always opens</h3>
+  <h2 id="alwaysOnTitle">Jarvis that always opens</h2>
   <p class="lead">This icon loads Jarvis from your computer, so it can't open when the computer is off or asleep. The
     other one loads from Jarvis's secure address and keeps a copy on your phone: it opens every time, anywhere.</p>
   <ol class="install-steps" id="alwaysOnSteps"></ol>
   <div class="actions">
-    <a class="btn brand" id="alwaysOnOpen" href="#" target="_blank" rel="noopener">Open it</a>
+    <a class="btn primary" id="alwaysOnOpen" href="#" target="_blank" rel="noopener">Open it</a>
     <button class="btn quiet" id="alwaysOnCopy" type="button">Copy the link instead</button>
     <button class="btn ghost" id="alwaysOnClose" type="button">Not now</button>
   </div>
@@ -724,13 +906,13 @@
        planet.js, sphere_gl.js), loaded from the computer the first time one arrives. Same element ids as its window. ============ -->
   <div class="vis-layer" id="graphLayer" hidden role="dialog" aria-modal="true" aria-labelledby="graphTitle">
     <div class="vis-card"><header class="vis-head"><div class="vis-heading"><p class="vis-kicker" id="graphKicker">Graph</p><h2 id="graphTitle"></h2></div>
-      <div class="vis-actions"><span class="vis-nav" id="graphNav" hidden><button id="graphPrev" type="button" aria-label="Previous">‹</button><span id="graphCount">1 / 1</span><button id="graphNext" type="button" aria-label="Next">›</button></span><button id="graphSave" type="button" hidden>Save</button><button class="vis-close" id="graphClose" type="button" aria-label="Close">✕</button></div></header>
+      <div class="vis-actions"><span class="vis-nav" id="graphNav" hidden><button id="graphPrev" type="button" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><span id="graphCount">1 / 1</span><button id="graphNext" type="button" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button></span><button id="graphSave" type="button" hidden>Save</button><button class="vis-close" id="graphClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></header>
       <div class="vis-stage"><canvas id="graphCanvas" aria-label="Graph"></canvas></div>
       <ul class="vis-facts" id="graphFacts"></ul></div>
   </div>
   <div class="vis-layer" id="earthLayer" hidden role="dialog" aria-modal="true" aria-labelledby="earthTitle">
     <div class="vis-card"><header class="vis-head"><div class="vis-heading"><p class="vis-kicker" id="earthKicker">Journey</p><h2 id="earthTitle"></h2><p class="vis-sub" id="earthSub"></p></div>
-      <div class="vis-actions"><span class="vis-nav" id="earthNav" hidden><button id="earthPrev" type="button" aria-label="Previous">‹</button><span id="earthCount">1 / 1</span><button id="earthNext" type="button" aria-label="Next">›</button></span><button id="earthSave" type="button" hidden>Save</button><button class="vis-close" id="earthClose" type="button" aria-label="Close">✕</button></div></header>
+      <div class="vis-actions"><span class="vis-nav" id="earthNav" hidden><button id="earthPrev" type="button" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><span id="earthCount">1 / 1</span><button id="earthNext" type="button" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button></span><button id="earthSave" type="button" hidden>Save</button><button class="vis-close" id="earthClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></header>
       <div class="vis-stage"><canvas id="earthCanvas" aria-label="3D globe"></canvas>
         <div class="journey-hud" id="journeyHud" hidden><span class="journey-end" id="journeyFrom"></span><div class="journey-track"><i class="journey-fill" id="journeyFill"></i><svg class="journey-plane" id="journeyPlane" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg></div><span class="journey-end" id="journeyTo"></span><span class="journey-km" id="journeyKm"></span></div>
         <div class="vis-controls"><button id="earthPlay" type="button">Pause</button><button id="earthReplay" type="button">Replay</button><button id="earthSkip" type="button">Skip</button></div>
@@ -739,7 +921,7 @@
   </div>
   <div class="vis-layer" id="planetLayer" hidden role="dialog" aria-modal="true" aria-labelledby="planetTitle">
     <div class="vis-card"><header class="vis-head"><div class="vis-heading"><p class="vis-kicker" id="planetKicker">Planet</p><h2 id="planetTitle"></h2></div>
-      <div class="vis-actions"><span class="vis-nav" id="planetNav" hidden><button id="planetPrev" type="button" aria-label="Previous">‹</button><span id="planetCount">1 / 1</span><button id="planetNext" type="button" aria-label="Next">›</button></span><button id="planetSave" type="button" hidden>Save</button><button class="vis-close" id="planetClose" type="button" aria-label="Close">✕</button></div></header>
+      <div class="vis-actions"><span class="vis-nav" id="planetNav" hidden><button id="planetPrev" type="button" aria-label="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><span id="planetCount">1 / 1</span><button id="planetNext" type="button" aria-label="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button></span><button id="planetSave" type="button" hidden>Save</button><button class="vis-close" id="planetClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></header>
       <div class="vis-stage"><canvas id="planetCanvas" aria-label="A 3D model of the planet"></canvas></div>
       <ul class="vis-facts" id="planetFacts"></ul></div>
   </div>
@@ -818,9 +1000,11 @@
   };
   const saved = () => { const d = store.get("jarvis_device"); return d && d.id && d.token ? d : null; };
   const saveDevice = (device) => { store.set("jarvis_device", device); store.del("jarvis_forgotten"); };
+  const soloMark = (ai) => "key:" + String(ai.apiKey).slice(-10);   // Jarvis on the phone alone has no device id
   function forgetDevice() {
     const device = saved();
     if (device) store.set("jarvis_forgotten", device.id);   // so an iOS Home Screen link can't silently re-add it
+    else if (aiConfig && aiConfig.apiKey) store.set("jarvis_forgotten", soloMark(aiConfig));
     store.del("jarvis_device");
     store.del("jarvis_transcript");
     store.del("jarvis_ai");
@@ -859,23 +1043,39 @@
     if (!m) return;
     arrivedByHandoff = true;
     try {
-      const device = JSON.parse(b64urlToText(m[1]));
+      const device = JSON.parse(b64urlToText(m[1])) || {};
       const forgotten = store.get("jarvis_forgotten");
-      if (device && device.id && device.token && !saved() && forgotten !== device.id) {
-        if (device.ai && device.ai.apiKey) store.set("jarvis_ai", device.ai);
-        delete device.ai;
-        saveDevice(device);
+      const ai = device.ai && device.ai.apiKey ? device.ai : null;
+      delete device.ai;
+      const paired = !!(device.id && device.token);
+      // Jarvis on the phone alone (no computer) hands over just the AI settings
+      const wanted = paired ? forgotten !== device.id : !!ai && forgotten !== soloMark(ai);
+      if (wanted && !saved()) {
+        if (ai && !(aiConfig && aiConfig.apiKey)) { aiConfig = ai; store.set("jarvis_ai", ai); }
+        if (paired) saveDevice(device);
       }
     } catch { /* not a usable handoff; ignore it */ }
     history.replaceState(null, "", location.pathname);
   })();
   function setHandoffInUrl(on) {
     const device = saved();
-    if (!IS_IOS || isStandalone() || !device) return;
-    const minimal = { id: device.id, token: device.token, key: device.key, computerId: device.computerId,
-                      relayUrl: device.relayUrl, name: device.name, ...(aiConfig ? { ai: aiConfig } : {}) };
+    if (!IS_IOS || isStandalone() || !(device || phoneAI())) return;
+    const minimal = { ...(device ? { id: device.id, token: device.token, key: device.key, computerId: device.computerId,
+                                     relayUrl: device.relayUrl, name: device.name } : {}),
+                      ...(aiConfig ? { ai: aiConfig } : {}) };
     history.replaceState(null, "", location.pathname + (on ? "?source=app#jv=" + textToB64url(JSON.stringify(minimal)) : ""));
   }
+
+  // The code on the computer's screen, opened with the phone's camera: a link to this page with a one-time key in
+  // its #fragment (which never reaches any server). Taken out of the address at once, and used in boot().
+  let pairLink = null;
+  (function takePairLink() {
+    const m = /^#pair=([A-Za-z0-9_-]{40,})$/.exec(location.hash);
+    if (!m) return;
+    const computerId = params.get("computerId") || "";
+    if (computerId) pairLink = { computerId, secret: m[1] };
+    history.replaceState(null, "", location.pathname);
+  })();
 
   // ===================================================================================================== crypto
   // AES-256-GCM, matching phone_crypto.py exactly. Through the relay (HTTPS) with the browser's own crypto; on the
@@ -904,8 +1104,148 @@
 
   // ===================================================================================================== views
   const app = $("app");
-  const views = ["welcomeView", "pairView", "relayView", "chooseView", "chatView"];
-  function showView(id) { for (const v of views) $(v).hidden = v !== id; }
+  const views = ["welcomeView", "pairView", "relayView", "soloView", "scanView", "installView", "chooseView", "chatView"];
+  // How far into the app each screen is: going to a shallower one reads as going back.
+  const DEPTH = { welcomeView: 0, relayView: 0, soloView: 1, scanView: 1, pairView: 2, installView: 3, chooseView: 4, chatView: 5 };
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  let currentView = "";   // the screen being shown: set at once, the page itself follows within a frame
+  // One screen to the next is a single move where the browser can do it (View Transitions): the old one dissolves
+  // while the new one assembles, and the orb travels between its places. Elsewhere the new screen just assembles.
+  function showView(id) {
+    if (id === currentView) return;
+    const first = !currentView, back = !first && DEPTH[id] < DEPTH[currentView];
+    currentView = id;
+    const swap = () => {
+      for (const v of views) $(v).hidden = v !== currentView;
+      if (currentView === "chatView" && stickToBottom) scroller.scrollTop = scroller.scrollHeight;
+    };
+    refreshHud();
+    if (first || document.hidden || reducedMotion.matches || !document.startViewTransition) { swap(); return; }
+    document.documentElement.dataset.nav = back ? "back" : "forward";
+    try { document.startViewTransition(swap).ready.catch(() => { /* skipped: the page changed all the same */ }); }
+    catch { swap(); }
+  }
+  // iOS only shows a button's pressed look (:active) on pages that listen for touches.
+  document.addEventListener("touchstart", () => {}, { passive: true });
+
+  // ===================================================================================================== the HUD's state
+  // One accent colour for the whole app, following what Jarvis is doing, as his window on the computer does:
+  // listening (the mic is held, or the camera is looking for the code), thinking, speaking, asleep (the computer
+  // can't be reached), or ready. The stylesheet takes it from <html data-state>, and the orb moves to match.
+  let hudOverride = "", speaking = false;
+  function hudState() {
+    if (hudOverride) return hudOverride;
+    if (currentView === "scanView") return "listening";
+    if (currentView !== "chatView") return "ready";
+    if (app.classList.contains("recording-on")) return "listening";
+    if (typingEl) return "thinking";
+    if (speaking) return "speaking";
+    const here = phoneAI() && prefs.mode === "phone";
+    if (!here && ["unreachable", "closed", "offline", "stopped", "replaced", "ended"].includes(conn.state)) return "sleeping";
+    return "ready";
+  }
+  function refreshHud() {
+    const state = hudState(), root = document.documentElement;
+    if (root.dataset.state !== state) root.dataset.state = state;
+  }
+
+  // ===================================================================================================== the orb
+  // Jarvis himself: a turning sphere of points with one ring, drawn on whichever orb is on screen (the big one on
+  // the opening screens, the small one in the chat's header). It moves the way his state does: quick while he's
+  // thinking, swelling while he listens or speaks, slow and dim asleep. Stops entirely while a globe or graph
+  // covers the screen, and while the app is in the background.
+  const ORB_RGB = { ready: [79, 216, 255], listening: [61, 242, 192], thinking: [165, 139, 255], speaking: [90, 169, 255],
+                    sleeping: [120, 135, 172], alert: [255, 107, 129] };
+  const ORB_MOVE = { ready: [0.34, 0], listening: [0.5, 0.06], thinking: [1.6, 0.025], speaking: [0.7, 0.04],
+                     sleeping: [0.1, 0], alert: [0.22, 0] };   // [turns, in radians a second; how much it swells]
+  (function orb() {
+    const canvases = Array.from(document.querySelectorAll(".orb canvas"));
+    const sphere = (n) => {   // n points spread evenly over a sphere
+      const points = [];
+      for (let i = 0; i < n; i++) {
+        const y = 1 - 2 * (i + 0.5) / n, r = Math.sqrt(1 - y * y), a = i * 2.39996323;
+        points.push([Math.cos(a) * r, y, Math.sin(a) * r]);
+      }
+      return points;
+    };
+    const BIG = sphere(320), SMALL = sphere(60);
+    const rgb = ORB_RGB.ready.slice();
+    let angle = 0.6, speed = ORB_MOVE.ready[0], swell = 0, last = 0, pending = 0;
+
+    function draw(canvas, seconds) {
+      const size = canvas.clientWidth;
+      if (!size) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 3), px = Math.round(size * dpr);
+      if (canvas.width !== px) canvas.width = canvas.height = px;
+      const g = canvas.getContext("2d");
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, size, size);
+      const big = size >= 80, points = big ? BIG : SMALL;
+      const c = size / 2, R = size * 0.335;
+      const color = `${rgb[0] | 0},${rgb[1] | 0},${rgb[2] | 0}`;
+      const glow = g.createRadialGradient(c, c, 0, c, c, size / 2);
+      glow.addColorStop(0, `rgba(${color},.3)`); glow.addColorStop(0.55, `rgba(${color},.08)`); glow.addColorStop(1, `rgba(${color},0)`);
+      g.fillStyle = glow;
+      g.fillRect(0, 0, size, size);
+
+      // the ring, in two halves: the far one behind the sphere, the near one in front, with a spark running round it
+      const rx = R * 1.36, ry = R * 0.34, lean = -0.4, spark = seconds * 0.9 % 6.2832;
+      const ring = (near) => {
+        g.strokeStyle = `rgba(${color},${near ? 0.75 : 0.22})`;
+        g.lineWidth = big ? 1.3 : 1;
+        g.beginPath();
+        g.ellipse(c, c, rx, ry, lean, near ? 0 : Math.PI, near ? Math.PI : 6.2832);
+        g.stroke();
+        if ((spark < Math.PI) === near) {
+          const ex = Math.cos(spark) * rx, ey = Math.sin(spark) * ry;
+          g.fillStyle = near ? "#fff" : `rgba(${color},.6)`;
+          g.beginPath();
+          g.arc(c + ex * Math.cos(lean) - ey * Math.sin(lean), c + ex * Math.sin(lean) + ey * Math.cos(lean), big ? 2 : 1.2, 0, 6.2832);
+          g.fill();
+        }
+      };
+      ring(false);
+      const tilt = 0.42, ct = Math.cos(tilt), st = Math.sin(tilt), ca = Math.cos(angle), sa = Math.sin(angle);
+      const dot = big ? size / 118 : 1.05;
+      g.fillStyle = `rgb(${color})`;
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        const x = p[0] * ca + p[2] * sa, z0 = p[2] * ca - p[0] * sa;
+        const y = p[1] * ct - z0 * st, depth = (p[1] * st + z0 * ct + 1) / 2;   // depth: 0 at the back, 1 at the front
+        const k = R * (1 + swell * Math.sin(seconds * 5 + p[1] * 4));          // a wave running pole to pole
+        g.globalAlpha = big ? 0.1 + 0.9 * depth * depth : 0.3 + 0.7 * depth;
+        g.beginPath();
+        g.arc(c + x * k, c + y * k, dot * (0.5 + 0.8 * depth), 0, 6.2832);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+      ring(true);
+    }
+
+    function tick(now) {
+      pending = 0;
+      const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+      last = now;
+      const state = document.documentElement.dataset.state || "ready";
+      const target = ORB_RGB[state] || ORB_RGB.ready, move = ORB_MOVE[state] || ORB_MOVE.ready;
+      const ease = reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 5);
+      for (let i = 0; i < 3; i++) rgb[i] += (target[i] - rgb[i]) * ease;
+      speed += (move[0] - speed) * ease;
+      swell += (move[1] - swell) * ease;
+      if (!reducedMotion.matches) angle += speed * dt;
+      const covered = document.body.classList.contains("scene-paused");   // a globe, graph or planet fills the screen
+      const seconds = reducedMotion.matches ? 0 : now / 1000;
+      if (!covered) for (const canvas of canvases) if (canvas.offsetParent) draw(canvas, seconds);
+      schedule();
+    }
+    function schedule() {
+      if (pending || document.hidden) return;
+      // with reduced motion the orb stands still: it's only redrawn now and then, for its colour
+      pending = reducedMotion.matches ? setTimeout(() => tick(performance.now()), 300) : requestAnimationFrame(tick);
+    }
+    document.addEventListener("visibilitychange", schedule);
+    schedule();
+  })();
 
   let toastTimer = 0;
   function toast(text, ms = 2200) {
@@ -1029,7 +1369,7 @@
       if (!cont) {
         const sp = document.createElement("div");
         sp.className = "speaker";
-        sp.innerHTML = `<span class="orb"><svg><use href="#orbMark"/></svg></span>Jarvis<time>${timeLabel(ts)}</time>`;
+        sp.innerHTML = `<b>Jarvis</b><time>${timeLabel(ts)}</time>`;
         row.appendChild(sp);
       }
       const body = document.createElement("div");
@@ -1107,9 +1447,8 @@
     el.className = "empty";
     el.innerHTML = `
       <div class="hello">
-        <div class="orb"><svg><use href="#orbMark"/></svg></div>
-        <h2>Hello there,<br><span class="grad">Jarvis is here for you.</span></h2>
-        <p>Ask anything, or tell your computer what to do.</p>
+        <h2>Hello there.</h2>
+        <p>${saved() ? "Ask anything, or tell your computer what to do." : "Ask anything. Jarvis is right here on your phone."}</p>
         <span class="credit">Created by Ariel and Shalev</span>
       </div>
       <div class="install-card" id="installCard" hidden>
@@ -1119,7 +1458,7 @@
         <button class="icon-btn" type="button" data-dismiss-install aria-label="Dismiss"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <div class="suggestions">${SUGGESTIONS.map(([title, say]) =>
-        `<button class="suggestion" type="button" data-say="${escapeHtml(say)}"><b>${escapeHtml(title)}</b><span>${escapeHtml(say)}</span></button>`).join("")}</div>`;
+        `<button class="suggestion" type="button" data-say="${escapeHtml(say)}"><i></i><b>${escapeHtml(title)}</b><span>${escapeHtml(say)}</span></button>`).join("")}</div>`;
     thread.appendChild(el);
     refreshInstallCard();
   }
@@ -1135,10 +1474,11 @@
     lastRow = null;
     typingTimer = setTimeout(() => typingEl && typingEl.classList.add("long"), 5000);
     if (stickToBottom) scrollToBottom(true);
+    refreshHud();
   }
   function hideTyping() {
     clearTimeout(typingTimer);
-    if (typingEl) { typingEl.remove(); typingEl = null; }
+    if (typingEl) { typingEl.remove(); typingEl = null; refreshHud(); }
   }
 
   // scroll state: following the conversation, or reading back through it
@@ -1278,7 +1618,10 @@
     try {
       if (!("speechSynthesis" in window)) return;
       speechSynthesis.cancel();
-      speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+      const words = new SpeechSynthesisUtterance(text);
+      words.onstart = () => { speaking = true; refreshHud(); };
+      words.onend = words.onerror = () => { speaking = false; refreshHud(); };
+      speechSynthesis.speak(words);
     } catch { /* text is on screen either way */ }
   }
 
@@ -1362,25 +1705,44 @@
   // The computer sends its window's pictures here too ("visual"): drawn by the very same code, which the phone loads
   // from the computer the first time one arrives. They open by themselves when it was the phone that asked.
   const VISUAL_SCRIPTS = ["/sphere_gl.js", "/graph.js", "/earth.js", "/planet.js"];
+  const loadScript = (src) => new Promise((resolve, reject) => {
+    const el = document.createElement("script");
+    el.src = src; el.onload = resolve; el.onerror = () => { el.remove(); reject(new Error(src)); };
+    document.body.appendChild(el);
+  });
   let visualsLoading = null;
   function loadVisuals() {
     if (!visualsLoading) {
-      visualsLoading = VISUAL_SCRIPTS.reduce((chain, src) => chain.then(() => new Promise((resolve, reject) => {
-        const el = document.createElement("script");
-        el.src = src; el.onload = resolve; el.onerror = () => reject(new Error(src));
-        document.body.appendChild(el);
-      })), Promise.resolve()).catch((e) => { visualsLoading = null; throw e; });
+      visualsLoading = VISUAL_SCRIPTS.reduce((chain, src) => chain.then(() => loadScript(src)), Promise.resolve())
+        .catch((e) => { visualsLoading = null; throw e; });
     }
     return visualsLoading;
   }
+  const drawn = (paths) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   const VISUAL_KINDS = {
-    graph: { show: "showGraph", reopen: "reopenGraph", hide: "hideGraph", icon: "📈", name: "Graph",
+    graph: { show: "showGraph", reopen: "reopenGraph", hide: "hideGraph", close: "graphClose", name: "Graph",
+             icon: drawn('<path d="M3.5 3.5v17h17"/><path d="M6.5 17c2.4 0 3-10 5.4-10s3 7.5 6.6 7.5"/>'),
              title: (d) => d.plain || d.equation || "Graph" },
-    globe: { show: "showGlobe", reopen: "reopenGlobe", hide: "hideGlobe", icon: "🌍", name: "Globe",
+    globe: { show: "showGlobe", reopen: "reopenGlobe", hide: "hideGlobe", close: "earthClose", name: "Globe",
+             icon: drawn('<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5c-2.6-2.4-3.9-5.2-3.9-8.5s1.3-6.1 3.9-8.5z"/>'),
              title: (d) => d.title || (d.a && d.b ? `${d.a.name} → ${d.b.name}` : "Globe") },
-    planet: { show: "showPlanet", reopen: "reopenPlanet", hide: "hidePlanet", icon: "🪐", name: "Planet",
+    planet: { show: "showPlanet", reopen: "reopenPlanet", hide: "hidePlanet", close: "planetClose", name: "Planet",
+              icon: drawn('<circle cx="12" cy="12" r="5.2"/><ellipse cx="12" cy="12" rx="10.4" ry="3.3" transform="rotate(-24 12 12)"/>'),
               title: (d) => d.name || "Planet" },
   };
+  // Closing one lets it sink away instead of cutting (the drawing code itself only knows shown and hidden).
+  for (const k of Object.values(VISUAL_KINDS)) {
+    const button = $(k.close), layer = button.closest(".vis-layer");
+    button.addEventListener("click", (e) => {
+      if (reducedMotion.matches || layer.classList.contains("closing")) return;
+      e.stopImmediatePropagation();
+      layer.classList.add("closing");
+      setTimeout(() => {
+        layer.classList.remove("closing");
+        if (window[k.hide]) window[k.hide](); else layer.hidden = true;
+      }, 230);
+    }, true);
+  }
   function addVisualChip(kind, data) {
     const k = VISUAL_KINDS[kind];
     const row = addMessage("ai", "", { noCache: true });
@@ -1389,7 +1751,9 @@
     chip.innerHTML = `<i>${k.icon}</i><span><b></b><span>Tap to open</span></span>`;
     chip.querySelector("b").textContent = k.title(data);
     chip.addEventListener("click", () => loadVisuals().then(() => window[k.show](data)).catch(() => toast("Your computer needs to be connected to open this")));
-    (row && row.querySelector(".text") || row || thread).appendChild(chip);
+    const empty = row.querySelector(".text");
+    if (empty) empty.remove();
+    row.appendChild(chip);
     scrollToBottom(true);
   }
   async function handleVisual(payload, open) {
@@ -1422,6 +1786,7 @@
 
   function refreshModeSwitch() {
     for (const b of document.querySelectorAll("#modeSwitch button")) b.setAttribute("aria-selected", String(b.dataset.mode === prefs.mode));
+    $("modeSwitch").dataset.mode = prefs.mode;   // the lit half slides across
     input.placeholder = prefs.mode === "phone" ? "Ask Jarvis" : "Message Jarvis";
   }
   $("modeSwitch").addEventListener("click", (e) => {
@@ -1523,6 +1888,7 @@
     recCancelled = false;
     app.classList.add("recording-on");
     actionBtn.classList.add("recording");
+    refreshHud();
     haptic(12);
     try {
       recStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
@@ -1569,7 +1935,8 @@
     app.classList.remove("recording-on");
     actionBtn.classList.remove("recording");
     $("recbar").classList.remove("cancel");
-    $("recHint").textContent = "‹ Slide to cancel";
+    $("recHint").textContent = "Slide left to cancel";
+    refreshHud();
   }
   function finishRecording(cancel) {
     pressing = false;
@@ -1592,7 +1959,7 @@
     if (!pressing) return;
     const away = pressX - e.clientX > 90;
     $("recbar").classList.toggle("cancel", away);
-    $("recHint").textContent = away ? "Release to cancel" : "‹ Slide to cancel";
+    $("recHint").textContent = away ? "Release to cancel" : "Slide left to cancel";
   });
   const endPress = (e) => {
     if (!pressing) return;
@@ -1789,7 +2156,7 @@
 
     // back in the foreground / back online: check the connection right away instead of waiting for a timer
     wake() {
-      if (!saved() || $("chatView").hidden) return;
+      if (!saved() || currentView !== "chatView") return;
       if (this.hold === "unpaired") return;
       if (this.hold === "manual" || this.hold === "replaced") return;   // waits for a tap
       if (this.hold === "ended") return;
@@ -1845,8 +2212,11 @@
         if (s === "ready") this.toldOffline = false;
         setBanner(banner);
       }
-      $("modeSwitch").hidden = !phoneAI();
-      $("mConnectLbl").textContent = this.ready || s === "connecting" || s === "waiting" ? "Disconnect" : "Connect";
+      app.toggleAttribute("data-here", phoneAI() && prefs.mode === "phone");
+      $("modeSwitch").hidden = !phoneAI() || !saved();   // Jarvis on the phone alone has no computer to switch to
+      $("mConnectLbl").textContent = !saved() ? "Connect to my computer"
+        : this.ready || s === "connecting" || s === "waiting" ? "Disconnect" : "Connect";
+      refreshHud();
     },
   };
   const bootTime = Date.now();
@@ -1873,7 +2243,7 @@
   const ASK_AGAIN_AFTER = 10 * 60 * 1000;   // away this long: opening the app again is a new start, so it asks again
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { hiddenAt = Date.now(); return; }
-    if (chosen && hiddenAt && Date.now() - hiddenAt > ASK_AGAIN_AFTER && !$("chatView").hidden) {
+    if (chosen && saved() && hiddenAt && Date.now() - hiddenAt > ASK_AGAIN_AFTER && currentView === "chatView") {
       chosen = false;
       conn.stop("idle");
       showChooser();
@@ -1900,7 +2270,6 @@
     openSheetEl = null;
     el.classList.remove("show");
     $("scrim").classList.remove("show");
-    if (el.id === "installSheet") setHandoffInUrl(false);
   }
   $("scrim").onclick = closeSheet;
   // swipe a sheet down to dismiss it
@@ -1928,34 +2297,47 @@
     if (canPush && Notification.permission === "denied") $("mNotifySub").textContent = "Blocked — allow them in this site's settings";
     $("mSpeak").setAttribute("aria-checked", String(!!prefs.speakAlways));
     const device = saved();
-    $("menuFoot").textContent = device ? `This ${device.name || "phone"} is paired${computerName ? " with " + computerName : ""}` : "";
+    $("mUnpairLbl").textContent = device ? "Unpair this phone" : "Remove Jarvis from this phone";
+    $("mUnpairSub").textContent = device ? "You'll need to scan a new code" : "Forgets your key and this chat";
+    $("menuFoot").textContent = device ? `This ${device.name || "phone"} is paired${computerName ? " with " + computerName : ""}`
+      : "Jarvis runs on this phone only";
   }
   $("menuBtn").onclick = () => { refreshMenu(); openSheet($("menuSheet")); };
-  $("mInstall").onclick = () => { closeSheet(); setTimeout(openInstall, 260); };
+  $("mInstall").onclick = () => { closeSheet(); setTimeout(openInstall, 300); };
   $("mSpeak").onclick = () => { prefs.speakAlways = !prefs.speakAlways; savePrefs(); refreshMenu(); };
   $("mClear").onclick = () => {
     transcript = []; store.del("jarvis_transcript"); thread.textContent = ""; lastRow = null; showEmpty(); closeSheet();
   };
   $("mConnect").onclick = () => {
     closeSheet();
+    if (!saved()) { setTimeout(() => openScanner("chatView"), 300); return; }   // on the phone alone: pair with the computer
     if (conn.ready || conn.state === "connecting" || conn.state === "waiting") {
       conn.hold = "manual";
       if (conn.ready) conn.send({ type: "disconnect" });
       setTimeout(() => conn.stop("manual"), 80);
     } else conn.start();
   };
-  $("mUnpair").onclick = () => openSheet($("unpairSheet"));
+  $("mUnpair").onclick = () => {
+    const paired = !!saved();
+    $("unpairTitle").textContent = paired ? "Unpair this phone?" : "Remove Jarvis from this phone?";
+    $("unpairLead").textContent = paired
+      ? "It won't be able to reach Jarvis again until you say “Connect my phone” on your computer and scan the code."
+      : "Your Groq key and this chat are erased from this phone. You can set Jarvis up again any time.";
+    $("unpairYes").textContent = paired ? "Unpair" : "Remove";
+    openSheet($("unpairSheet"));
+  };
   $("unpairNo").onclick = closeSheet;
   $("unpairYes").onclick = async () => {
     closeSheet();
     $("unpairYes").disabled = true;
+    const paired = !!saved();
     // The computer forgets this phone for good — told over the live connection, or a quick one opened just for
     // this if there isn't one right now (otherwise the computer would keep trusting credentials nobody has).
-    const told = await conn.sendNow({ type: "unpair" }, 6000);
+    const told = paired ? await conn.sendNow({ type: "unpair" }, 6000) : true;
     conn.stop("unpaired");
     forgetDevice();
     $("unpairYes").disabled = false;
-    boot(told ? "This phone is unpaired." : "Unpaired on this phone. Your computer wasn't reachable, so say “forget my phones” there too.");
+    boot(!paired ? "" : told ? "This phone is unpaired." : "Unpaired on this phone. Your computer wasn't reachable, so say “forget my phones” there too.");
   };
 
   // ---- notifications (only where they can work: https, i.e. the relay-hosted app)
@@ -1982,8 +2364,9 @@
     e.preventDefault();   // shown from our own button instead, at a moment that makes sense
     deferredInstall = e;
     refreshInstallCard();
+    if (currentView === "installView") openInstall();   // the "Install Jarvis" button can be offered now
   });
-  window.addEventListener("appinstalled", () => { deferredInstall = null; closeSheet(); toast("Jarvis is on your Home Screen"); refreshInstallCard(); });
+  window.addEventListener("appinstalled", () => { deferredInstall = null; closeInstall(); toast("Jarvis is on your Home Screen"); refreshInstallCard(); });
 
   const ICON = {
     share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5L12 3l4.5 4.5M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg>',
@@ -1998,7 +2381,7 @@
     // [icon, html] per step — what to actually tap on this phone, in this browser
     if (IS_IOS) {
       return [
-        [ICON.share, "Tap <b>Share</b> in Safari's toolbar <span style='color:var(--text-3)'>(on newer iPhones it may be under <b>•••</b>)</span>"],
+        [ICON.share, "Tap <b>Share</b> in Safari's toolbar <small>(on newer iPhones it may be under <b>•••</b>)</small>"],
         [ICON.plus, "Scroll down and tap <b>Add to Home Screen</b>"],
         [ICON.check, "Tap <b>Add</b>. Open Jarvis from your Home Screen from now on."],
       ];
@@ -2044,7 +2427,7 @@
     const url = alwaysOnUrl();
     if (!url || alwaysOnReady) return;
     const probe = new Image();
-    probe.onload = () => { alwaysOnReady = true; if (!$("chooseView").hidden) $("alwaysOnBtn").hidden = false; };
+    probe.onload = () => { alwaysOnReady = true; if (currentView === "chooseView") $("alwaysOnBtn").hidden = false; };
     probe.src = new URL(url).origin + "/icons/icon-192.png?check=" + Date.now();
   }
   function openAlwaysOn() {
@@ -2068,6 +2451,10 @@
   $("alwaysOnCopy").onclick = () => copyText(alwaysOnUrl()).then((ok) =>
     toast(ok ? `Link copied. Paste it in ${IS_IOS ? "Safari" : "Chrome"}'s address bar` : "Couldn't copy the link"));
 
+  // "Add to Home Screen" is a screen of its own, left only by its own button: on iPhone the address carries this
+  // phone's pairing for as long as it's up (see setHandoffInUrl), so nothing may close it by accident while the
+  // browser's Share menu is in use.
+  let installReturn = "";
   function openInstall() {
     const steps = installSteps();
     $("installSteps").innerHTML = steps.map(([icon, html]) => `<li><span class="glyph">${icon}</span><span>${html}</span></li>`).join("");
@@ -2083,7 +2470,6 @@
     $("installSecure").hidden = !secure || !!deferredInstall;
     $("installSecure").href = secure || "#";
     $("installSecure").textContent = "Continue to install";
-    $("installSecure").className = secure ? "btn brand" : "btn quiet";
     if (IS_MI_BROWSER || IS_IN_APP) {
       $("installNative").hidden = false;
       $("installNative").textContent = "Copy link for Chrome";
@@ -2095,13 +2481,19 @@
         deferredInstall.prompt();
         try { await deferredInstall.userChoice; } catch { /* dismissed */ }
         deferredInstall = null;
-        closeSheet();
+        closeInstall();
       };
     }
     setHandoffInUrl(true);
-    openSheet($("installSheet"));
+    if (currentView !== "installView") installReturn = currentView;
+    showView("installView");
   }
-  $("installClose").onclick = () => { prefs.installDismissed = Date.now(); savePrefs(); closeSheet(); refreshInstallCard(); };
+  function closeInstall() {
+    if (currentView !== "installView") return;
+    setHandoffInUrl(false);
+    if (installReturn === "chatView") showView("chatView"); else enterChat();
+  }
+  $("installClose").onclick = () => { prefs.installDismissed = Date.now(); savePrefs(); closeInstall(); refreshInstallCard(); };
   function refreshInstallCard() {
     const card = document.getElementById("installCard");
     if (!card) return;
@@ -2111,12 +2503,41 @@
 
   // ===================================================================================================== pairing
   let pairWs = null;
-  function pair(code, opts = {}) {
+  function pairingScreen() {
+    hudOverride = "thinking";
     showView("pairView");
+    refreshHud();
     $("pairVisual").classList.remove("done");
     $("pairTitle").textContent = "Pairing with your computer";
     $("pairSub").textContent = "One moment…";
     $("pairActions").hidden = true;
+  }
+  function pairingFailed(message) {
+    hudOverride = "alert";
+    refreshHud();
+    $("pairTitle").textContent = "Couldn't pair";
+    $("pairSub").textContent = message;
+    $("pairActions").hidden = false;
+  }
+  function pairingDone(data) {
+    saveDevice({ id: data.deviceId, token: data.token, key: data.key, computerId: data.computerId,
+                 relayUrl: data.relayUrl, name: data.deviceName });
+    conn.key = null;   // a new pairing is a new key
+    if (data.ai && data.ai.apiKey) { aiConfig = data.ai; store.set("jarvis_ai", aiConfig); }   // Jarvis on the phone, ready at once
+    history.replaceState(null, "", location.pathname);   // the code is spent; don't leave it in the address bar
+    hudOverride = "";
+    refreshHud();
+    haptic(14);
+    $("pairVisual").classList.add("done");
+    $("pairTitle").textContent = "You're paired";
+    $("pairSub").textContent = "Jarvis will reconnect by itself from now on.";
+    // In the installed app that's all. In a browser tab on a phone, the next step is the Home Screen.
+    setTimeout(() => { if (!isStandalone() && (IS_IOS || IS_ANDROID)) openInstall(); else enterChat(); }, 1100);
+  }
+
+  // On the computer's own Wi-Fi address, with the 6-digit code.
+  function pair(code, opts = {}) {
+    pairingScreen();
     if (pairWs) { try { pairWs.close(); } catch { /* */ } }
     const ws = pairWs = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/`);
     const previous = saved();
@@ -2124,10 +2545,8 @@
       if (pairWs !== ws) return;
       pairWs = null;
       try { ws.close(); } catch { /* */ }
-      if (opts.fromWelcome) { showView("welcomeView"); $("welcomeError").textContent = message; return; }
-      $("pairTitle").textContent = "Couldn't pair";
-      $("pairSub").textContent = message;
-      $("pairActions").hidden = false;
+      if (opts.fromWelcome) { hudOverride = ""; showView("welcomeView"); refreshHud(); $("welcomeError").textContent = message; return; }
+      pairingFailed(message);
     };
     const timer = setTimeout(() => fail("Your computer didn't answer. Make sure your phone is on the same Wi-Fi as your computer."), 10000);
     ws.onopen = () => ws.send(JSON.stringify({ type: "pair", code, deviceName: deviceName(),
@@ -2139,17 +2558,7 @@
         clearTimeout(timer);
         pairWs = null;
         try { ws.close(); } catch { /* */ }
-        saveDevice({ id: data.deviceId, token: data.token, key: data.key, computerId: data.computerId,
-                     relayUrl: data.relayUrl, name: data.deviceName });
-        history.replaceState(null, "", location.pathname);   // the code is spent; don't leave it in the address bar
-        $("pairVisual").classList.add("done");
-        $("pairTitle").textContent = "You're paired";
-        $("pairSub").textContent = "Jarvis will reconnect by itself from now on.";
-        setTimeout(() => {
-          enterChat();
-          // offered once, right after pairing — unless the user is already doing something else
-          if (!isStandalone() && (IS_IOS || IS_ANDROID)) setTimeout(() => { if (!openSheetEl) openInstall(); }, 700);
-        }, 1100);
+        pairingDone(data);
       } else if (data.type === "pair_error") {
         clearTimeout(timer);
         fail(/expired|wrong/i.test(data.message || "") ? "That code has expired. Say “Connect my phone” on your computer again for a fresh one."
@@ -2157,7 +2566,54 @@
       }
     };
   }
-  $("pairRetryBtn").onclick = () => boot();
+
+  // From anywhere, through Jarvis's secure address: the code on the computer's screen holds a one-time key. The
+  // request is sealed with it and so is the answer (this phone's new credentials and the AI settings); the relay
+  // in between only passes them along and can read neither (phone_session.py, _pair_secure).
+  async function pairSecure(link) {
+    pairingScreen();
+    if (pairWs) { try { pairWs.close(); } catch { /* */ } }
+    pairWs = null;
+    let key;
+    try { key = await importKey(link.secret); } catch { pairingFailed("This browser can't pair securely. Open Jarvis in Safari or Chrome."); return; }
+    const ws = pairWs = new WebSocket(conn.url());
+    const previous = saved();
+    const fail = (message) => {
+      if (pairWs !== ws) return;
+      pairWs = null;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* */ }
+      pairingFailed(message);
+    };
+    const timer = setTimeout(() => fail("Your computer didn't answer. Check that Jarvis is open there and online, then scan the code again."), 30000);
+    ws.onopen = () => ws.send(JSON.stringify({ type: "hello", role: "phone", computerId: link.computerId }));
+    ws.onerror = () => fail("Couldn't reach Jarvis's address. Check your internet connection and try again.");
+    ws.onclose = () => fail("The connection dropped before pairing finished. Scan the code again.");
+    ws.onmessage = async (event) => {
+      let data; try { data = JSON.parse(event.data); } catch { return; }
+      if (data.type === "hello_ok") {
+        const envelope = await encryptEnvelope(key, { type: "pair", ts: Date.now(), deviceName: deviceName(),
+                                                      previousDeviceId: previous ? previous.id : "", previousToken: previous ? previous.token : "" });
+        if (pairWs === ws) ws.send(JSON.stringify({ type: "pair_secure", envelope }));
+      } else if (["offline", "jarvis_closed", "wake_refused", "waking"].includes(data.type)) {
+        fail("Jarvis isn't open on your computer. Open Jarvis there, say “Connect my phone”, and scan the new code.");
+      } else if (data.type === "pair_error") {
+        fail(data.message || "That code has expired. On your computer, say “Connect my phone” again.");
+      } else if (data.type === "paired_secure") {
+        const answer = await decryptEnvelope(key, data.envelope || {});
+        if (pairWs !== ws) return;
+        if (!answer || answer.type !== "paired" || !answer.deviceId || !answer.key) {
+          fail("The answer couldn't be read. On your computer, say “Connect my phone” again for a fresh code.");
+          return;
+        }
+        pairWs = null;
+        clearTimeout(timer);
+        try { ws.close(); } catch { /* */ }
+        pairingDone(answer);
+      }
+    };
+  }
+  $("pairRetryBtn").onclick = () => { hudOverride = ""; boot(); };
   $("pairNowBtn").onclick = () => pair(ACTIVE_PAIR_CODE, { fromWelcome: true });
   $("codeInput").addEventListener("input", (e) => {
     e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6);
@@ -2180,20 +2636,163 @@
     if (isStandalone()) $("welcomeLead").textContent = "Pair once and Jarvis connects on its own every time you open it.";
   }
 
-  // ---- relay-hosted page, phone not recognized on this address yet (it was paired on the local one)
-  function setUpRelayUnknown() {
+  // ---- the always-on app with nothing on this phone yet (or Jarvis on the phone alone, adding the computer):
+  // pair by scanning the code on the computer's screen, right here in the app, or run Jarvis on the phone alone.
+  function showConnect(message) {
+    $("relayLead").textContent = message || "Pair it with Jarvis on your computer, or run Jarvis right here on the phone.";
+    $("soloBtn").hidden = !window.JarvisCore || phoneAI();
+    $("relayBack").hidden = !phoneAI();
+    // paired in the browser on the home Wi-Fi, but not on this address yet: that pairing can be brought over
+    const local = !!KNOWN_LOCAL_ADDRESS && !isStandalone() && !phoneAI();
+    $("relayLocalLink").hidden = !local;
+    if (local) $("relayLocalLink").href = KNOWN_LOCAL_ADDRESS + "/?backTo=" + encodeURIComponent(location.href);
     showView("relayView");
-    if (KNOWN_LOCAL_ADDRESS) {
-      $("relayTitle").textContent = "Almost there";
-      $("relayLead").textContent = "This phone is paired, but hasn't finished setup for this address yet. On the same Wi-Fi as your computer, tap below once. It'll bring you right back.";
-      $("relayLocalLink").href = KNOWN_LOCAL_ADDRESS + "/?backTo=" + encodeURIComponent(location.href);
-      $("relayLocalLink").hidden = false;
-    } else {
-      $("relayTitle").textContent = "Not paired yet";
-      $("relayLead").textContent = "On the same Wi-Fi as your computer, say “Connect my phone” and scan the QR code it shows.";
-      $("relayLocalLink").hidden = true;
-    }
   }
+  $("relayBack").onclick = () => enterChat();
+  $("scanBtn").onclick = () => openScanner("relayView");
+  $("soloBtn").onclick = () => { $("soloError").textContent = ""; showView("soloView"); };
+  $("soloBack").onclick = () => showConnect();
+
+  // ---- the camera, looking for the code on the computer's screen
+  const SCAN_HINT = "On your computer, say “Connect my phone”. Jarvis shows a code on the screen.";
+  const CAMERA_APP = "Or open your phone's Camera app and point it at the code.";
+  let scan = null, scanReturn = "relayView";
+  function scanNote(title, hint, warn) {
+    $("scanStatus").textContent = title;
+    $("scanHint").textContent = hint || "";
+    $("scanNote").classList.toggle("warn", !!warn);
+  }
+  function stopScanner() {
+    const session = scan;
+    scan = null;
+    if (!session) return;
+    clearTimeout(session.timer);
+    if (session.stream) session.stream.getTracks().forEach((t) => t.stop());
+    $("scanVideo").srcObject = null;
+  }
+  function scanProblem(title, hint) {
+    stopScanner();
+    $("scanFrame").hidden = true;
+    $("scanRetry").hidden = false;
+    scanNote(title, hint, true);
+  }
+  /** What a scanned code says: the pairing link for this address, or why it isn't one. */
+  function readPairLink(text) {
+    let url = null;
+    try { url = new URL(text); } catch { /* not a link at all */ }
+    const m = url && /^#pair=([A-Za-z0-9_-]{40,})$/.exec(url.hash);
+    const computerId = url ? url.searchParams.get("computerId") || "" : "";
+    if (m && computerId && url.origin === location.origin) return { computerId, secret: m[1] };
+    if (m && computerId) return { problem: "That code is for a different Jarvis address", advice: "Open it with your phone's Camera app instead." };
+    if (url && url.searchParams.get("code")) {
+      return { problem: "That code only works on your home Wi-Fi", advice: "On the same Wi-Fi as your computer, scan it with your phone's Camera app." };
+    }
+    return { problem: "That isn't Jarvis's code", advice: SCAN_HINT };
+  }
+  async function openScanner(from) {
+    if (from) scanReturn = from;
+    stopScanner();
+    const session = scan = { stream: null, timer: 0 };
+    $("scanFrame").hidden = false;
+    $("scanRetry").hidden = true;
+    scanNote("Starting the camera…", SCAN_HINT);
+    showView("scanView");
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      scanProblem("The camera isn't available here", "Open your phone's Camera app and point it at the code on your computer.");
+      return;
+    }
+    try {
+      session.stream = await navigator.mediaDevices.getUserMedia({
+        audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+    } catch (e) {
+      if (scan !== session) return;
+      if (e && e.name === "NotAllowedError") scanProblem("Camera access is off for Jarvis", "Allow the camera for Jarvis in your phone's settings, then try again. " + CAMERA_APP);
+      else scanProblem("Couldn't start the camera", "Close other apps that are using it, then try again. " + CAMERA_APP);
+      return;
+    }
+    if (scan !== session) { session.stream.getTracks().forEach((t) => t.stop()); return; }
+    const video = $("scanVideo");
+    video.srcObject = session.stream;
+    try { await video.play(); } catch { /* it plays on its own once it can (autoplay, muted) */ }
+    // The phone's own code reader where there is one (Android); elsewhere (iPhone) a small one loaded for the job.
+    let detector = null;
+    try {
+      if ("BarcodeDetector" in window && (await window.BarcodeDetector.getSupportedFormats()).includes("qr_code")) {
+        detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+      }
+    } catch { detector = null; }
+    if (!detector && !window.jsQR) {
+      try { await loadScript("/vendor/jsqr/jsQR.js"); }
+      catch { if (scan === session) scanProblem("Couldn't load the scanner", "Check your connection and try again. " + CAMERA_APP); return; }
+    }
+    if (scan !== session) return;
+    scanNote("Point at the code on your computer", SCAN_HINT);
+    const canvas = document.createElement("canvas"), g = canvas.getContext("2d", { willReadFrequently: true });
+    const look = async () => {
+      if (scan !== session) return;
+      let text = "";
+      if (video.readyState >= 2 && video.videoWidth) {
+        try {
+          if (detector) {
+            const found = await detector.detect(video);
+            text = found.length ? found[0].rawValue : "";
+          } else {
+            const scale = Math.min(1, 720 / Math.max(video.videoWidth, video.videoHeight));
+            const w = Math.round(video.videoWidth * scale), h = Math.round(video.videoHeight * scale);
+            if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+            g.drawImage(video, 0, 0, w, h);
+            const hit = window.jsQR(g.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: "dontInvert" });
+            text = hit ? hit.data : "";
+          }
+        } catch { /* one frame that couldn't be read: the next one will */ }
+      }
+      if (scan !== session) return;
+      if (text) {
+        const link = readPairLink(text);
+        if (link.secret) { haptic(18); stopScanner(); pairSecure(link); return; }
+        scanNote(link.problem, link.advice, true);
+      }
+      session.timer = setTimeout(look, detector ? 140 : 180);
+    };
+    look();
+  }
+  $("scanBack").onclick = () => { stopScanner(); if (scanReturn === "chatView" && phoneAI()) showView("chatView"); else showConnect(); };
+  $("scanRetry").onclick = () => openScanner();
+  // the camera is never left on behind a closed app
+  document.addEventListener("visibilitychange", () => {
+    if (currentView !== "scanView") return;
+    if (document.hidden) stopScanner(); else if (!scan && $("scanRetry").hidden) openScanner();
+  });
+
+  // ---- Jarvis on the phone alone: the user's own Groq key, checked with Groq, kept only on this phone
+  $("soloKey").addEventListener("input", () => {
+    $("soloStart").disabled = $("soloKey").value.trim().length < 20;
+    $("soloError").textContent = "";
+  });
+  $("soloForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const apiKey = $("soloKey").value.trim();
+    if (!/^gsk_[A-Za-z0-9_-]{20,}$/.test(apiKey)) { $("soloError").textContent = "That doesn't look like a Groq key. It starts with gsk_."; return; }
+    $("soloKey").blur();
+    $("soloStart").disabled = true;
+    $("soloStart").textContent = "Checking the key…";
+    let problem = "";
+    try {
+      const answer = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: "Bearer " + apiKey } });
+      if (answer.status === 401 || answer.status === 403) problem = "Groq didn't accept that key. Copy it again from console.groq.com.";
+      else if (!answer.ok) problem = "Groq couldn't check the key just now. Try again in a moment.";
+    } catch { problem = "Couldn't reach Groq. Check your internet connection and try again."; }
+    $("soloStart").textContent = "Start Jarvis";
+    $("soloStart").disabled = false;
+    if (problem) { $("soloError").textContent = problem; return; }
+    // the same settings the computer hands a paired phone (app.py, _phone_ai_config)
+    aiConfig = { provider: "groq", apiKey, model: "openai/gpt-oss-120b", fallbackModel: "openai/gpt-oss-20b",
+                 transcribeModel: "whisper-large-v3-turbo", userName: "" };
+    store.set("jarvis_ai", aiConfig);
+    store.del("jarvis_forgotten");
+    $("soloKey").value = "";
+    enterChat();
+  });
 
   // ===================================================================================================== cross-origin handoff
   // Kept from the original design: the relay-hosted page and the local one are different origins (separate
@@ -2218,6 +2817,8 @@
   // or the computer's (opened there if it's closed). Coming back within a few minutes carries on without asking.
   let chosen = false;
   function enterChat() {
+    if (!saved() && !phoneAI()) { boot(); return; }
+    if (!saved()) { prefs.mode = "phone"; chosen = true; }   // Jarvis on the phone alone: nothing to choose between
     if (!chosen) { showChooser(); return; }
     showView("chatView");
     if (!thread.children.length) {
@@ -2227,7 +2828,7 @@
     refreshAction();
     refreshMenu();
     refreshModeSwitch();
-    conn.start(prefs.mode === "computer");
+    if (saved()) conn.start(prefs.mode === "computer"); else conn.setState("idle");
   }
   function showChooser() {
     const phoneReady = phoneAI();
@@ -2258,8 +2859,19 @@
       pair(code);
       return;
     }
-    if (device) { enterChat(); return; }
-    if (SERVED_BY_RELAY) { setUpRelayUnknown(); return; }
+    if (pairLink && SERVED_BY_RELAY) {
+      // The same code, opened through Jarvis's secure address (the phone's camera, away from the home Wi-Fi or
+      // not): its one-time key is the approval.
+      const link = pairLink;
+      pairLink = null;
+      pairSecure(link);
+      return;
+    }
+    if (device || phoneAI()) { enterChat(); return; }
+    // nothing on this phone (never set up, or just unpaired): a clean start
+    chosen = false;
+    thread.textContent = ""; transcript = []; lastRow = null;
+    if (SERVED_BY_RELAY) { showConnect(message); return; }
     showWelcome(message);
   }
 
@@ -2285,8 +2897,7 @@
     } else {
       const install = params.get("install") === "1";
       history.replaceState(null, "", location.pathname);
-      boot();
-      if (install && saved() && !isStandalone()) setTimeout(openInstall, 900);
+      if (install && saved() && !isStandalone()) openInstall(); else boot();
     }
   } else if (params.get("synced") === "1" && params.get("backTo") && sameOriginAs(params.get("backTo"), (saved() || {}).relayUrl || "")) {
     location.replace(params.get("backTo"));
@@ -2297,10 +2908,9 @@
     if (params.get("synced") || params.get("session") || params.get("decision") || params.get("source")) {
       history.replaceState(null, "", location.pathname);   // tidy address bar; nothing in these needs keeping
     }
-    boot();
-    // Arrived in the browser from the app's "Open it" (not yet on the Home Screen): straight to "Add to Home Screen",
-    // which also puts the pairing back in the address for the installed app's own first launch.
-    if (arrivedByHandoff && saved() && !isStandalone() && (IS_IOS || IS_ANDROID)) setTimeout(openInstall, 900);
+    // Arrived in the browser with the pairing in the link (not yet on the Home Screen): straight to "Add to Home
+    // Screen", which also puts the pairing back in the address for the installed app's own first launch.
+    if (arrivedByHandoff && (saved() || phoneAI()) && !isStandalone() && (IS_IOS || IS_ANDROID)) openInstall(); else boot();
   }
 })();
 </script>

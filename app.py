@@ -896,13 +896,50 @@ def start_phone_pairing() -> str:
                 "Computer control, then ask me again.")
     code = phone_server.begin_pairing()
     address = f"http://{phone_control.lan_address()}:{PHONE_WS_PORT}"
-    pair_url = f"{address}/?code={code}"   # the code travels in the link, never typed; the address and code are
-    # still shown on the panel in full, as a fallback for a phone that can't scan.
+    local_url = f"{address}/?code={code}"   # same Wi-Fi: the code travels in the link, never typed
+    # With the relay reachable, the QR leads to the phone's always-on app instead and carries this pairing's one-time
+    # key (see secure_pair_url): the phone pairs through the relay from wherever it is, and the app it lands in opens
+    # even when this computer is off. The Wi-Fi address and code stay on the panel for a phone that can't scan.
+    secure_url = secure_pair_url()
     # send_ui_update, not the "once" version: still there if the window wasn't open the instant this fired, or gets
     # reopened a minute later. Cleared on "paired" (handle_phone_client), so a later window never sees a stale QR.
-    send_ui_update("phone_pairing", {"address": address, "pairUrl": pair_url, "code": code,
+    send_ui_update("phone_pairing", {"address": address, "pairUrl": secure_url or local_url, "localPairUrl": local_url,
+                                     "code": code, "secure": bool(secure_url),
                                      "expiresAt": time.time() + phone_control.PAIR_CODE_TTL})
+    if secure_url:
+        return "Scan the QR code on your screen: with your phone's camera, or with Scan in the Jarvis app."
     return "Scan the QR code on your screen with your phone's camera, on the same Wi-Fi."
+
+
+def secure_pair_url() -> str:
+    """The always-on app's address with the open pairing's one-time key in its #fragment (never sent to the relay or
+    any server: only the page's own script reads it), or "" when there's no relay to pair through right now."""
+    secret = phone_server.pairing_secret()
+    if not (RELAY_URL and secret and getattr(relay, "_ws", None) is not None):
+        return ""
+    origin = re.sub(r"^ws", "http", RELAY_URL).rstrip("/")
+    return f"{origin}/?computerId={relay.computer_id}#pair={phone_crypto.key_to_b64(secret).rstrip('=')}"
+
+
+def _on_secure_pair(secret: bytes, device_name: str, replaces: tuple):
+    """session_router's callback for a pairing request that opened with the QR's one-time key (phone_session.
+    _pair_secure): pairs the phone and returns what it needs, which goes back sealed with that same key."""
+    paired = phone_server.try_pair_secure(secret, device_name, replaces=replaces)
+    if paired is None:
+        return None
+    device_id, token, key = paired
+    name = phone_server.registry.authenticate(device_id, token)["name"]
+    broadcast("ai", f"{name} is now paired and can talk to me from anywhere.")
+    clear_ui_update("phone_pairing")
+    send_ui_update_once({"type": "phone_paired", "deviceName": name})   # closes the QR panel
+    answer = {"deviceId": device_id, "token": token, "key": phone_crypto.key_to_b64(key), "deviceName": name,
+              "computerId": relay.computer_id, "relayUrl": session_transport_url(),
+              # where this computer is on the home Wi-Fi: the phone app tries that first, the relay otherwise
+              "localUrl": f"ws://{phone_control.lan_address()}:{PHONE_WS_PORT}/"}
+    ai = _phone_ai_config()
+    if ai.get("apiKey"):
+        answer["ai"] = ai   # sealed with the pairing key like the rest: the phone's own Jarvis works from the start
+    return answer
 
 
 def start_phone_session() -> str:
@@ -4337,7 +4374,7 @@ session_router = phone_session.PhoneSessionRouter(phone_server, _transcribe_phon
                                                    on_push_unsubscribe=push_store.remove,
                                                    get_history=phone_history, on_presence=_on_phone_presence,
                                                    get_vapid_key=_vapid_key_b64, get_ai_config=_phone_ai_config,
-                                                   on_phone_turn=_on_phone_turn)
+                                                   on_phone_turn=_on_phone_turn, on_secure_pair=_on_secure_pair)
 relay = relay_client.RelayClient(RELAY_URL, session_router,
                                  is_enabled=lambda: bool(RELAY_URL) and phone_control_mode() != "off",
                                  get_vapid_key=_vapid_key_b64, get_local_address=_local_address)

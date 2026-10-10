@@ -112,7 +112,7 @@ class PhoneSessionRouter:
 
     def __init__(self, phone_server, transcribe_pcm16, deliver_voice_text,
                  on_push_subscribe=None, on_push_unsubscribe=None, get_history=None, on_presence=None,
-                 get_vapid_key=None, get_ai_config=None, on_phone_turn=None):
+                 get_vapid_key=None, get_ai_config=None, on_phone_turn=None, on_secure_pair=None):
         self.phone_server = phone_server
         self.transcribe_pcm16 = transcribe_pcm16
         self.deliver_voice_text = deliver_voice_text
@@ -122,6 +122,8 @@ class PhoneSessionRouter:
         self.on_presence = on_presence       # (names: list[str]) -> None, whenever the set of attached phones changes
         self.get_vapid_key = get_vapid_key   # () -> str, so an installed app can turn notifications on in-session
         self.get_ai_config = get_ai_config   # () -> dict, what the phone app's own Jarvis agent needs (mobile/)
+        # (secret, device_name, replaces) -> the paired answer (dict) or None: pairing through the relay, see _pair_secure
+        self.on_secure_pair = on_secure_pair
         self.on_phone_turn = on_phone_turn   # (user, reply, device_name) -> None, a turn handled on the phone itself
         self._conns = {}   # conn_id -> {"device_id","key","session_id","voice","schedule_send","schedule_end"}
         self._presence = None
@@ -204,6 +206,8 @@ class PhoneSessionRouter:
                 await self._attach(conn_id, payload, schedule_send, schedule_end, local)
             elif payload.get("type") == "auto_attach":
                 await self._auto_attach(conn_id, payload, schedule_send, schedule_end, local)
+            elif payload.get("type") == "pair_secure":
+                self._pair_secure(payload, schedule_send)
             elif DEVICE_MESSAGE_ENVELOPE <= payload.keys():
                 await self._handle_device_message(payload, schedule_send)
             # else: nothing else is meaningful before a session is attached
@@ -212,6 +216,33 @@ class PhoneSessionRouter:
         if message is None:
             return
         await self._on_decrypted(conn_id, state, message)
+
+    def _pair_secure(self, payload: dict, schedule_send) -> None:
+        """Pairing through the relay, for the phone's always-on app: the request is an envelope sealed with the open
+        pairing's one-time key (from the QR code on this computer's screen), and so is the answer, which carries the
+        new device's credentials. The relay passes both along and can read neither. A request that doesn't open
+        with that key gets a plain "wrong or expired" and counts as a failed attempt."""
+        secret = self.phone_server.pairing_secret()
+        message = phone_crypto.decrypt(secret, payload.get("envelope")) if secret else None
+        fresh = False
+        if isinstance(message, dict) and message.get("type") == "pair":
+            try:
+                fresh = abs(time.time() - float(message.get("ts")) / 1000) <= ATTACH_PROOF_WINDOW
+            except (TypeError, ValueError):
+                fresh = False
+        if not fresh or not self.on_secure_pair:
+            if secret:
+                self.phone_server.note_bad_pairing_attempt()
+            schedule_send({"type": "pair_error",
+                           "message": "That code has expired. On your computer, say “Connect my phone” again."})
+            return
+        replaces = (str(message.get("previousDeviceId") or ""), str(message.get("previousToken") or ""))
+        answer = self.on_secure_pair(secret, str(message.get("deviceName") or ""), replaces)
+        if not answer:
+            schedule_send({"type": "pair_error",
+                           "message": "That code has expired. On your computer, say “Connect my phone” again."})
+            return
+        schedule_send({"type": "paired_secure", "envelope": phone_crypto.encrypt(secret, {"type": "paired", **answer})})
 
     async def _handle_device_message(self, payload: dict, schedule_send) -> None:
         """A message an already-paired device can send without a "connect my phone" session at all — right now

@@ -7,11 +7,16 @@ existing Jarvis tools (PHONE_COMMANDS) or send voice — never a raw shell, neve
 
 Two different flows use this module, for two different jobs:
 
-  1. Pairing (PairingSession/try_pair) — first-ever trust between a phone and this computer, always over the same
-     Wi-Fi. The user says "connect my phone"; on "yes" a short-lived numeric code is shown, the phone opens this
-     computer's local address in its own browser (a small page this same server hands out) and enters the code.
-     A device token AND an end-to-end encryption key (phone_crypto.py) are issued once and stored (the token
-     hashed, the key in the clear — see DeviceRegistry) in devices.json; the phone keeps both. One-time per phone.
+  1. Pairing (PairingSession/try_pair) — first-ever trust between a phone and this computer. The user says
+     "connect my phone"; on "yes" a short-lived numeric code is shown, the phone opens this computer's local
+     address in its own browser (a small page this same server hands out) and enters the code: that code only
+     ever works over the same Wi-Fi. A device token AND an end-to-end encryption key (phone_crypto.py) are issued
+     once and stored (the token hashed, the key in the clear — see DeviceRegistry) in devices.json; the phone
+     keeps both. One-time per phone.
+     The QR code shown with it also carries a one-time 256-bit key (PairingSession.secret, try_pair_secure): the
+     phone's always-on app (served by the relay) pairs with that from anywhere, the request and the answer both
+     sealed with the key, so the relay in between learns nothing (phone_session.py, _pair_secure). Only someone
+     who can see this computer's screen has the key; it is single use and expires with the code.
 
   2. Sessions (PhoneSession/begin_session/decide_session/attach_session) — every "connect my phone" after that.
      Instead of a code to type, every already-paired phone gets a push notification with Confirmed/Not Confirmed
@@ -175,6 +180,10 @@ class PairingSession:
 
     def __init__(self, code: str):
         self.code = code
+        # For pairing through the relay (the phone's always-on app): a one-time AES-256 key shown only inside the
+        # QR code on this computer's screen. Whoever can seal a request with it has seen that screen; the relay in
+        # the middle never has it (it travels in the link's #fragment, which browsers don't send to any server).
+        self.secret = secrets.token_bytes(32)
         self.expires_at = time.time() + PAIR_CODE_TTL
         self.attempts = 0
 
@@ -254,6 +263,29 @@ class PhoneControlServer:
         still a real tap to confirm — this only saves re-finding the link, not the confirmation step."""
         with self._lock:
             return self._pairing.code if self._pairing is not None and not self._pairing.expired() else None
+
+    def pairing_secret(self):
+        """The open pairing's one-time key (bytes), or None when no pairing is open."""
+        with self._lock:
+            return self._pairing.secret if self._pairing is not None and not self._pairing.expired() else None
+
+    def note_bad_pairing_attempt(self) -> None:
+        """A request that wasn't sealed with the open pairing's key: counted like a wrong code."""
+        with self._lock:
+            if self._pairing is not None:
+                self._pairing.attempts += 1
+
+    def try_pair_secure(self, secret: bytes, device_name: str, replaces: tuple = None):
+        """(device_id, token, key) for a request proven to be sealed with the open pairing's own key (the caller
+        decrypted it with `secret`), else None. Single use, exactly like try_pair."""
+        with self._lock:
+            session = self._pairing
+            if session is None or session.expired() or not hmac.compare_digest(secret, session.secret):
+                return None
+            self._pairing = None
+        if replaces and replaces[0] and self.registry.authenticate(*replaces) is not None:
+            self.registry.revoke(replaces[0])
+        return self.registry.add(device_name)
 
     def try_pair(self, code: str, device_name: str, replaces: tuple = None):
         """(device_id, token, key) on a correct, still-open code, else None.
