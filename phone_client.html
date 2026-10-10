@@ -2451,7 +2451,7 @@
     const text = (out && out.text) || said;   // with its typos fixed
     if (out && out.music) return { text: await playMusic(text, out.music), where: "phone" };
     if (out && out.reply != null) {
-      if (out.visual) await handleVisual(out.visual, true);
+      for (const picture of out.visuals || (out.visual ? [out.visual] : [])) await handleVisual(picture, true);   // two functions: a graph each
       if (out.timer) timers.apply(out.timer);
       if (out.weather) turnExtras.push(() => addWeatherCard(out.weather));
       return { text: out.reply, where: "phone" };
@@ -2492,7 +2492,7 @@
           if (!out) return { ok: false, message: "That skill isn't loaded on this phone yet. Try again in a moment.", final: true };
           if (out.music) return { ok: true, message: await playMusic(out.text, out.music), final: true };
           if (out.reply == null) return { ok: false, message: "I couldn't work that out from the way it was put." };
-          if (out.visual) await handleVisual(out.visual, true);
+          for (const picture of out.visuals || (out.visual ? [out.visual] : [])) await handleVisual(picture, true);   // two functions: a graph each
           if (out.timer) timers.apply(out.timer);
           if (out.weather) turnExtras.push(() => addWeatherCard(out.weather));
           return { ok: true, message: out.reply, final: true };

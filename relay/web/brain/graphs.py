@@ -39,11 +39,51 @@ def _from_letters(text: str):
     return None
 
 
-def parse_request(text: str):
+def parse_request(text: str, expecting: bool = False):
     """None if this isn't about graphing, else one of:
     {"action": "close"}, {"action": "ask"} (no equation given), {"action": "unsupported"} (not a function of x),
     {"action": "unclear"} (a word or symbol that isn't math), {"action": "graph", "a", "b", "c"} (a quadratic or a line),
-    {"action": "function", "ast": tree} (anything else)."""
+    {"action": "function", "ast": tree} (anything else), {"action": "several", "requests": [...], "unread": n} (more than
+    one function asked for at once: "graph y = x^2 and g = x + 1").
+    expecting: Jarvis has just asked for the equation, so a message that is only a formula is the answer to that."""
+    request = _parse_one(text)
+    if request is None:
+        # A formula on its own, with no "graph" or "draw": the answer to "tell me the equation", or plainly a function
+        # written out ("y = 2x + 3").
+        n = functions.normalize(text)
+        if n and not _VERB.search(n) and (expecting or re.match(r"^y\s*=", n)) and "x" in functions._tokenize(n):
+            answer = _parse_one(f"graph {text}")
+            if answer and answer["action"] in ("graph", "function"):
+                return answer
+        return None
+    several = _parse_several(text) if re.search(r"\s(?:and|&)\s", text or "") else None
+    if several and (request["action"] in ("unclear", "unsupported") or (not several["unread"] and len(several["requests"]) > 1)):
+        return several   # "sine of x and cosine of x" is two curves, not one multiplied by the other
+    return request
+
+
+def _parse_several(text: str):
+    """"graph y = x^2 and g = x + 1": each function between the "and"s, read on its own. A function under another
+    name ("g = …", "h(x) = …") is still a function of x."""
+    n = functions.normalize(text)
+    verb = _VERB.search(n)
+    if not verb:
+        return None
+    parts = [p.strip() for p in re.split(r"\s+(?:and|&)\s+", n[verb.end():]) if p.strip()]
+    if len(parts) < 2:
+        return None
+    found, unread = [], 0
+    for part in parts[:4]:
+        part = re.sub(r"^(?:then\s+|also\s+)?[a-wz]\s*(?:\(\s*x\s*\))?\s*=\s*(?=[^=]*$)", "y = ", part)
+        one = _parse_one(f"graph {part}")
+        if one and one["action"] in ("graph", "function"):
+            found.append(one)
+        else:
+            unread += 1
+    return {"action": "several", "requests": found, "unread": unread} if found else None
+
+
+def _parse_one(text: str):
     n = functions.normalize(text)
     if not n:
         return None
@@ -71,9 +111,10 @@ def parse_request(text: str):
         before = re.sub(r"(?:\s|[,.;:!?]|\b(?:and|then|also|now|so|please|can you|could you|would you)\b)*$", "", n[:verb.start()])
         before = re.sub(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis)\s+)?(?:what(?:'s| is| are)(?: the answer (?:to|of))?|solve|calculate|"
                         r"compute|find|work out|tell me)\b\s*", "", before).strip()
-        if before and not kept and (_STRONG_NOUN.search(rest) or re.search(r"\b(?:it|this|that|them)\b", rest)) \
+        # …or just "y = 2x + 3 graph", with the order as the last word
+        if before and not kept and (not rest.strip(" .") or _STRONG_NOUN.search(rest) or re.search(r"\b(?:it|this|that|them)\b", rest)) \
                 and "x" in functions._tokenize(before):
-            request = parse_request(f"graph {before}")
+            request = _parse_one(f"graph {before}")
             if request and request["action"] in ("graph", "function"):
                 return {**request, "solve": before if "=" in before and not re.search(r"\by\b", before) else None}
         # "draw the function", "graph it", "plot that": no formula, so it means the one talked about last (the app knows which).
@@ -284,3 +325,26 @@ def build_function(tree) -> dict:
     analysis = functions.analyze(tree)
     view = functions.build_view(tree, analysis)
     return functions.describe_function(tree, analysis, view)
+
+
+def build(request: dict) -> tuple:
+    """(what the window draws, what Jarvis says about it) for one "graph" or "function" request."""
+    if request["action"] == "function":
+        info = build_function(request["ast"])
+        return info, describe_function(info)
+    info = facts(request["a"], request["b"], request["c"])
+    return info, describe(info)
+
+
+def describe_several(infos: list, unread: int) -> str:
+    """What Jarvis says after "graph y = x^2 and g = x + 1": each function is drawn on a graph of its own."""
+    names = [info.get("plain") or "the function" for info in infos]
+    if len(infos) == 1:
+        return (f"I could only read one of those as a function of x, so I drew {names[0]}. "
+                "Give me the other one again, like: graph y equals x plus 1.")
+    text = (f"I drew {len(infos)} graphs, one for each function: {', '.join(names[:-1])} and {names[-1]}. "
+            "Each one has its own graph: use the arrows on it to switch between them.")
+    return text + (" One more I couldn't read as a function of x." if unread else "")
+
+
+ASK_FOR_EQUATION = "Tell me the equation, for example: graph y equals x squared minus 4x plus 3. Or give me a, b and c."
