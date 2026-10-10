@@ -22,5 +22,10 @@ COPY vendor/planets ./vendor/planets
 # the phone app's code scanner (pairing inside the app) and its display font
 COPY vendor/jsqr ./vendor/jsqr
 COPY vendor/fonts ./vendor/fonts
+# Jarvis's brain for the phone (relay/server.py's BRAIN): the worker that runs it in the phone's browser, and the
+# modules and map data it loads. Kept under relay/web/brain here so the relay serves the versions the phone app
+# was built against, whatever the engine's own copies are.
+COPY phone_brain_worker.js ./
+COPY relay/web/brain ./brain
 EXPOSE 8080
 CMD ["python", "server.py"]

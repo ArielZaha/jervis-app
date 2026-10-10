@@ -70,7 +70,10 @@ MANIFEST_PATH = os.path.join(_HERE, "phone_manifest.webmanifest")
 AGENT_PATH = os.path.join(_HERE, "phone_agent.js")
 # The phone app's graphs, globe and planets: the computer window's own drawing code and imagery, copied in by the
 # Dockerfile. The same fixed list as phone_visuals.py (tests/test_phone_visuals.py checks they agree).
-VISUAL_SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js", "vendor/jsqr/jsQR.js")
+VISUAL_SCRIPTS = ("sphere_gl.js", "graph.js", "earth.js", "planet.js", "vendor/jsqr/jsQR.js", "phone_brain_worker.js")
+# Jarvis's brain for the phone (see phone_visuals.py): pure calculation, copied into ./brain/ by the Dockerfile.
+BRAIN = ("typos.py", "functions.py", "equations.py", "graphs.py", "geo.py", "earth.py", "planets.py", "timers.py",
+         "forecast.py", "music.py", "phone_brain.py", "geo_data/countries_50m.json", "geo_data/places_10m.json")
 VISUAL_FONTS = ("vendor/fonts/orbitron-latin.woff2",)
 VISUAL_IMAGES = (
     "vendor/earth/blue_marble_5400.jpg", "vendor/earth/clouds_2048.jpg", "vendor/earth/night_lights_3600.jpg",
@@ -84,6 +87,8 @@ VISUAL_FILES = {f"/{n}": (n, "text/javascript; charset=utf-8", "no-cache") for n
 VISUAL_FILES.update({f"/{n}": (n, "image/png" if n.endswith(".png") else "image/jpeg", "public, max-age=604800")
                      for n in VISUAL_IMAGES})
 VISUAL_FILES.update({f"/{n}": (n, "font/woff2", "public, max-age=604800") for n in VISUAL_FONTS})
+VISUAL_FILES.update({f"/brain/{n}": ((f"brain/{n}", "application/json", "public, max-age=604800") if n.endswith(".json")
+                                     else (f"brain/{n}", "text/x-python; charset=utf-8", "no-cache")) for n in BRAIN})
 ICON_DIR = os.path.join(_HERE, "phone_icons")
 # Same fixed list as phone_control.ICON_FILES (this file deploys on its own, so it can't import that module).
 ICON_FILES = frozenset({"icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png",
