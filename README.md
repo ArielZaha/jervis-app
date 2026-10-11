@@ -152,7 +152,9 @@ venv/bin/python -m pytest -q   # the tests (no microphone, network or real apps 
 ```
 
 When running from source, Jarvis keeps his files in this folder, and a `.env` file here is imported into Settings the
-first time. `python3 run.py --local-images` adds local picture generation (PyTorch + Diffusers, several GB).
+first time. One line in `.env` keeps deciding after that: `LLM_BACKEND=groq`, `ollama` or `auto` chooses which AI
+answers (choosing it in Settings rewrites the line). With `groq`, Jarvis closes Ollama when he starts and frees the
+memory its model held (about 2.5 GB); there is then no offline backup. `python3 run.py --local-images` adds local picture generation (PyTorch + Diffusers, several GB).
 
 Installers are built by GitHub Actions (`.github/workflows/build.yml`) on real Windows and macOS machines: tests, then
 the engine (`jarvis-backend.spec`, PyInstaller) and its `--selftest`, then the installer (electron-builder, config in

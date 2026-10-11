@@ -98,7 +98,9 @@ load_dotenv(os.path.join(APP_DIR, ".env"))  # settings.load() already applied .e
 GROQ_MODEL = "openai/gpt-oss-20b"
 STT_MODEL = "whisper-large-v3-turbo"
 # Which AI answers: "auto" = the online AI (Groq) and, if it can't be reached, the local one (Ollama); "groq" or "ollama" force one.
-LLM_BACKEND = (os.getenv("LLM_BACKEND") or "auto").strip().lower()
+# Chosen by the LLM_BACKEND line in .env, or in Settings. With "groq" the local one is closed at startup, to free its memory.
+LLM_BACKEND = (os.getenv("LLM_BACKEND") or "auto").strip().strip("\"'").lower()
+LLM_BACKEND = {"grok": "groq", "online": "groq", "both": "auto"}.get(LLM_BACKEND, LLM_BACKEND)
 groq_down_until = 0.0  # while Groq is known to be unreachable, skip straight to the local AI instead of waiting for timeouts
 GROQ_KEY = (os.getenv("GROQ_API_KEY") or "").strip().strip("\"'")  # tolerate spaces or quotes pasted around the key
 groq_client = Groq(api_key=GROQ_KEY or "missing-key")
@@ -608,7 +610,8 @@ async def handle_client(websocket):
                                            "it, read any text in it, compare it with another, or edit it if you tell "
                                            "me how.")
             elif data.get("type") == "setup_retry":
-                local_ai_manager.start_background()
+                if LLM_BACKEND != "groq":   # the online AI only: the local one stays closed
+                    local_ai_manager.start_background()
             elif data.get("type") == "weather_refresh":   # the weather window's refresh button, or a click on the card
                 refresh_weather_window(str(data.get("city") or "")[:80], refresh=data.get("refresh") is not False)
             elif data.get("type") == "window_visibility":
@@ -5183,7 +5186,7 @@ def local_ai_summary() -> str:
 def check_ai_connection() -> None:
     """At startup, say clearly which AI Jarvis will use, so a missing key or a blocked network is not a mystery later."""
     global groq_down_until
-    local_model, local_reason = local_llm.status()
+    local_model, local_reason = (None, "") if LLM_BACKEND == "groq" else local_llm.status()
     problem = None
     if LLM_BACKEND == "ollama":
         print(f"Using the local AI only (LLM_BACKEND=ollama): {local_ai_summary()}", flush=True)
@@ -5193,7 +5196,9 @@ def check_ai_connection() -> None:
     else:
         try:
             groq_client.with_options(timeout=12, max_retries=0).models.list()
-            print("The online AI connection works." + (f"  Local backup: Ollama ({local_model})." if local_model else ""), flush=True)
+            print("The online AI connection works." + (f"  Local backup: Ollama ({local_model})." if local_model else "")
+                  + ("  (LLM_BACKEND=groq: the online AI only, with no local backup.)" if LLM_BACKEND == "groq" else ""),
+                  flush=True)
             return
         except Exception as e:
             if getattr(e, "status_code", None) in (401, 403):
@@ -5209,6 +5214,14 @@ def check_ai_connection() -> None:
     else:
         print(f"\n*** {problem}\n    (Jarvis still understands commands like opening apps and timers without any AI.)\n",
               flush=True)
+
+
+def release_local_ai() -> None:
+    """LLM_BACKEND=groq: only the online AI answers, so close the one on this computer and give its memory back."""
+    try:
+        print(local_ai.release_summary(local_ai.release()), flush=True)
+    except Exception:
+        traceback.print_exc()   # never a reason for Jarvis not to start
 
 
 def local_ai_status_reply() -> str:
@@ -6124,6 +6137,8 @@ if __name__ == "__main__":
     threading.Thread(target=refresh_devices, daemon=True).start()   # so Settings has them ready
     if LLM_BACKEND in ("ollama", "auto") and os.getenv("JARVIS_NO_AI_SETUP") != "1":   # (that switch: tests only)
         local_ai_manager.start_background()   # the local AI is the AI, or the backup: make sure it's there
+    elif LLM_BACKEND == "groq" and os.getenv("JARVIS_NO_AI_SETUP") != "1":
+        threading.Thread(target=release_local_ai, daemon=True, name="local-ai-release").start()
     timer_manager.load()  # timers that were running when Jarvis was last closed
     threading.Thread(target=telemetry_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()

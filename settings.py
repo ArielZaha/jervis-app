@@ -9,12 +9,15 @@ Precedence, highest first:
   2. settings.json (what the user chose in the Settings screen)
   3. .env (the old way of configuring Jarvis; still read, and imported into settings.json the first time)
   4. the defaults below
+One exception: which AI answers (LLM_BACKEND). A line for it in .env decides, even over settings.json, so that one
+word in that file is enough to switch; choosing it in the Settings screen rewrites that line, so the two never disagree.
 
 The file is versioned so later releases can migrate it, and a damaged file is set aside (never silently lost) and
 replaced by defaults, so Jarvis always starts.
 """
 import json
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -142,6 +145,9 @@ _lock = threading.Lock()
 _values = {}          # what settings.json holds (only keys the user or the .env import set)
 _from_env_file = {}   # what .env holds
 _process_env = set()  # keys that were already in the real environment at startup: they always win
+_env_files = []       # the .env files that were read
+ENV_FILE_DECIDES = {"LLM_BACKEND"}   # a line for these in .env beats settings.json (see the top of this file)
+_OTHER_SPELLINGS = {"grok": "groq", "online": "groq", "local": "ollama", "both": "auto"}   # as people write them
 _first_run = False    # true only until the first save (the welcome screen, or Settings) — see is_first_run()
 
 
@@ -171,6 +177,47 @@ def _parse_env_file(file_path: str) -> dict:
     except (OSError, UnicodeDecodeError):
         pass
     return values
+
+
+def _decided_in_env_file(key: str):
+    """The choice a .env line makes for one of ENV_FILE_DECIDES ("Groq", "grok" and "local" are understood), or None
+    when there is no such line or it names nothing Jarvis knows."""
+    if key not in ENV_FILE_DECIDES or not _from_env_file.get(key):
+        return None
+    value = _from_env_file[key].strip().lower()
+    value = _OTHER_SPELLINGS.get(value, value)
+    return value if value in [choice[0] for choice in BY_KEY[key]["choices"]] else None
+
+
+def _rewrite_env_line(file_path: str, key: str, value: str) -> bool:
+    """Change `key`'s line in a .env file to the new value, leaving every other line exactly as it was. False when
+    the file has no line for it. Atomic, like the settings file: never a half-written .env."""
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            lines = f.read().splitlines(keepends=True)
+    except (OSError, UnicodeDecodeError):
+        return False
+    is_line = re.compile(rf"\s*(export\s+)?{re.escape(key)}\s*=")
+    found = False
+    for i, line in enumerate(lines):
+        if is_line.match(line):
+            lines[i] = f"{key}={value}" + ("\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else "")
+            found = True
+    if not found:
+        return False
+    fd, tmp = tempfile.mkstemp(prefix=".env-", dir=os.path.dirname(file_path))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write("".join(lines))
+        shutil.copymode(file_path, tmp)
+        os.replace(tmp, file_path)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+    return True
 
 
 def migrate(data: dict) -> dict:
@@ -242,15 +289,21 @@ def _adopt_old_environment() -> None:
 
 def load() -> None:
     """Read everything and apply it to os.environ. Call once, before the rest of Jarvis reads its configuration."""
-    global _values, _from_env_file, _process_env, _first_run
+    global _values, _from_env_file, _process_env, _first_run, _env_files
     with _lock:
         _adopt_old_environment()
         _process_env = {k for k in os.environ}
         env_files = [os.path.join(paths.RESOURCE_DIR, ".env"), os.path.join(paths.DATA_DIR, ".env")]
         _from_env_file = {}
-        for file_path in dict.fromkeys(env_files):   # the same folder when running from source
+        _env_files = list(dict.fromkeys(env_files))   # the same folder when running from source
+        for file_path in _env_files:
             _from_env_file.update(_parse_env_file(file_path))
         _from_env_file = _renamed_keys(_from_env_file)
+        for key in ENV_FILE_DECIDES:
+            if _from_env_file.get(key) and _decided_in_env_file(key) is None:
+                print(f"The .env file says {key}={_from_env_file[key]}, which isn't one of: "
+                      + ", ".join(choice[0] for choice in BY_KEY[key]["choices"])
+                      + ". Using the choice from Settings instead.", flush=True)
         first_run = not os.path.exists(path())
         _first_run = first_run   # no settings.json yet — whether or not there's an old .env to import from below
         _values = _read_file()
@@ -279,6 +332,9 @@ def load() -> None:
 def _effective(key: str) -> str:
     if key in _process_env and key in os.environ:
         return os.environ[key]
+    decided = _decided_in_env_file(key)
+    if decided is not None:
+        return decided
     if key in _values:
         return _values[key]
     if key in _from_env_file:
@@ -332,6 +388,14 @@ def update(changes: dict) -> dict:
     cleaned = {key: validate(key, value) for key, value in changes.items()}
     with _lock:
         before = {key: _effective(key) for key in cleaned}
+        for key in cleaned:
+            if key in ENV_FILE_DECIDES and _from_env_file.get(key):   # .env decides this one: change it there too
+                try:
+                    if any([_rewrite_env_line(file_path, key, cleaned[key]) for file_path in _env_files]):
+                        _from_env_file[key] = cleaned[key]
+                except OSError as e:
+                    raise ValueError(f"{BY_KEY[key]['label']} is set in the .env file, which couldn't be changed "
+                                     f"({e}). Change the {key} line there instead.")
         _values.update(cleaned)
         _write_file(_values)
         _first_run = False   # settings.json now exists (or is being written to) either way: no longer "new"

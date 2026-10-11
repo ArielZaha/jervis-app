@@ -124,3 +124,90 @@ def test_real_environment_wins_until_changed_in_settings(fresh, monkeypatch):
     assert settings.get("WEATHER_CITY") == "From Shell"
     settings.update({"WEATHER_CITY": "From Settings"})
     assert os.environ["WEATHER_CITY"] == "From Settings"
+
+
+# ---------- which AI answers: a line in .env decides ----------
+def _env(tmp_path, text):
+    (tmp_path / "app").mkdir(exist_ok=True)
+    env_file = tmp_path / "app" / ".env"
+    env_file.write_text(text, encoding="utf-8")
+    return env_file
+
+
+def _saved(tmp_path, **values):
+    (tmp_path / "settings.json").write_text(json.dumps({"version": 1, "values": values}), encoding="utf-8")
+
+
+def test_the_env_line_chooses_the_ai_even_over_a_saved_setting(fresh):
+    settings, tmp_path = fresh
+    _saved(tmp_path, LLM_BACKEND="auto", GROQ_API_KEY="gsk_x")
+    _env(tmp_path, "GROQ_API_KEY=gsk_x\nLLM_BACKEND=groq\n")
+    settings.load()
+    assert os.environ["LLM_BACKEND"] == "groq"
+    assert settings.public_view()["values"]["LLM_BACKEND"] == "groq"   # and the Settings screen shows the same
+
+
+def test_other_settings_keep_the_usual_order(fresh):
+    settings, tmp_path = fresh
+    _saved(tmp_path, WEATHER_CITY="From Settings")
+    _env(tmp_path, "WEATHER_CITY=From File\n")
+    settings.load()
+    assert settings.get("WEATHER_CITY") == "From Settings"
+
+
+@pytest.mark.parametrize("written, meant", [("Groq", "groq"), ("grok", "groq"), (" GROQ ", "groq"), ('"ollama"', "ollama"),
+                                            ("local", "ollama"), ("OLLAMA", "ollama"), ("auto", "auto")])
+def test_the_env_line_is_read_however_it_is_written(fresh, written, meant):
+    settings, tmp_path = fresh
+    _saved(tmp_path, LLM_BACKEND="auto" if meant != "auto" else "ollama")
+    _env(tmp_path, f"LLM_BACKEND={written}\n")
+    settings.load()
+    assert os.environ["LLM_BACKEND"] == meant
+
+
+def test_an_env_line_naming_no_ai_is_ignored_and_said(fresh, capsys):
+    settings, tmp_path = fresh
+    _saved(tmp_path, LLM_BACKEND="auto")
+    _env(tmp_path, "LLM_BACKEND=chatgpt\n")
+    settings.load()
+    assert os.environ["LLM_BACKEND"] == "auto"
+    assert "chatgpt" in capsys.readouterr().out
+
+
+def test_no_env_line_means_the_saved_setting(fresh):
+    settings, tmp_path = fresh
+    _saved(tmp_path, LLM_BACKEND="auto")
+    _env(tmp_path, "GROQ_API_KEY=gsk_x\n# LLM_BACKEND=groq\n")
+    settings.load()
+    assert os.environ["LLM_BACKEND"] == "auto"
+
+
+def test_choosing_in_settings_rewrites_only_that_env_line(fresh):
+    settings, tmp_path = fresh
+    text = "GROQ_API_KEY=gsk_secret\n\n# Which AI answers\nLLM_BACKEND=groq   # online only\nSPOTIFY_CLIENT_ID=abc\n"
+    env_file = _env(tmp_path, text)
+    settings.load()
+    result = settings.update({"LLM_BACKEND": "ollama"})
+    assert result == {"saved": ["LLM_BACKEND"], "restart": True}
+    assert os.environ["LLM_BACKEND"] == "ollama"
+    assert env_file.read_text(encoding="utf-8") == text.replace("LLM_BACKEND=groq   # online only", "LLM_BACKEND=ollama")
+    importlib.reload(settings)   # the next start reads the same choice from both places
+    settings.load()
+    assert os.environ["LLM_BACKEND"] == "ollama"
+
+
+def test_choosing_in_settings_leaves_an_env_file_without_the_line_alone(fresh):
+    settings, tmp_path = fresh
+    env_file = _env(tmp_path, "GROQ_API_KEY=gsk_secret\n")
+    settings.load()
+    settings.update({"LLM_BACKEND": "groq"})
+    assert env_file.read_text(encoding="utf-8") == "GROQ_API_KEY=gsk_secret\n"
+    assert os.environ["LLM_BACKEND"] == "groq"
+
+
+def test_the_real_environment_still_beats_the_env_line(fresh, monkeypatch):
+    settings, tmp_path = fresh
+    monkeypatch.setenv("LLM_BACKEND", "ollama")
+    _env(tmp_path, "LLM_BACKEND=groq\n")
+    settings.load()
+    assert os.environ["LLM_BACKEND"] == "ollama"

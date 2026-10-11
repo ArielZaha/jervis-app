@@ -209,3 +209,25 @@ def test_a_title_youtube_has_nothing_for_is_said_so(monkeypatch):
     assert opened == []
     monkeypatch.setattr(app, "_find_video_scrape", lambda q: None)          # couldn't read the page: the results are opened, as before
     assert "opened YouTube results" in app.play_youtube_video("echoes") and len(opened) == 1
+
+
+# ---------- LLM_BACKEND=groq: only the online AI, the local one is closed ----------
+def test_with_groq_only_the_local_ai_is_never_asked_even_when_groq_fails(monkeypatch):
+    class Completions:
+        def create(self, **kwargs):
+            raise ConnectionError("no internet")
+    monkeypatch.setattr(app, "groq_client", type("C", (), {"chat": type("Ch", (), {"completions": Completions()})()})())
+    monkeypatch.setattr(app, "LLM_BACKEND", "groq")
+    monkeypatch.setattr(app, "groq_down_until", 0.0)
+    monkeypatch.setattr(app, "log_ai_error", lambda e: None)
+    monkeypatch.setattr(local_llm, "chat", lambda **k: pytest.fail("the local AI was started again"))
+    with pytest.raises(ConnectionError):
+        app.groq_chat(model="m", messages=[{"role": "user", "content": "hello"}])
+
+
+def test_closing_the_local_ai_reports_what_it_freed_and_never_stops_jarvis(monkeypatch, capsys):
+    monkeypatch.setattr(app.local_ai, "release", lambda: {"freed": 2548417166, "stopped": 3, "left": 0})
+    app.release_local_ai()
+    assert "freed about 2.4 GB" in capsys.readouterr().out
+    monkeypatch.setattr(app.local_ai, "release", lambda: 1 / 0)
+    app.release_local_ai()   # a failure is logged, not raised

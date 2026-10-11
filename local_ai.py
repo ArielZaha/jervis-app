@@ -483,6 +483,98 @@ class LocalAI:
                     pass
 
 
+# ---------- letting go of the local AI (the user chose the online AI only) ----------
+_ENGINE_NAMES = ("ollama", "ollama.exe", "ollama app", "ollama app.exe")   # the server, and the menu-bar / tray app
+
+
+def _local_urls() -> list:
+    """Where an Ollama on this computer may be answering: the user's own, Jarvis's copy, and a configured one (only if
+    it is on this computer: an Ollama on another machine is not ours to unload)."""
+    configured = os.getenv("OLLAMA_URL", "").rstrip("/")
+    here = configured if configured.split("//")[-1].split(":")[0] in ("127.0.0.1", "localhost") else ""
+    return list(dict.fromkeys(u for u in (here, USER_OLLAMA_URL, f"http://127.0.0.1:{MANAGED_PORT}") if u))
+
+
+def _unload_models(url: str) -> int:
+    """Ask the Ollama at `url` to drop every model it holds in memory. Returns how many bytes they took."""
+    try:
+        loaded = requests.get(f"{url}/api/ps", timeout=3).json().get("models") or []
+    except (requests.RequestException, ValueError, AttributeError):
+        return 0
+    freed = 0
+    for model in loaded:
+        try:
+            requests.post(f"{url}/api/generate", json={"model": model.get("name"), "keep_alive": 0}, timeout=20)
+            freed += int(model.get("size") or 0)
+        except (requests.RequestException, ValueError, TypeError):
+            pass
+    return freed
+
+
+def _engine_processes() -> list:
+    """Every Ollama program this user is running: the app, its server, and the model runners under them."""
+    try:
+        me = psutil.Process().username()
+    except psutil.Error:
+        me = None
+    found = {}
+    for proc in psutil.process_iter(["name", "username"]):
+        try:
+            if (proc.info["name"] or "").lower() not in _ENGINE_NAMES or proc.pid == os.getpid():
+                continue
+            if me and proc.info["username"] and proc.info["username"] != me:
+                continue   # someone else's
+            found[proc.pid] = proc
+            for child in proc.children(recursive=True):
+                found[child.pid] = child
+        except psutil.Error:
+            continue
+    return list(found.values())
+
+
+def release() -> dict:
+    """Free the memory the local AI holds, for when only the online AI is used: unload its models, then close the
+    Ollama programs. Unloading alone already gives the memory back, so this still helps where a program can't be closed
+    or the system starts it again. Returns {"freed": bytes of models unloaded, "stopped": programs closed, "left":
+    programs still running}. Choosing the local AI again later starts it the usual way (LocalAI above)."""
+    freed = sum(_unload_models(url) for url in _local_urls())
+    stopped = _close(_engine_processes())
+    time.sleep(1.5)   # an app that reopens itself (after its own update, say), or a system service, does it right away
+    again = _engine_processes()
+    if again:
+        freed += sum(_unload_models(url) for url in _local_urls())
+        _close(again)   # once more; if the system insists on running it, it now holds no model at least
+        time.sleep(1.5)
+    return {"freed": freed, "stopped": stopped, "left": len(_engine_processes())}
+
+
+def _close(processes: list) -> int:
+    """Ask each program to quit, force the ones that don't. Returns how many are gone."""
+    for proc in processes:
+        try:
+            proc.terminate()
+        except psutil.Error:
+            pass
+    _, alive = psutil.wait_procs(processes, timeout=6)
+    for proc in alive:
+        try:
+            proc.kill()
+        except psutil.Error:
+            pass
+    _, alive = psutil.wait_procs(alive, timeout=3)
+    return len(processes) - len(alive)
+
+
+def release_summary(result: dict) -> str:
+    if not result["stopped"] and not result["freed"]:
+        return "The AI on this computer wasn't running, so there was nothing to close."
+    text = "Closed the AI on this computer (Ollama)"
+    text += f" and freed about {_mb(result['freed'])} of memory." if result["freed"] else "; it had no model in memory."
+    if result["left"]:
+        text += " This computer started Ollama again by itself; it holds no model now, so it uses very little memory."
+    return text
+
+
 _cleanup_registered = []
 
 
