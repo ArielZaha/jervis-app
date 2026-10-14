@@ -293,7 +293,7 @@ def resolve(name: str):
 
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-USER_AGENT = "Jarvis/1.0 (+https://github.com/ArielZaha/jervis-app)"   # Nominatim's policy: say who is asking
+USER_AGENT = "Jarvis/1.0 (+https://github.com/TheJarvis-App/jarvis-app)"   # Nominatim's policy: say who is asking
 
 
 def _geocode_osm(name: str):

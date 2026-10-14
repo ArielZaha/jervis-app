@@ -19,7 +19,7 @@ own. Deploy your own only if you want to run that piece yourself instead of rely
 2. From the repo root:
    ```
    render services create --name jervis-relay --type web_service --runtime docker \
-     --repo https://github.com/ArielZaha/jervis-app --branch main --root-directory . \
+     --repo https://github.com/TheJarvis-App/jarvis-app --branch main --root-directory . \
      --plan free --region oregon --output json
    ```
    (Render finds `Dockerfile` at the repo root automatically for a Docker-runtime service — nothing further to

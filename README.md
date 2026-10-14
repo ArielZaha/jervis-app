@@ -7,7 +7,7 @@ Runs on **Windows 10/11** and **macOS** (Apple silicon). Made by Ariel & Shalev.
 ## Install
 
 Download the installer from <https://arielzaha.github.io/jervis/> (or the
-[latest release](https://github.com/ArielZaha/jervis-app/releases/latest)):
+[latest release](https://github.com/TheJarvis-App/jarvis-app/releases/latest)):
 
 - **Windows:** run `Jarvis Setup.exe`. If SmartScreen still says "Windows protected your PC" (a signed installer can
   take a little reputation-building time with Microsoft after each new release), click *More info*, then
