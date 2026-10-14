@@ -107,6 +107,7 @@
     const wasOpen = !layer.hidden;
     askedCity = opts.city || '';
     if (!wasOpen) {
+      window.hideClock?.();
       returnFocus = document.activeElement;
       layer.hidden = false;
       layer.classList.remove('closing');
@@ -203,7 +204,7 @@
     $('.wx-uv-scale i', layer).style.left = `${Math.min(100, ((uv ?? 0) / 11) * 100)}%`;
 
     window.weatherCharts.hourly($('.wx-hourly-chart', layer), d.hourly, { windUnit: d.units?.wind });
-    window.weatherCharts.daily($('.wx-daily-list', layer), d.daily, c);
+    window.weatherCharts.daily($('.wx-daily-list', layer), d.daily, c, d.asked || []);
 
     if (d.place.lat !== null && d.place.lat !== undefined) {
       const moved = !data || data.place.lat !== d.place.lat || data.place.lon !== d.place.lon || !map.home;

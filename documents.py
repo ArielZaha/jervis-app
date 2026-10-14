@@ -183,6 +183,29 @@ def asks_to_write(text: str) -> bool:
     return bool(_WRITE.search(n)) and not re.match(r"^(?:i |we |he |she |they |you )", n)
 
 
+_APP_WORDS = (r"(?:google (?:docs?|documents?|drive)|microsoft(?: office)? word|ms word|apple pages|text ?edit|note ?pad|"
+              r"(?:the )?text editor|(?:the |my )?notes(?: app)?|(?:the )?docs|word|pages)")
+_APP_PHRASES = [
+    re.compile(rf"^\s*(?:(?:please|can you|could you|jarvis)[ ,]+)*(?:open|launch|start)(?: up)? (?:a |an |my |the )?(?:new |blank |empty )?"
+               rf"{_APP_WORDS}(?: (?:document|doc|file|page))?\s*(?:,|\.|;)?\s*(?:and then|then|and)\s+", re.I),
+    re.compile(rf"\s*,?\s*\b(?:in|into|to|using|inside)(?: of)? (?:a |an |my |the )?(?:new |blank |empty )?{_APP_WORDS}"
+               rf"(?: (?:document|doc|file|page))?(?=\s*(?:[.,!?;]|$|\b(?:about|on|for|with|that|and|please)\b))", re.I),
+    re.compile(rf"\s*,?\s*\b(?:on|with) (?:a |an |my |the )?(?:new |blank |empty )?{_APP_WORDS}"   # "an essay on Google Docs and…" is a topic
+               rf"(?: (?:document|doc|file|page))?(?=\s*(?:[.,!?;]|$|please\b))", re.I),
+    re.compile(r"\s*\b(?:in|into|to) (?:a |the |that |this )(?:new |blank |empty )?(?:document|doc|file)(?: (?:you|i) (?:just )?opened)?\b", re.I),
+]
+
+
+def what_to_write(text: str) -> str:
+    """The request without the part about the app ("write a story about a dragon in Google Docs" -> "write a story
+    about a dragon"), so the app's name never ends up in the story. The sentence comes back whole if nothing is left."""
+    out = text or ""
+    for pattern in _APP_PHRASES:
+        out = pattern.sub(" ", out)
+    out = " ".join(out.split()).strip(" ,;")
+    return out if len(out.split()) >= 2 else (text or "").strip()
+
+
 def detect_request(text: str):
     """Return the app key when the sentence asks to write something into a document app, else None."""
     n = " ".join(re.sub(r"[^a-z0-9' ]", " ", (text or "").lower()).split())

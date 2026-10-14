@@ -44,6 +44,8 @@ He answers out loud and in writing. Everything said is kept as a conversation on
 - **Try saying**: example requests sorted by kind (Watch, Learn, Do, More). Click one to put it in the message box.
 - **Settings** (the gear): everything you can change (section 9).
 - **Phone** button: shows whether a phone is connected.
+- **Two looks:** the window opens in its new look. To go back to the one before it, open Settings and tick
+  **Classic look** at the bottom (untick it to return). It changes at once and is remembered on this computer.
 
 ---
 
@@ -116,8 +118,39 @@ Jarvis always prefers *your own* playlist over a stranger's playlist with the sa
 - "Open a new Google Doc" asks what to write; then "write a short story" writes one into that document.
 - Afterwards: "make it shorter", "read it to me", "put this list in a document".
 
+### Coding Mode
+
+- "Write a Python calculator and open it in VS Code", "build a website for a bakery and save the project locally",
+  "make a snake game", or the **</>** button in the top bar, where the only thing to fill in is what you want.
+  There is nothing to pick: Jarvis chooses the language, the files and everything else the task needs, writes them
+  into a **new project folder** (never into an existing one), checks them, fixes what the checks find, and says
+  where the project is and exactly what was and wasn't checked.
+- **Languages:** Python, JavaScript, TypeScript, React, HTML/CSS, C, C++, C#, Rust, Go, Swift, Objective-C, Java,
+  Kotlin, SQL, PowerShell, Bash, Zsh, Ruby, PHP, R, MATLAB, GDScript, Lua, Dart, and configuration files (JSON, YAML,
+  TOML, XML, Dockerfiles, GitHub Actions, Terraform). Each gets its own file extensions, usual project layout and
+  conventions. Syntax checks use the tools on your computer; a language whose tool isn't installed is reported
+  as "not checked", never as passed.
+- **Where it goes:** always a project folder on your computer; Jarvis doesn't ask. If you name a place in the
+  sentence ("…and open it in VS Code", "…put the code in Word") he does that too, and afterwards the window has
+  buttons for VS Code, a Word document (.docx), Apple Notes, Google Drive and a zip. Word and Notes get a readable
+  copy; the real files stay in the project folder.
+  Google Drive needs a one-time setup (GOOGLE_DRIVE_CLIENT_ID and GOOGLE_DRIVE_CLIENT_SECRET in .env, then Connect);
+  it can only see files Jarvis itself creates there.
+- **Follow-ups** reach the same project: "now add a login page", "fix the errors", "explain what this function does",
+  "save it in Word", "continue working on the project we started earlier". Before a change the originals are backed
+  up, and the window shows what changed, line by line.
+- **Your code is never run just because it was written.** "Run the tests" is the one thing that executes it, only
+  when you ask: on a Mac inside a sandbox with no network that can only write inside the project, always with a time
+  limit and without your keys. If the tests fail, "fix the errors" shows the AI their real output and runs them again.
+- New projects go in Documents/Jarvis Projects (CODE_PROJECTS_DIR in .env changes that). The code is written by
+  Groq's larger free model (openai/gpt-oss-120b), whichever AI Jarvis talks with; a CODE_MODEL line in .env names
+  another. Groq's free plan allows 8,000 tokens a minute, so a bigger project pauses now and then: the window says
+  when it is waiting for that limit.
+
 ### Math
 
+- **Sums, exact and at once:** "what's 15% of 80?", "12 times 12", "square root of 144", "two thirds of 90". Jarvis
+  works these out himself, so the answer is never a guess.
 - **Equations, solved step by step:** "solve 2x + 4 = 24", "what are the roots of x squared minus 9". Linear and
   quadratic equations are solved by Jarvis himself, exactly, as a worksheet: the problem, numbered steps, and the
   answer in a box.
@@ -157,10 +190,30 @@ side.
 - "Tell me about Saturn", "show me Mars", "tell me about the Sun", "the Moon".
 - He gives the key facts (size, day and year length, distance from the Sun, moons, temperature) and opens a spinning,
   lit **3D model**: all eight planets, the Sun, the Moon and Pluto, with real rings on Saturn.
+- One fact is answered first, in a sentence: "how many moons does Saturn have?", "how far is Mars from Earth?",
+  "how long is a day on Venus?". That fact is marked in the window.
+
+### World clock
+
+- "What time is it in Tokyo?", "what's the current time in London?", "open the clock for New York".
+- Several places at once: "compare the time in Israel and Los Angeles", "what's the time difference between Israel
+  and California?", "show me the current time around the world".
+- Jarvis says the time (and how far ahead or behind it is, and the day if it differs) and opens a **world clock**:
+  one large live clock with the date, the time zone's name and its UTC offset, the Sun's real path over that place's
+  day with sunrise and sunset, and every place as a row on one 24-hour strip (daylight, 9 to 5, midnight), with
+  your own time always among them. Move over the strips to read every place's time at another moment.
+- In the window: add a city, remove one, click a row to put it in the large clock, 12 or 24 hours, copy the time,
+  and a compact view with only the times. While it is open: "and in London?", "remove Tokyo", "close the clock".
+- A name that could be two places ("Valencia") is asked about, a country with several time zones ("the USA") is
+  asked for a city, and a place that can't be found is said so: the clock never shows a guessed time.
+- Daylight saving is followed from the time-zone database (nothing is a fixed offset), with no account or network
+  needed for the cities Jarvis knows by heart.
 
 ### Weather
 
 - "What's the weather?", "how's the weather in Paris?", "show me the forecast".
+- A day or a question about rain gets its own answer: "will it rain tomorrow?", "weather in Tokyo this weekend",
+  "do I need an umbrella on Friday?". The days you asked about are marked in the 7-day list.
 - A weather window: now (feels-like, high and low, humidity, wind, UV), a map with rain radar, the next 24 hours and
   7 days. No account or key needed.
 

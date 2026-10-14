@@ -733,6 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
     speakVolBtn.setAttribute('aria-pressed', String(speakMuted));
     speakVolBtn.title = speakMuted ? "Unmute Jarvis's voice" : "Mute Jarvis's voice";
     speakVolSlider.value = speakVolume;
+    speakVolSlider.style.setProperty('--p', `${speakVolume}%`);   // how far the track is filled (the new look draws its own)
   }
   function sendSpeakVolume() {
     if (socket?.readyState === WebSocket.OPEN) {

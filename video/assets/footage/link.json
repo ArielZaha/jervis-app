@@ -1,0 +1,26 @@
+{
+ "name": "link",
+ "frames": 685,
+ "fps": 30,
+ "width": 788,
+ "height": 1704,
+ "marks": {
+  "sent:Show me Mars": 45,
+  "reply:Show me Mars": 57,
+  "mars": 57,
+  "sent:Distance between Paris and Rome": 268,
+  "reply:Distance between Paris and Rome": 280,
+  "journey": 280,
+  "switch": 448,
+  "sent:Graph sine of x over x": 538,
+  "reply:Graph sine of x over x": 550,
+  "alone": 550
+ },
+ "notes": {
+  "mars": "Mars\nTap to open",
+  "journey": "The distance between Paris, Île-de-France Region, France and Rome, Lazio, Italy is about 1,107 kilometers, or 688 miles, in a straight line.\n\nFrom: Paris, Île-de-France Region, France\nTo: Rome, Lazio, Italy\nStraight-line (great-circle) distance: 1,107 km (688 mi)\nInitial heading: 130.6° from Paris, Île-de-France Region, France\nDirect flight (estimate): about 1,162 km flown, roughly 1 h 55 min\nPasses over: France, Switzerland and Italy",
+  "alone": "Here's your trigonometric function. Notably, it crosses the x-axis 4 times in this view; it has 5 turning points.\n\nFunction: y = \nsin(x)\nx\nType: Trigonometric\nX-intercepts: -6.2832, -3.1416, 3.1416, 6.2832\nLocal maxima: (-7.7253, 0.1284), (0, 1), (7.7253, 0.1284)\nLocal minima: (-4.4934, -0.2172), (4.4934, -0.2172)\nHorizontal asymptote: y = 0"
+ },
+ "lines": [],
+ "opened": []
+}

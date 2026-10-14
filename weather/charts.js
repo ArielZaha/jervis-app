@@ -170,7 +170,7 @@
     container.append(svg, tip);
   }
 
-  function daily(container, days, current) {
+  function daily(container, days, current, asked = []) {
     container.textContent = '';
     if (!days || !days.length) {
       container.innerHTML = '<p class="wx-empty-note">No daily forecast available.</p>';
@@ -188,7 +188,7 @@
       const from = d.low === null ? 0 : ((d.low - min) / span) * 100;
       const to = d.high === null ? 100 : ((d.high - min) / span) * 100;
       const li = document.createElement('li');
-      li.className = 'wx-day';
+      li.className = asked.includes(String(d.date).slice(0, 10)) ? 'wx-day asked' : 'wx-day';   // the day that was asked about
       li.style.setProperty('--i', i);
       li.title = `${d.label} · ${fmt(d.low, '°')} to ${fmt(d.high, '°')} · rain ${fmt(d.rain_chance, '%')} · wind up to ${fmt(d.wind)} km/h`;
       const rain = (d.rain_chance ?? 0) >= 10 ? `<span class="wx-day-rain">${d.rain_chance}%</span>` : '<span class="wx-day-rain dry"></span>';

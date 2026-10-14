@@ -11,6 +11,21 @@
   const CYAN = [79, 216, 255], VIOLET = [165, 139, 255], MAGENTA = [255, 92, 214], GOLD = [255, 209, 102], GREEN = [61, 242, 192];
   const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
   const PAIR_COLORS = [CYAN, MAGENTA, GREEN, VIOLET];   // f, g, h, k
+  // The labels on the picture follow the window's look: soft rounded plates in the window's own typeface in the new
+  // look, the squared monospace tags in the classic one.
+  const newLook = () => document.documentElement.dataset.ui === 'next';
+  const labelFont = (size, weight = 600) => newLook()
+    ? `${weight} ${size + 0.5}px "Onest", "Inter", system-ui, sans-serif`
+    : `${weight} ${size}px "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace`;
+  const plate = (ctx, x, y, w, h, color, strength) => {   // the box behind a label
+    if (newLook()) {
+      ctx.fillStyle = 'rgba(12,18,34,.92)'; ctx.strokeStyle = rgba(color, strength * 0.5); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, Math.min(9, h / 2)); ctx.fill(); ctx.stroke();
+    } else {
+      ctx.fillStyle = 'rgba(6,12,26,.9)'; ctx.strokeStyle = rgba(color, strength); ctx.lineWidth = 1;
+      ctx.fillRect(x, y, w, h); ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    }
+  };
   const MINUS = '−';
   const REVEAL_SECONDS = 1.5;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -144,7 +159,7 @@
 
     // tick labels (not in a small preview)
     if (!compact) {
-    ctx.font = '11px "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
+    ctx.font = labelFont(11, 500);
     ctx.fillStyle = 'rgba(190,210,240,.62)';
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     for (let k = Math.ceil(v.xmin / sx); k * sx <= v.xmax; k++) {
@@ -244,8 +259,8 @@
     const placed = [];
     const tag = (text, x, y, color, prefer) => {
       if (compact) return;
-      ctx.font = '600 11.5px "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
-      const tw = ctx.measureText(text).width + 16, th = 22;
+      ctx.font = labelFont(11.5);
+      const tw = ctx.measureText(text).width + (newLook() ? 20 : 16), th = newLook() ? 24 : 22;
       let bx = x - tw / 2, by = prefer === 'above' ? y - 34 : prefer === 'right' ? y - 11 : y + 14;
       if (prefer === 'right') bx = x + 14;
       bx = Math.max(pad.l - 4, Math.min(bx, w - pad.r - tw + 6));
@@ -253,10 +268,13 @@
       for (let guard = 0; guard < 8 && placed.some((r) => bx < r.x + r.w + 4 && bx + tw + 4 > r.x && by < r.y + r.h + 4 && by + th + 4 > r.y); guard++) by += th + 5;
       placed.push({ x: bx, y: by, w: tw, h: th });
       ctx.save(); ctx.globalAlpha = appear;
-      ctx.fillStyle = 'rgba(6,12,26,.88)'; ctx.strokeStyle = rgba(color, 0.85); ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(bx + 6, by); ctx.lineTo(bx + tw, by); ctx.lineTo(bx + tw, by + th - 6); ctx.lineTo(bx + tw - 6, by + th); ctx.lineTo(bx, by + th); ctx.lineTo(bx, by + 6); ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(text, bx + 8, by + th / 2 + 0.5);
+      if (newLook()) plate(ctx, bx, by, tw, th, color, 1);
+      else {
+        ctx.fillStyle = 'rgba(6,12,26,.88)'; ctx.strokeStyle = rgba(color, 0.85); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(bx + 6, by); ctx.lineTo(bx + tw, by); ctx.lineTo(bx + tw, by + th - 6); ctx.lineTo(bx + tw - 6, by + th); ctx.lineTo(bx, by + th); ctx.lineTo(bx, by + 6); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      }
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(text, bx + (newLook() ? 10 : 8), by + th / 2 + 0.5);
       ctx.restore();
     };
     const dot = (x, y, color, seed) => {
@@ -295,11 +313,10 @@
         });
         if (!compact) {   // which colour is which
           ctx.save(); ctx.globalAlpha = appear;
-          ctx.font = '600 12px "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
+          ctx.font = labelFont(12);
           const widest = Math.max(...curves.map((c) => ctx.measureText(c.label).width));
           const bw = widest + 54, bh = 14 + curves.length * 20, bx = w - pad.r - bw + 4, by = pad.t - 2;
-          ctx.fillStyle = 'rgba(6,12,26,.86)'; ctx.strokeStyle = rgba(CYAN, 0.4); ctx.lineWidth = 1;
-          ctx.fillRect(bx, by, bw, bh); ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+          plate(ctx, bx, by, bw, bh, newLook() ? [200, 215, 240] : CYAN, 0.4);
           ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
           curves.forEach((c, index) => {
             const y = by + 17 + index * 20, color = PAIR_COLORS[index % PAIR_COLORS.length];
@@ -356,11 +373,10 @@
           ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
         });
         const text = parts.join('   ');
-        ctx.font = '600 11.5px "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
+        ctx.font = labelFont(11.5);
         const tw = ctx.measureText(text).width + 18;
         const tx = Math.min(Math.max(cx + 14, pad.l), w - pad.r - tw), ty = h - pad.b - 34;
-        ctx.fillStyle = 'rgba(6,12,26,.92)'; ctx.strokeStyle = rgba(CYAN, 0.9);
-        ctx.fillRect(tx, ty, tw, 24); ctx.strokeRect(tx + 0.5, ty + 0.5, tw - 1, 23);
+        plate(ctx, tx, ty, tw, 24, CYAN, 0.9);
         ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(text, tx + 9, ty + 12.5);
       }
     } else if (S.hover != null && S.since > 0) {
@@ -372,21 +388,21 @@
         ctx.fillStyle = '#fff'; ctx.shadowColor = rgba(CYAN, 1); ctx.shadowBlur = 12;
         ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
         const text = `x = ${num(Math.round(x * 100) / 100)}   y = ${num(Math.round(y * 100) / 100)}`;
-        ctx.font = '600 11.5px "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
+        ctx.font = labelFont(11.5);
         const tw = ctx.measureText(text).width + 18;
         const tx = Math.min(Math.max(cx + 14, pad.l), w - pad.r - tw), ty = Math.min(Math.max(cy - 36, pad.t), h - pad.b - 24);
-        ctx.fillStyle = 'rgba(6,12,26,.92)'; ctx.strokeStyle = rgba(CYAN, 0.9);
-        ctx.fillRect(tx, ty, tw, 24); ctx.strokeRect(tx + 0.5, ty + 0.5, tw - 1, 23);
+        plate(ctx, tx, ty, tw, 24, CYAN, 0.9);
         ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(text, tx + 9, ty + 12.5);
       }
     }
 
     if (S.exporting) {   // a title on the saved picture
       ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.font = '700 26px "Orbitron", "Inter", system-ui, sans-serif'; ctx.fillStyle = '#fff'; ctx.shadowColor = rgba(CYAN, 0.8); ctx.shadowBlur = 14;
+      ctx.font = newLook() ? '600 26px "Sora", "Inter", system-ui, sans-serif' : '700 26px "Orbitron", "Inter", system-ui, sans-serif';
+      ctx.fillStyle = '#fff'; ctx.shadowColor = rgba(CYAN, 0.8); ctx.shadowBlur = newLook() ? 0 : 14;
       ctx.fillText(d.plain, 26, 16); ctx.shadowBlur = 0;
-      ctx.font = '11px "JetBrains Mono", monospace'; ctx.fillStyle = 'rgba(160,190,230,.6)'; ctx.textAlign = 'right';
-      ctx.fillText('JARVIS · GRAPH', w - 24, h - 16);
+      ctx.font = labelFont(11, 500); ctx.fillStyle = 'rgba(160,190,230,.6)'; ctx.textAlign = 'right';
+      ctx.fillText(newLook() ? 'Jarvis · Graph' : 'JARVIS · GRAPH', w - 24, h - 16);
     }
   }
 
@@ -440,6 +456,7 @@
   }
 
   function present(index) {
+    window.hideGlobe?.(); window.hidePlanet?.(); window.hideClock?.();   // one picture at a time: the newest is the one on screen
     current = index;
     data = history[index];
     view = computeView(data);

@@ -1,0 +1,12 @@
+{
+ "name": "solve",
+ "frames": 260,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "sent:Solve x^2 - 5x + 6 = 0": 65,
+  "reply:Solve x^2 - 5x + 6 = 0": 80
+ },
+ "opened": []
+}

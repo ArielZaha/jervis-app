@@ -150,7 +150,12 @@ def parse_more(n: str):
             a, b, c = _place(m.group("a")), _place(m.group("b")), _place(m.group("c"))
             if a and b and c and len({a, b, c}) == 3:
                 word = "farther" if m.group("word") in ("farther", "further") else "closer"
-                return {"action": "compare", "pairs": [(a, b), (a, c)], "question": word}
+                request = {"action": "compare", "pairs": [(a, b), (a, c)], "question": word}
+                words = f"{a} {b}".split()
+                if pattern is _WHICH[0] and len(words) > 2 and not re.search(r"[,:]", n[m.start("a"):m.start("c")]):
+                    # typed without a comma ("from tel aviv london or new york"): where the first place ends is a guess
+                    request["splits"] = [(" ".join(words[:i]), " ".join(words[i:])) for i in range(2, len(words))]
+                return request
     for pattern in _RADIUS:
         m = pattern.match(n.rstrip(" ?.!"))
         if m:
@@ -205,6 +210,20 @@ def parse_request(text: str):
             return {"action": "ask", "same": _clean_name(twice.group("a"))}
         return {"action": "ask"}
     return None
+
+
+def settle_split(request: dict) -> dict:
+    """A "which is farther" question typed without its comma has several ways to divide the first two places ("tel" +
+    "aviv london", "tel aviv" + "london"): keep the first way in which both are real places."""
+    splits = request.get("splits")
+    if not splits:
+        return request
+    settled = {k: v for k, v in request.items() if k != "splits"}
+    c = request["pairs"][1][1]
+    for a, b in [request["pairs"][0], *splits]:
+        if geocode(b) and geocode(a):
+            return {**settled, "pairs": [(a, b), (a, c)]}
+    return settled
 
 
 def geocode(name: str):
@@ -400,7 +419,7 @@ def describe_compare(info: dict, question=None) -> str:
         near, far = sorted(routes, key=lambda r: r["km"])
         pick = far if question == "farther" else near
         other = near if pick is far else far
-        lead = (f"{short(pick['b'])} is {question} from {short(a)}: {_round(pick['km'])} km, against "
+        lead = (f"{short(pick['b'])} is {'closer to' if question == 'closer' else 'farther from'} {short(a)}: {_round(pick['km'])} km, against "
                 f"{_round(other['km'])} km to {short(other['b'])}, in a straight line.")
     else:
         longest = max(routes, key=lambda r: r["km"])

@@ -1,0 +1,72 @@
+1
+00:00:01,000 --> 00:00:04,780
+What if your computer could do more than wait for your next click?
+
+2
+00:00:05,300 --> 00:00:07,200
+What if it could listen...
+
+3
+00:00:07,250 --> 00:00:08,650
+understand...
+
+4
+00:00:08,700 --> 00:00:10,020
+and act?
+
+5
+00:00:12,200 --> 00:00:15,000
+Jarvis: Good evening, Sir. How can I help you today?
+
+6
+00:00:15,050 --> 00:00:16,780
+Meet Jarvis.
+
+7
+00:00:17,000 --> 00:00:19,720
+Your personal AI assistant.
+
+8
+00:00:20,300 --> 00:00:22,190
+Speak naturally.
+
+9
+00:00:23,050 --> 00:00:25,150
+Jarvis: Timer set for 20 minutes.
+
+10
+00:00:25,400 --> 00:00:27,150
+Ask it anything.
+
+11
+00:00:27,200 --> 00:00:30,300
+Jarvis: The solutions are x equals 2 and x equals 3.
+
+12
+00:00:32,900 --> 00:00:34,660
+And watch it happen.
+
+13
+00:00:44,500 --> 00:00:47,220
+From conversation... to control.
+
+14
+00:00:50,550 --> 00:00:53,080
+From your phone... to your computer.
+
+15
+00:00:55,950 --> 00:00:58,920
+From a simple request... to something done.
+
+16
+00:01:00,350 --> 00:01:01,940
+Your computer.
+
+17
+00:01:02,100 --> 00:01:03,740
+Your commands.
+
+18
+00:01:04,600 --> 00:01:06,310
+Your Jarvis.
+

@@ -1,0 +1,16 @@
+{
+ "name": "orb",
+ "frames": 816,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "idle": 0,
+  "listening": 210,
+  "thinking": 306,
+  "speaking": 396,
+  "rest": 546
+ },
+ "notes": {},
+ "opened": []
+}

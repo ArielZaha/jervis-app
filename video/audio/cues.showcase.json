@@ -1,0 +1,506 @@
+{
+ "fps": 30,
+ "bpm": 120,
+ "bar": 2,
+ "duration": 89.6,
+ "scenes": [
+  {
+   "id": "wake",
+   "start": 0,
+   "end": 14,
+   "mix": {
+    "pad": 0.7,
+    "bass": 0.5,
+    "arp": 0.35,
+    "kick": 0,
+    "hat": 0,
+    "clap": 0,
+    "bright": 4,
+    "build": 1
+   }
+  },
+  {
+   "id": "mind",
+   "start": 14,
+   "end": 26,
+   "mix": {
+    "pad": 0.85,
+    "bass": 0.9,
+    "arp": 0.7,
+    "kick": 0.85,
+    "hat": 0.4,
+    "clap": 0,
+    "bright": 5
+   }
+  },
+  {
+   "id": "world",
+   "start": 26,
+   "end": 44,
+   "mix": {
+    "pad": 1,
+    "bass": 0.95,
+    "arp": 0.85,
+    "kick": 0.9,
+    "hat": 0.55,
+    "clap": 0.4,
+    "bright": 8
+   }
+  },
+  {
+   "id": "link",
+   "start": 44,
+   "end": 60,
+   "mix": {
+    "pad": 0.85,
+    "bass": 0.9,
+    "arp": 0.75,
+    "kick": 0.85,
+    "hat": 0.4,
+    "clap": 0,
+    "bright": 6
+   }
+  },
+  {
+   "id": "control",
+   "start": 60,
+   "end": 70,
+   "mix": {
+    "pad": 0.8,
+    "bass": 0.7,
+    "arp": 0.3,
+    "kick": 0,
+    "hat": 0.3,
+    "clap": 0,
+    "bright": 4,
+    "build": 1
+   }
+  },
+  {
+   "id": "more",
+   "start": 70,
+   "end": 80,
+   "mix": {
+    "pad": 0.9,
+    "bass": 0.95,
+    "arp": 0.9,
+    "kick": 0.95,
+    "hat": 0.6,
+    "clap": 0.5,
+    "bright": 7
+   }
+  },
+  {
+   "id": "close",
+   "start": 80,
+   "end": 88,
+   "mix": {
+    "pad": 1,
+    "bass": 0.7,
+    "arp": 0.45,
+    "kick": 0,
+    "hat": 0,
+    "clap": 0,
+    "bright": 7,
+    "final": 1
+   }
+  }
+ ],
+ "cues": [
+  {
+   "kind": "orb",
+   "t": 0.15,
+   "scene": "wake"
+  },
+  {
+   "kind": "ask",
+   "t": 0.55,
+   "scene": "wake",
+   "text": "Hey Jarvis",
+   "len": 0.8,
+   "how": "said"
+  },
+  {
+   "kind": "listen",
+   "t": 0.55,
+   "scene": "wake"
+  },
+  {
+   "kind": "voice",
+   "t": 2,
+   "scene": "wake",
+   "file": "wake_01.wav",
+   "len": 0.88,
+   "gain": 1,
+   "text": "I'm here."
+  },
+  {
+   "kind": "ask",
+   "t": 3.333,
+   "scene": "wake",
+   "text": "Set a timer for twenty minutes and show me the weather in Paris",
+   "len": 2.6,
+   "how": "said"
+  },
+  {
+   "kind": "listen",
+   "t": 3.333,
+   "scene": "wake"
+  },
+  {
+   "kind": "open",
+   "t": 6.233,
+   "scene": "wake"
+  },
+  {
+   "kind": "voice",
+   "t": 6.333,
+   "scene": "wake",
+   "file": "wake_02.wav",
+   "len": 6.3,
+   "gain": 1,
+   "text": "Timer set for 20 minutes. It's 20 degrees and overcast in Paris, feeling like 18. Today: a high of 21 and a low of 8. The full forecast is on your screen."
+  },
+  {
+   "kind": "whoosh",
+   "t": 10.15,
+   "scene": "wake"
+  },
+  {
+   "kind": "tick",
+   "t": 10.55,
+   "scene": "wake"
+  },
+  {
+   "kind": "swell",
+   "t": 10.7,
+   "scene": "wake"
+  },
+  {
+   "kind": "title",
+   "t": 12,
+   "scene": "wake"
+  },
+  {
+   "kind": "whoosh",
+   "t": 13.75,
+   "scene": "mind"
+  },
+  {
+   "kind": "ask",
+   "t": 14,
+   "scene": "mind",
+   "text": "Solve x squared minus five x plus six equals zero, and draw the function",
+   "len": 0.9,
+   "how": "said"
+  },
+  {
+   "kind": "draw",
+   "t": 14.9,
+   "scene": "mind"
+  },
+  {
+   "kind": "voice",
+   "t": 15.05,
+   "scene": "mind",
+   "file": "mind_01.wav",
+   "len": 5.79,
+   "gain": 1,
+   "text": "The solutions are x equals 2 and x equals 3. I've put the details on your screen."
+  },
+  {
+   "kind": "ask",
+   "t": 20.05,
+   "scene": "mind",
+   "text": "Compare x squared and x plus one",
+   "len": 0.9,
+   "how": "said"
+  },
+  {
+   "kind": "listen",
+   "t": 20.1,
+   "scene": "mind"
+  },
+  {
+   "kind": "draw",
+   "t": 21,
+   "scene": "mind"
+  },
+  {
+   "kind": "voice",
+   "t": 21.15,
+   "scene": "mind",
+   "file": "mind_02.wav",
+   "len": 4.7,
+   "gain": 1,
+   "text": "Here are both on one graph. f is a parabola and g is a straight line. They meet at two points: x equals negative 0.62 and x equals 1.62. I've put the details on your screen."
+  },
+  {
+   "kind": "ask",
+   "t": 26,
+   "scene": "world",
+   "text": "What is the distance between Tokyo and New York?",
+   "len": 0.5,
+   "how": "said"
+  },
+  {
+   "kind": "globe",
+   "t": 26.5,
+   "scene": "world"
+  },
+  {
+   "kind": "voice",
+   "t": 26.7,
+   "scene": "world",
+   "file": "world_01.wav",
+   "len": 6.9,
+   "gain": 1,
+   "text": "The distance between Tokyo, Japan and New York, United States is about 10,849 kilometers, or 6,741 miles, in a straight line. I've put the details on your screen."
+  },
+  {
+   "kind": "ask",
+   "t": 33.65,
+   "scene": "world",
+   "text": "Show sunrise over Tokyo",
+   "len": 0.8,
+   "how": "said"
+  },
+  {
+   "kind": "listen",
+   "t": 33.7,
+   "scene": "world"
+  },
+  {
+   "kind": "draw",
+   "t": 34.5,
+   "scene": "world"
+  },
+  {
+   "kind": "voice",
+   "t": 34.65,
+   "scene": "world",
+   "file": "world_02.wav",
+   "len": 4.6,
+   "gain": 1,
+   "text": "The Sun rises in Tokyo at 5:45 AM local time today, October 13. Here's the globe at that moment, with the dawn line passing over it."
+  },
+  {
+   "kind": "ask",
+   "t": 38.65,
+   "scene": "world",
+   "text": "Tell me about Saturn",
+   "len": 0.7,
+   "how": "said"
+  },
+  {
+   "kind": "listen",
+   "t": 38.7,
+   "scene": "world"
+  },
+  {
+   "kind": "globe",
+   "t": 39.4,
+   "scene": "world"
+  },
+  {
+   "kind": "voice",
+   "t": 39.55,
+   "scene": "world",
+   "file": "world_03.wav",
+   "len": 4.7,
+   "gain": 1,
+   "text": "Saturn is a planet, about 1,434 million kilometers from the Sun. It's so much less dense than water that, if you found an ocean big enough, it would float. I've put the details on your screen."
+  },
+  {
+   "kind": "whoosh",
+   "t": 43.8,
+   "scene": "link"
+  },
+  {
+   "kind": "ask",
+   "t": 44.2,
+   "scene": "link",
+   "text": "Show me Mars",
+   "len": 1,
+   "how": "typed on the phone"
+  },
+  {
+   "kind": "keys",
+   "t": 44.2,
+   "scene": "link",
+   "len": 1
+  },
+  {
+   "kind": "send",
+   "t": 45.25,
+   "scene": "link"
+  },
+  {
+   "kind": "globe",
+   "t": 46.3,
+   "scene": "link"
+  },
+  {
+   "kind": "ask",
+   "t": 49.6,
+   "scene": "link",
+   "text": "Distance between Paris and Rome",
+   "len": 1.4,
+   "how": "typed on the phone"
+  },
+  {
+   "kind": "keys",
+   "t": 49.6,
+   "scene": "link",
+   "len": 1.4
+  },
+  {
+   "kind": "send",
+   "t": 51.05,
+   "scene": "link"
+  },
+  {
+   "kind": "globe",
+   "t": 51.6,
+   "scene": "link"
+  },
+  {
+   "kind": "switch",
+   "t": 54.95,
+   "scene": "link"
+  },
+  {
+   "kind": "ask",
+   "t": 55.6,
+   "scene": "link",
+   "text": "Graph sine of x over x",
+   "len": 0.9,
+   "how": "typed on the phone, answered by the phone itself"
+  },
+  {
+   "kind": "keys",
+   "t": 55.6,
+   "scene": "link",
+   "len": 0.9
+  },
+  {
+   "kind": "send",
+   "t": 56.55,
+   "scene": "link"
+  },
+  {
+   "kind": "draw",
+   "t": 56.8,
+   "scene": "link"
+  },
+  {
+   "kind": "keys",
+   "t": 59.6,
+   "scene": "control",
+   "len": 1.1
+  },
+  {
+   "kind": "whoosh",
+   "t": 59.8,
+   "scene": "control"
+  },
+  {
+   "kind": "ask",
+   "t": 60,
+   "scene": "control",
+   "text": "Use my computer to turn on dark mode in Chrome",
+   "len": 0.9,
+   "how": "typed"
+  },
+  {
+   "kind": "sheet",
+   "t": 60.9,
+   "scene": "control"
+  },
+  {
+   "kind": "click",
+   "t": 63.6,
+   "scene": "control"
+  },
+  {
+   "kind": "whoosh",
+   "t": 63.9,
+   "scene": "control"
+  },
+  {
+   "kind": "tick",
+   "t": 65.6,
+   "scene": "control"
+  },
+  {
+   "kind": "tick",
+   "t": 67.1,
+   "scene": "control"
+  },
+  {
+   "kind": "stop",
+   "t": 68.65,
+   "scene": "control"
+  },
+  {
+   "kind": "whoosh",
+   "t": 69.8,
+   "scene": "more"
+  },
+  {
+   "kind": "slide",
+   "t": 70.98,
+   "scene": "more"
+  },
+  {
+   "kind": "slide",
+   "t": 71.98,
+   "scene": "more"
+  },
+  {
+   "kind": "slide",
+   "t": 72.98,
+   "scene": "more"
+  },
+  {
+   "kind": "slide",
+   "t": 73.98,
+   "scene": "more"
+  },
+  {
+   "kind": "slide",
+   "t": 74.98,
+   "scene": "more"
+  },
+  {
+   "kind": "slide",
+   "t": 75.98,
+   "scene": "more"
+  },
+  {
+   "kind": "slide",
+   "t": 76.98,
+   "scene": "more"
+  },
+  {
+   "kind": "slide",
+   "t": 77.98,
+   "scene": "more"
+  },
+  {
+   "kind": "slide",
+   "t": 78.98,
+   "scene": "more"
+  },
+  {
+   "kind": "final",
+   "t": 80,
+   "scene": "close"
+  },
+  {
+   "kind": "end",
+   "t": 88,
+   "scene": "close"
+  }
+ ]
+}

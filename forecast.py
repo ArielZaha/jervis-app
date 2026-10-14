@@ -90,6 +90,8 @@ def locate(city: str = "", fallback_city: str = ""):
     city = (city or "").strip()
     if city:
         place = earth.geocode(city)
+        if not place and re.search(r"(.)\1", city):   # "pariss", "londdon": a doubled letter is the commonest slip
+            place = earth.geocode(re.sub(r"(.)\1+", r"\1", city))
         if place:
             return {**place, "source": "asked"}, None
         return None, f"I couldn't find a place called {city}."
@@ -242,6 +244,160 @@ def summary(data: dict) -> str:
     if data.get("stale"):
         text += " (This is the last forecast I could get; the weather service isn't answering right now.)"
     return text
+
+
+# ---------- reading the question ----------
+_ASK = re.compile(
+    r"\b(?:what'?s|what is|whats|how'?s|how is|hows|check|tell me|show me|show|open|give me|get me|bring up|display)\b.*\bweather\b"
+    r"|\bweather\b.*\b(?:like|today|tonight|tomorrow|now|outside|forecast|this week|right now|weekend|next few days)\b"
+    r"|^(?:the )?(?:weather|forecast|weather forecast|weather report)(?: (?:in|for|at|on) [a-z' ]+)?(?: please)?$"
+    r"|\b(?:what'?s|what is|whats|show me|show|open|check|give me) (?:the |my )?(?:weather )?forecast\b"
+    r"|\bis it (?:raining|snowing|sunny|cloudy|cold|hot|warm|windy|freezing)(?: outside| now| right now| today)?(?: (?:in|at) [a-z' ]+)?$"
+    r"|\b(?:will|is|does|might) it (?:going to |gonna |look like it will |look like )?(?:be )?(?:rain|snow|raining|snowing|rainy|sunny|cloudy|"
+    r"cold|hot|warm|windy|wet|dry|nice|freezing)\b"
+    r"|\bhow (?:hot|cold|warm|windy) (?:is it|will it be|is it going to be|does it get)\b"
+    r"|\b(?:what'?s|what is|whats|how'?s|tell me) (?:the |today's |tomorrow's )?temperature(?: (?:like|outside|now|right now|today|tonight|tomorrow|in [a-z' ]+|at [a-z' ]+))*$"
+    r"|\b(?:temperature|forecast)\b.*\b(?:outside|today|now|tomorrow|weekend)\b"
+    r"|\b(?:do|will|should) i (?:need|take|bring|wear|pack) (?:an umbrella|a jacket|a coat|my umbrella|my jacket|my coat|sunscreen)\b")
+_TALK = re.compile(r"^(?:i|we|my|our|he|she|they|it was|the weather (?:was|has been))\b")
+_WHEN = re.compile(
+    r"\b(?:(?:for|on|over|during|at|in|by) )?(?:(?:the|this|next|coming) )?(?P<w>tomorrow|today|tonight|weekend|week|next few days|few days|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b(?: (?:morning|afternoon|evening|night))?")
+_RAIN = re.compile(r"\b(?:rain|raining|rainy|snow|snowing|umbrella|wet|dry)\b")
+
+
+
+
+def parse_request(text: str):
+    """{"city": "" | "paris", "when": "" | "today" | "tomorrow" | "friday" | "weekend" | "week", "about": "" | "rain"}
+    for a question about the weather, else None. Talking about the weather ("I was talking about the weather
+    yesterday") is not a question. Shared by Jarvis on the computer and the phone's own copy of his brain."""
+    n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower().replace("’", "'")).split())
+    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jarvis|jervis) ", "", n)
+    if _TALK.match(n) or not _ASK.search(n):
+        return None
+    when = ""
+    found = _WHEN.search(n)
+    if found:
+        when = {"tonight": "today", "next few days": "week", "few days": "week"}.get(found.group("w"), found.group("w"))
+    where = " ".join(re.sub(r"\b(?:right now|now|please|outside)\b", " ", _WHEN.sub(" ", n)).split())
+    city = ""
+    m = re.search(r"\b(?:weather|forecast|temperature|rain|snow|raining|snowing|rainy|sunny|cloudy|cold|hot|warm|windy|wet|dry|nice|"
+                  r"freezing|umbrella|jacket|coat|sunscreen|be|it)\b.*?\b(?:in|for|at) (?P<c>[a-z' ]+)$", where)
+    if m and m.group("c") not in ("the moment", "general", "my area", "my city", "here", "town", "my town", "the city", "the area"):
+        city = m.group("c").strip()
+    return {"city": city, "when": when, "about": "rain" if _RAIN.search(n) else ""}
+
+
+# ---------- saying it ----------
+WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_WET = ("rain", "drizzle", "storm", "snow")
+
+
+def _days_for(data: dict, when: str) -> list:
+    """The forecast days a time phrase means: [(what to call it, day)]. `when` is "tomorrow", a weekday, "weekend"
+    or "week"; days the forecast doesn't reach are simply not returned."""
+    days = [d for d in data.get("daily") or [] if d.get("date")]
+    if not days:
+        return []
+    dated = [(date.fromisoformat(d["date"][:10]), d) for d in days]
+    first = dated[0][0]
+
+    def call(day):
+        gap = (day - first).days
+        return "Today" if gap == 0 else "Tomorrow" if gap == 1 else day.strftime("%A")
+    if when == "tomorrow":
+        return [(call(d), info) for d, info in dated[1:2]]
+    if when in WEEKDAYS:   # the next one, today included
+        return [(call(d), info) for d, info in dated if d.weekday() == WEEKDAYS.index(when)][:1]
+    if when == "weekend":
+        return [(call(d), info) for d, info in dated if d.weekday() >= 5][:2]
+    if when == "week":
+        return [(call(d), info) for d, info in dated]
+    return [(call(d), info) for d, info in dated[:1]]
+
+
+def asked_dates(data: dict, when: str) -> list:
+    """The dates a question was about ("weekend" -> its Saturday and Sunday), for the window to mark in its 7-day
+    list. Nothing for today or the whole week: there is no one row to point at."""
+    if when in ("", "today", "week"):
+        return []
+    return [day["date"][:10] for _, day in _days_for(data, when)]
+
+
+def _percent(chance) -> str:
+    return f"{'an' if str(chance)[0] == '8' or chance in (11, 18) else 'a'} {chance} percent"
+
+
+def _day_line(name: str, day: dict) -> str:
+    text = f"{name}: {day['label'].lower()}"
+    if day.get("high") is not None and day.get("low") is not None:
+        text += f", a high of {day['high']} and a low of {day['low']}"
+    chance = day.get("rain_chance")
+    if chance is not None and chance >= 30:
+        text += f", with {_percent(chance)} chance of {'snow' if day['kind'] == 'snow' else 'rain'}"
+    return text + "."
+
+
+def _on(name: str) -> str:
+    return name.lower() if name in ("Today", "Tomorrow") else "on " + name
+
+
+def _listed(parts: list) -> str:
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def day_summary(data: dict, when: str = "", about: str = "") -> str:
+    """What to say when a day or one thing was asked for: "tomorrow", "this weekend", "will it rain on friday?".
+    `about` is "rain" for a yes-or-no about rain (or snow). With neither, this is summary()."""
+    place = data["place"]["name"].split(",")[0]
+    if not about and when in ("", "today"):
+        return summary(data)
+    days = _days_for(data, when or "today")
+    stale = " (This is the last forecast I could get; the weather service isn't answering right now.)" if data.get("stale") else ""
+    if not days:
+        return f"My forecast for {place} only reaches seven days ahead, and that day isn't in it." + stale
+    span = {"week": "this week", "weekend": "this weekend"}.get(when, days[0][0].lower() if days[0][0] in ("Today", "Tomorrow") else "on " + days[0][0])
+    if about == "rain":
+        wet = [(name, d) for name, d in days if (d.get("rain_chance") or 0) >= 40 or
+               (d["kind"] in _WET and d.get("rain_chance") is None)]
+        if not wet:
+            most = max((d.get("rain_chance") or 0) for _, d in days)
+            detail = "" if not most else f": the chance is {most} percent{' at most' if len(days) > 1 else ''}"
+            return f"No, rain isn't expected in {place} {span}{detail}." + stale
+        now = data.get("current") or {}
+        if when in ("", "today") and now.get("kind") in _WET:
+            return f"Yes. Right now in {place}: {now['label'].lower()}." + stale
+        sure = max((d.get("rain_chance") or 60) for _, d in wet) >= 60
+        opening = "Yes, rain is likely" if sure else "Maybe. Rain is possible"
+        if len(days) == 1:
+            name, d = wet[0]
+            if d["kind"] == "snow":
+                opening = opening.replace("rain", "snow").replace("Rain", "Snow")
+            chance = f", with {_percent(d['rain_chance'])} chance" if d.get("rain_chance") is not None else ""
+            text = f"{opening} in {place} {span}{chance}."
+            if when in ("", "today"):
+                for hour in data["hourly"][1:13]:
+                    if (hour.get("rain_chance") or 0) >= 50 and hour["kind"] in _WET:
+                        text += f" Expect it around {datetime.fromisoformat(hour['time']).strftime('%I %p').lstrip('0')}."
+                        break
+            return text + stale
+        names = [_on(name) + (f" ({d['rain_chance']} percent)" if d.get("rain_chance") is not None else "") for name, d in wet]
+        return f"{opening} in {place} {_listed(names)}." + stale
+    if when == "week":
+        highs = [d["high"] for _, d in days if d.get("high") is not None]
+        lows = [d["low"] for _, d in days if d.get("low") is not None]
+        text = f"This week in {place}"
+        if highs and lows:
+            text += f": highs from {min(highs)} to {max(highs)} degrees, lows from {min(lows)} to {max(lows)}"
+        text += "."
+        wet = [_on(name) for name, d in days if (d.get("rain_chance") or 0) >= 50]
+        text += f" Rain is likely {_listed(wet)}." if wet else " No rainy days are expected."
+        return text + stale
+    if len(days) == 1:
+        name, d = days[0]
+        return _day_line(f"{name} in {place}", d) + stale
+    return f"This weekend in {place}. " + " ".join(_day_line(name, d) for name, d in days) + stale
 
 
 # ---------- the backup source: MET Norway ----------

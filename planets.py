@@ -52,6 +52,22 @@ _PATTERNS = [
     re.compile(rf"^{_LEAD}{_VERB} (?:a |the )?(?:planet|moon|dwarf planet|star)?s?{_FILLER}(?P<name>{_NAMES})\b.*$"),
     re.compile(rf"^{_LEAD}(?P<name>{_NAMES}) facts\b.*$"),
 ]
+_BODY = rf"(?:the planet |planet )?(?P<name>{_NAMES})"
+_ASK = r"(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|tell me|do you know|and|so) )*"
+# One thing asked about a body ("how big is jupiter", "how many moons does saturn have"): answered first, in a sentence.
+_FACT_ASKS = {
+    "size": ["how (?:big|large|wide|small) is @(?: compared (?:to|with) (?:the )?earth)?", "(?:what(?:'s| is|s) )?the (?:size|radius|diameter|width) of @"],
+    "moons": ["how many moons (?:does|has|do) @ (?:have|got)", "does @ have (?:any |a )?moons?",
+              "how many moons (?:are )?(?:around|orbit(?:ing)?) @"],
+    "rings": ["does @ have (?:any |a )?rings?", "how many rings does @ have"],
+    "day": ["how long is (?:a|one|the) day on @", "how long does @ take to (?:spin|rotate|turn)", "how fast does @ (?:spin|rotate)"],
+    "year": ["how long is (?:a|one|the) year on @", "how long does @ take to (?:orbit|go around|circle|travel around|get around)(?: the sun)?",
+             "how long does it take @ to (?:orbit|go around|circle)(?: the sun)?"],
+    "temperature": ["how (?:hot|cold|warm) is(?: it on)? @", "(?:what(?:'s| is|s) )?the temperature (?:on|of|at) @"],
+    "distance": ["how far(?: away)? is @(?: from (?P<origin>the sun|earth|us|here))?",
+                 "(?:what(?:'s| is|s) )?the distance (?:to|of|from(?: the sun| earth)? to) @"],
+}
+_FACTS = [(fact, re.compile(rf"^{_ASK}" + ask.replace("@", _BODY) + r"\b")) for fact, asks in _FACT_ASKS.items() for ask in asks]
 _GENERIC = re.compile(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you) )*tell me about (?:a |the )?planet\b\s*[:.,-]?\s*$")
 _CLOSE = re.compile(r"\b(?:close|hide|dismiss)\b.{0,20}\b(?:planet|globe|model)\b")
 _RESHOW = re.compile(
@@ -80,6 +96,14 @@ def parse_request(text: str):
             which = "first" if re.search(r"\bfirst\b", n) else "prev" if re.search(r"\b(?:previous|before|earlier|back)\b", n) else \
                 "next" if re.search(r"\bnext\b", n) else "last"
             return {"action": "reshow", "which": which}
+    asked = n.rstrip(" ?.!")
+    for fact, pattern in _FACTS:
+        m = pattern.match(asked)
+        if m and not asked[m.end():].strip():   # the whole question, not the start of a longer one
+            key = ALIASES.get(m.group("name"), m.group("name"))
+            if key and key in BODIES:
+                origin = m.groupdict().get("origin") or ""
+                return {"action": "show", "body": key, "fact": fact, "from_earth": origin in ("earth", "us", "here")}
     for pattern in _PATTERNS:
         m = pattern.match(n)
         if m:
@@ -131,6 +155,50 @@ def describe(body: dict) -> str:
     return lead + "\n\n" + "\n".join(lines)
 
 
+def answer(key: str, fact: str, from_earth: bool = False) -> str:
+    """One asked-for fact as a sentence: "Jupiter's radius is 69,911 kilometers, about 11 times Earth's."."""
+    body = BODIES[key]
+    name = body["name"][0].upper() + body["name"][1:]
+    if fact == "size":
+        times = body["radius_km"] / 6371
+        compare = "" if key == "earth" else f", about {_say_number(round(times, 1) if times < 10 else round(times))} times Earth's" \
+            if times >= 1.05 else f", about {round(times * 100)} percent of Earth's"
+        return f"{name} has a radius of {_say_number(body['radius_km'])} kilometers{compare}."
+    if fact == "moons":
+        if body["kind"] == "moon":
+            return "The Moon has no moons of its own. It orbits Earth."
+        count = body["moons"]
+        return f"{name} has no moons." if not count else f"{name} has {_plural(count, 'known moon')}."
+    if fact == "rings":
+        if body.get("rings"):
+            return f"Yes. {name} has a wide system of rings, made of ice and rock."
+        return f"{name} has faint rings, far too thin to see like Saturn's." if key in ("jupiter", "uranus", "neptune") else f"No, {name} has no rings."
+    if fact == "day":
+        return f"A day on {name} lasts {_day_length(body['day_hours']).replace('backward, ', '')}" + \
+            (", and it spins backward." if body["day_hours"] < 0 else ".")
+    if fact == "year":
+        year = _year_length(body["year_days"])
+        if key == "moon":
+            return "The Moon goes around Earth once every 27.3 days."
+        return f"A year on {name} lasts {year}." if year else f"{name} doesn't orbit the Sun: everything else orbits it."
+    if fact == "temperature":
+        return f"{name} is {body['temp_c']}."
+    if fact == "distance":
+        far = body["distance_million_km"]
+        if key == "moon":
+            return "The Moon is about 384,400 kilometers from Earth."
+        if key == "sun":
+            return "The Sun is about 149.6 million kilometers from Earth."
+        if key == "earth":
+            return "Earth is about 149.6 million kilometers from the Sun."
+        if from_earth:
+            near, away = abs(far - 149.6), far + 149.6
+            return (f"{name} is between about {_say_number(round(near))} and {_say_number(round(away))} million kilometers from "
+                    f"Earth, depending on where both are in their orbits.")
+        return f"{name} is about {_say_number(far)} million kilometers from the Sun."
+    return ""
+
+
 def chips(body: dict) -> list:
     """The short label/value pairs shown under the model, the same shape as the graph and globe windows use."""
     out = [["Radius", f"{_say_number(body['radius_km'])} km"], ["Day length", _day_length(body["day_hours"])]]
@@ -146,9 +214,14 @@ def chips(body: dict) -> list:
     return out
 
 
-def build(key: str) -> dict:
-    """Everything the window needs to draw the body, plus what Jarvis says about it."""
+_FACT_CHIPS = {"size": "Radius", "moons": "Moons", "rings": "Rings", "day": "Day length", "year": "Year length",
+               "temperature": "Temperature", "distance": "Distance from Sun"}
+
+
+def build(key: str, fact: str = "") -> dict:
+    """Everything the window needs to draw the body, plus what Jarvis says about it. fact: the one thing that was
+    asked about ("moons"), so the window can mark it among the facts."""
     body = BODIES[key]
     return {"kind": "planet", "key": key, "name": body["name"], "bodyKind": body["kind"], "texture": body["texture"],
             "colorKind": body["color_kind"], "rings": bool(body.get("rings")), "radiusKm": body["radius_km"],
-            "moons": body["moons"], "chips": chips(body), "text": describe(body)}
+            "moons": body["moons"], "chips": chips(body), "text": describe(body), "asked": _FACT_CHIPS.get(fact, "")}

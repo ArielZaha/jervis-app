@@ -7,6 +7,20 @@
   <link rel="stylesheet" href="vendor/katex/katex.min.css" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="weather/weather.css" />
+  <link rel="stylesheet" href="clock/worldclock.css" />
+  <link rel="stylesheet" href="coding/coding.css" />
+  <!-- The new look, layered over style.css while <html data-ui="next">. Settings has "Classic look" to go back
+       (remembered on this computer); index.html?ui=classic opens the classic look once. -->
+  <link rel="stylesheet" href="style.next.css" />
+  <script>
+    (function () {
+      var look = 'next';
+      try { if (localStorage.getItem('jarvis-look') === 'classic') look = 'classic'; } catch (e) { /* no storage: the new look */ }
+      var asked = new URLSearchParams(location.search).get('ui');
+      if (asked === 'classic' || asked === 'next') look = asked;
+      document.documentElement.dataset.ui = look;
+    })();
+  </script>
 </head>
 <body>
   <div class="app" id="appShell" data-state="idle">
@@ -110,6 +124,8 @@
             <li data-cat="learn"><button type="button" class="tip" data-say="Solve x squared minus 5x plus 6 equals 0"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Solve x squared minus 5x plus 6 equals 0”</b><span>The exact answer, step by step</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
             <li data-cat="learn"><button type="button" class="tip" data-say="Distance between Tokyo and Paris"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Distance between Tokyo and Paris”</b><span>Flies the route on a 3D globe, with the flight time</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
             <li data-cat="learn"><button type="button" class="tip" data-say="Show sunrise over Tokyo"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Show sunrise over Tokyo”</b><span>The real sunlight, day and night, on the globe</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Write a Python calculator and open it in VS Code"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Write a Python calculator and open it in VS Code”</b><span>Real files, checked, in any language</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="What time is it in Tokyo?"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“What time is it in Tokyo?”</b><span>A live world clock, with any cities side by side</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
             <li data-cat="learn"><button type="button" class="tip" data-say="Tell me about Saturn"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Tell me about Saturn”</b><span>A real, spinning 3D model with the facts</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
             <li data-cat="learn"><button type="button" class="tip" data-say="Check Google Classroom for work I didn’t submit"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Check Google Classroom for work I didn’t submit”</b><span>Opens Classroom and tells you what’s missing</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
             <li data-cat="tasks"><button type="button" class="tip" data-say="Add a dentist appointment tomorrow at 5pm"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Add a dentist appointment tomorrow at 5pm”</b><span>Straight into your Google Calendar</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
@@ -334,6 +350,7 @@
       <div class="settings-body" id="settingsBody"><p class="sheet-sub">Loading…</p></div>
       <footer class="settings-foot">
         <label class="adv-toggle"><input type="checkbox" id="settingsAdvanced" /> Show advanced settings</label>
+        <label class="adv-toggle" title="Switch between Jarvis's new look and the one before it"><input type="checkbox" id="classicLook" /> Classic look</label>
         <span class="settings-status" id="settingsStatus" role="status" aria-live="polite"></span>
         <button type="button" class="sheet-btn primary" id="settingsSave" disabled>Save</button>
       </footer>
@@ -360,5 +377,7 @@
   <script src="weather/charts.js"></script>
   <script src="weather/map.js"></script>
   <script src="weather/panel.js"></script>
+  <script src="clock/worldclock.js"></script>
+  <script src="coding/coding.js"></script>
 </body>
 </html>

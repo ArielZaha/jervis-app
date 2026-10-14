@@ -1,0 +1,13 @@
+{
+ "name": "weather",
+ "frames": 330,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "sent:What is the weather in Paris this week?": 93,
+  "reply:What is the weather in Paris this week?": 108
+ },
+ "notes": {},
+ "opened": []
+}

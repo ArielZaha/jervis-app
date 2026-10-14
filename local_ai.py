@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tarfile
@@ -49,6 +50,19 @@ APPROX_MODEL_BYTES = {"llama3.2": 2_019_393_189, "qwen2.5vl:3b": 3_200_000_000, 
 MIN_RAM_FOR_VISION = 15 * 1024 ** 3   # "16 GB" machines report a little less
 _IS_WIN = platform.system() == "Windows"
 _NO_WINDOW = 0x08000000 if _IS_WIN else 0
+
+
+MANAGER = None   # the one LocalAI the backend runs, so a feature can ask for the vision model when it first needs it
+
+
+def has_nvidia_gpu() -> bool:
+    """Whether this Windows PC has an NVIDIA driver (it installs nvcuda.dll). Without one, the engine's CUDA libraries
+    (1.8 GB of its 1.9 GB) can never be used, so they aren't unpacked."""
+    return os.path.exists(os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "nvcuda.dll"))
+
+
+def _gpu_only(name: str) -> bool:
+    return bool(re.match(r"(?:^|.*/)lib/ollama/(?:cuda|rocm)[^/]*/", name.replace("\\", "/")))
 
 
 class SetupError(Exception):
@@ -114,6 +128,7 @@ class LocalAI:
         self.text_model = os.getenv("OLLAMA_MODEL") or local_llm.DEFAULT_MODEL
         self.vision_model = os.getenv("OLLAMA_VISION_MODEL") or "qwen2.5vl:3b"
         self.use_vision = True
+        self.vision_fetching = False
         self.ready = threading.Event()
         self._lock = threading.Lock()
         self._running = False
@@ -121,6 +136,8 @@ class LocalAI:
         self.state = {"active": False, "done": False, "error": None, "hint": None, "summary": "",
                       "steps": [{"id": sid, "label": label, "state": "pending", "detail": "", "progress": None}
                                 for sid, label in self.STEPS]}
+        global MANAGER
+        MANAGER = self
 
     # ---------- progress reporting ----------
     def _step(self, sid: str, state: str = None, detail: str = None, progress=None) -> None:
@@ -249,7 +266,7 @@ class LocalAI:
 
     def _download_engine(self) -> str:
         name, size, sha256 = self._asset()
-        self._check_disk(size * 2 + self._models_bytes())   # the archive and its unpacked copy, then the models
+        self._check_disk(size * 2 + self._models_bytes())   # the archive and its unpacked copy, then the model
         folder = paths.data_dir("runtime")
         archive = os.path.join(folder, name)
         partial = archive + ".part"
@@ -273,7 +290,8 @@ class LocalAI:
         try:
             if name.endswith(".zip"):
                 with zipfile.ZipFile(archive) as z:
-                    z.extractall(tmp_target)
+                    keep = z.namelist() if has_nvidia_gpu() else [m for m in z.namelist() if not _gpu_only(m)]
+                    z.extractall(tmp_target, members=keep)
             else:
                 with tarfile.open(archive) as t:
                     t.extractall(tmp_target, filter="data")
@@ -283,6 +301,9 @@ class LocalAI:
         shutil.rmtree(target, ignore_errors=True)
         os.replace(tmp_target, target)
         os.remove(archive)
+        for old in os.listdir(folder):   # an engine left by an earlier Jarvis version: superseded, never used again
+            if old.startswith("ollama-") and os.path.join(folder, old) != target and os.path.isdir(os.path.join(folder, old)):
+                shutil.rmtree(os.path.join(folder, old), ignore_errors=True)
         binary = self._managed_binary()
         if not binary:
             raise SetupError("The AI engine download didn’t contain the expected program.", "Press Try again.")
@@ -368,8 +389,7 @@ class LocalAI:
 
     # ---------- 2. the models ----------
     def _models_bytes(self) -> int:
-        wanted = [self.text_model] + ([self.vision_model] if self.use_vision else [])
-        return int(sum(APPROX_MODEL_BYTES.get(m, 2.5e9) for m in wanted) * 1.1)
+        return int(APPROX_MODEL_BYTES.get(self.text_model, 2.5e9) * 1.1)   # the vision model comes later, when needed
 
     def _installed(self) -> list:
         try:
@@ -385,18 +405,47 @@ class LocalAI:
         return any(name == wanted or name == base for name in installed)
 
     def _ensure_models(self) -> None:
+        """Only the text model is downloaded at setup. The vision model (3 GB) waits until something first needs to
+        see a picture or the screen (fetch_vision): most people never do, and it was most of the first download."""
         self.use_vision = wants_vision()
-        wanted = [self.text_model] + ([self.vision_model] if self.use_vision else [])
-        installed = self._installed()
-        missing = [m for m in wanted if not self._has(installed, m)]
-        if not missing:
-            self._step("models", "done", "Models ready." + ("" if self.use_vision else
-                       " (No vision model: it needs a computer with 16 GB of memory; see Settings.)"))
+        if self._has(self._installed(), self.text_model):
+            self._step("models", "done", "Model ready.")
             return
-        self._check_disk(int(sum(APPROX_MODEL_BYTES.get(m, 2.5e9) for m in missing) * 1.1))
-        for index, model in enumerate(missing, 1):
-            self._pull(model, f"Downloading model {index} of {len(missing)} ({model})")
-        self._step("models", "done", "Models ready.")
+        self._check_disk(int(APPROX_MODEL_BYTES.get(self.text_model, 2.5e9) * 1.1))
+        self._pull(self.text_model, f"Downloading the AI model ({self.text_model})")
+        self._step("models", "done", "Model ready.")
+
+    def vision_installed(self) -> bool:
+        return bool(self.url) and self._has(self._installed(), self.vision_model)
+
+    def fetch_vision(self) -> str:
+        """Download the vision model in the background, the first time it's needed. What to tell the user:
+        "started", "fetching" (already on its way), "installed", "not_wanted" (this computer is set not to) or
+        "not_ready" (the local AI itself isn't running)."""
+        if not wants_vision():
+            return "not_wanted"
+        if not self.url or not self.ready.is_set():
+            return "not_ready"
+        with self._lock:
+            if self.vision_fetching:
+                return "fetching"
+            if self.vision_installed():
+                return "installed"
+            self.vision_fetching = True
+
+        def work():
+            try:
+                self._check_disk(int(APPROX_MODEL_BYTES.get(self.vision_model, 2.5e9) * 1.1))
+                self._pull(self.vision_model, f"Downloading the vision model ({self.vision_model})")
+                self._step("models", "done", "Models ready, including vision.")
+            except SetupError as e:
+                print(f"The vision model couldn't be downloaded: {e.message}", flush=True)
+            except Exception as e:
+                print(f"The vision model couldn't be downloaded: {e!r}", flush=True)
+            finally:
+                self.vision_fetching = False
+        threading.Thread(target=work, daemon=True, name="vision-model").start()
+        return "started"
 
     def _pull(self, model: str, label: str) -> None:
         for attempt in range(3):

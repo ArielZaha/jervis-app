@@ -16,8 +16,13 @@ Download the installer from <https://arielzaha.github.io/jervis/> (or the
   malware: open *System Settings > Privacy & Security* and click *Open Anyway*.
 
 On the first start Jarvis downloads his AI engine ([Ollama](https://ollama.com)), the `llama3.2` model and an offline
-speech model (about 3.5 GB on Windows, 2.5 GB on a Mac), with the progress in his window. Everything that doesn't need
-the AI works meanwhile. If you already run Ollama, he uses yours. Then say **"Hey Jarvis"**.
+speech model, with the progress in his window: about 2.3 GB on a Mac; on Windows about 3.6 GB, of which about 2.3 GB is
+kept (the engine's NVIDIA libraries, 1.8 GB, are only unpacked on a PC with an NVIDIA graphics card). Everything that
+doesn't need the AI works meanwhile. If you already run Ollama, he uses yours. Then say **"Hey Jarvis"**.
+
+On a computer with 16 GB of memory he can also see pictures and the screen without the internet. That needs a 3 GB
+vision model, which he downloads the first time it's needed, not at setup (Settings, AI, can turn it on or off).
+The app itself is about 190 MB to download and about 460 MB installed.
 
 Everything else is in **Settings** (the gear at the top right): microphone, voice, the wake phrase, which AI answers,
 computer control, the weather city, privacy, optional services, and starting when you sign in. Settings, logs,

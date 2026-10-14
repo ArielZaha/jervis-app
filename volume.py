@@ -93,7 +93,12 @@ def change_volume(action: str, amount: int = None) -> str:
         if action == "unmute":
             _osascript("set volume without output muted")
             return f"Unmuted. Volume is {int(_osascript('output volume of (get volume settings)'))}%."
-        current = int(_osascript("output volume of (get volume settings)"))
+        reading = _osascript("output volume of (get volume settings)")
+        if not reading.isdigit():   # "missing value": a screen or speaker with its own volume (HDMI, some USB audio)
+            if action == "set" and amount is not None:
+                _osascript(f"set volume output volume {max(0, min(100, amount))}")
+            return "This speaker's volume can't be changed from the computer. Use its own volume control."
+        current = int(reading)
         if action == "up":
             level = current + (amount or STEP)
         elif action == "down":

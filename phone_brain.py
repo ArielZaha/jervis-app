@@ -62,32 +62,6 @@ _ASK_VERTEX = re.compile(r"\b(?:vertex|minimum|maximum|lowest|highest|turning\s+
 _ASK_YINT = re.compile(r"\by\s*intercept\b")
 _REFERS = re.compile(r"\b(?:it|its|that|this|them|the\s+(?:function|parabola|graph|equation|curve|solution|answer|problem)|that\s+one)\b")
 
-# ---------------------------------------------------------------- weather (app.py: parse_weather_request)
-_WEATHER_ASK = re.compile(
-    r"\b(?:what'?s|what is|how'?s|how is|check|tell me|show me|show|open|give me|get me|bring up|display)\b.*\bweather\b"
-    r"|\bweather\b.*\b(?:like|today|tonight|tomorrow|now|outside|forecast|this week|right now)\b"
-    r"|^(?:the )?(?:weather|forecast|weather forecast|weather report)(?: please)?$"
-    r"|\b(?:what'?s|what is|show me|show|open|check|give me) (?:the |my )?(?:weather )?forecast\b"
-    r"|\bis it (?:raining|snowing|sunny|cloudy|cold|hot|windy)(?: outside| now| right now| today)?$"
-    r"|\b(?:temperature|forecast)\b.*\b(?:outside|today|now)\b"
-    r"|\bdo i need (?:an umbrella|a jacket|a coat)\b")
-_WEATHER_TALK = re.compile(r"^(?:i|we|my|our|he|she|they|it was|the weather (?:was|has been))\b")
-
-
-def parse_weather_request(text: str):
-    """{"city": "" | "Paris"} for a weather request, else None."""
-    n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower().replace("’", "'")).split())
-    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jarvis|jervis) ", "", n)
-    if _WEATHER_TALK.match(n) or not _WEATHER_ASK.search(n):
-        return None
-    city = ""
-    m = re.search(r"\b(?:weather|forecast|temperature|raining|snowing|sunny|cloudy|cold|hot|windy)\b.*?\b(?:in|for|at) "
-                  r"(?P<c>[a-z' ]+?)(?: (?:today|tonight|tomorrow|now|right now|this week|please))*$", n)
-    if m and m.group("c") not in ("the moment", "general", "my area", "my city", "here", "outside"):
-        city = m.group("c").strip()
-    return {"city": city}
-
-
 def describe_timer(timer: dict) -> str:
     label = f" for {timer['label']}" if timer["label"] and timer["kind"] == "timer" else ""
     return f"{timers.format_duration(timer['total'])} timer{label}"
@@ -368,6 +342,7 @@ class Brain:
             request = {"action": "distance", "a": self.last_route["a"]["name"], "b": self.last_route["b"]["name"],
                        "wants": request["wants"]}
             known.update({request["a"]: self.last_route["a"], request["b"]: self.last_route["b"]})
+        request = earth.settle_split(request)   # "from tel aviv london or new york": where the first place ends
         for name in dict.fromkeys(self._place_names(request)):
             if name in known:
                 continue
@@ -478,14 +453,14 @@ class Brain:
 
     # ------------------------------------------------------------ weather
     def _weather(self, text: str, settings: dict):
-        request = parse_weather_request(text)
+        request = forecast.parse_request(text)
         if request is None:
             return None
         try:
             data = forecast.get(city=request["city"], fallback_city=str(settings.get("weatherCity") or ""), radar=False)
         except forecast.WeatherError as e:
             return str(e)
-        return {"reply": forecast.summary(data), "weather": data}
+        return {"reply": forecast.day_summary(data, request["when"], request["about"]), "weather": data}
 
     # ------------------------------------------------------------ timers: read and answered here, kept by the app
     def _timer(self, text: str, settings: dict):

@@ -79,7 +79,8 @@ CONVERSATION = [
     "I graphed a function in class today",
     "the volume at the concert was too loud",
     "should I open a bank account",
-    "is it going to rain",
+    "will it be ready in time",
+    "I want to go to the store",
 ]
 
 
@@ -456,13 +457,61 @@ def test_weather_questions_open_the_weather_window(said, monkeypatch):
 
 
 def test_weather_for_a_named_city():
-    assert app.parse_weather_request("what's the weather in Paris") == {"action": "show", "city": "paris"}
-    assert app.parse_weather_request("how's the weather in new york today") == {"action": "show", "city": "new york"}
+    assert app.parse_weather_request("what's the weather in Paris") == {"action": "show", "city": "paris", "when": "", "about": ""}
+    assert app.parse_weather_request("how's the weather in new york today") == {"action": "show", "city": "new york", "when": "today", "about": ""}
     assert app.parse_weather_request("close the weather") == {"action": "close"}
 
 
+def test_a_weather_question_about_a_day_is_answered_for_that_day(monkeypatch):
+    asked = {}
+    monkeypatch.setattr(app, "send_ui_update_once", lambda message: None)
+    monkeypatch.setattr(app.forecast, "get", lambda **k: {"place": {"name": k["city"]}})
+    monkeypatch.setattr(app.forecast, "day_summary", lambda data, when, about: asked.update(when=when, about=about) or "Maybe.")
+    result, actions = route("will it rain in london on friday")
+    assert result == "Maybe." and asked == {"when": "friday", "about": "rain"} and not actions
+
+
+# ---- sums and single facts: answered here, never guessed by the AI ----
+@pytest.mark.parametrize("said,reply", [("what's 12 times 12", "12 times 12 is 144."),
+                                        ("What is 15% of 80?", "15% of 80 is 12.")])
+def test_sums_are_answered_at_once(said, reply):
+    result, actions = route(said)
+    assert result == reply and not actions
+
+
+def test_one_fact_about_a_planet_leads_the_answer(monkeypatch):
+    sent = []
+    monkeypatch.setattr(app, "send_ui_update_once", sent.append)
+    result, _ = route("how many moons does saturn have")
+    assert result.startswith("Saturn has 146 known moons.\n\n- **Radius:**")
+    assert sent and sent[0]["type"] == "planet" and sent[0]["data"]["key"] == "saturn"
+
+
+def test_a_follow_up_with_whats_is_about_the_math_just_solved():
+    route("what are the roots of x squared minus nine")
+    result, _ = route("what's the vertex")
+    assert result.startswith("The vertex of y = x² − 9 is at x equals 0 and y equals negative 9.")
+
+
+def test_spoken_volume_levels_are_understood():
+    assert app.parse_volume_command("set the volume to fifty percent") == ("set", 50)
+    assert app.parse_volume_command("volume to thirty") == ("set", 30)
+
+
+@pytest.mark.parametrize("said", ["what song is this", "What's playing?", "who sings this", "what am i listening to"])
+def test_what_is_playing_is_answered_from_spotify(said, monkeypatch):
+    monkeypatch.setattr(app, "sp", None)
+    monkeypatch.setattr(app.spotify_local, "now_playing", lambda: (True, "Echoes by Pink Floyd"))
+    assert route(said)[0] == "This is Echoes by Pink Floyd."
+
+
+@pytest.mark.parametrize("said", ["what is this", "what song should I learn on guitar", "who sings bohemian rhapsody"])
+def test_other_questions_about_songs_are_conversation(said):
+    assert app.what_is_playing(said) is None
+
+
 @pytest.mark.parametrize("sentence", ["I was talking about the weather yesterday", "the weather was nice",
-                                      "is it going to rain", "my weather app is broken"])
+                                      "will it be ready in time", "my weather app is broken"])
 def test_talking_about_weather_is_not_a_request(sentence):
     assert app.parse_weather_request(sentence) is None
 

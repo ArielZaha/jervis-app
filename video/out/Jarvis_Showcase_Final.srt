@@ -1,0 +1,72 @@
+1
+00:00:00,550 --> 00:00:01,850
+“Hey Jarvis”
+
+2
+00:00:02,000 --> 00:00:02,880
+Jarvis: I'm here.
+
+3
+00:00:03,333 --> 00:00:06,283
+“Set a timer for twenty minutes and show me the weather in Paris”
+
+4
+00:00:06,333 --> 00:00:12,633
+Jarvis: Timer set for 20 minutes. It's 20 degrees and overcast in Paris, feeling like 18.
+
+5
+00:00:14,000 --> 00:00:15,000
+“Solve x squared minus five x plus six equals zero, and draw the function”
+
+6
+00:00:15,050 --> 00:00:20,000
+Jarvis: The solutions are x equals 2 and x equals 3. I've put the details on your screen.
+
+7
+00:00:20,050 --> 00:00:21,100
+“Compare x squared and x plus one”
+
+8
+00:00:21,150 --> 00:00:25,850
+Jarvis: Here are both on one graph. f is a parabola and g is a straight line.
+
+9
+00:00:26,000 --> 00:00:26,700
+“What is the distance between Tokyo and New York?”
+
+10
+00:00:26,700 --> 00:00:33,600
+Jarvis: The distance between Tokyo, Japan and New York, United States is about 10,849 kilometers, or 6,741 miles, in a straight line.
+
+11
+00:00:33,650 --> 00:00:34,600
+“Show sunrise over Tokyo”
+
+12
+00:00:34,650 --> 00:00:38,600
+Jarvis: The Sun rises in Tokyo at 5:45 AM local time today, October 13.
+
+13
+00:00:38,650 --> 00:00:39,500
+“Tell me about Saturn”
+
+14
+00:00:39,550 --> 00:00:44,150
+Jarvis: Saturn is a planet, about 1,434 million kilometers from the Sun.
+
+15
+00:00:44,200 --> 00:00:45,700
+“Show me Mars”
+
+16
+00:00:49,600 --> 00:00:51,500
+“Distance between Paris and Rome”
+
+17
+00:00:55,600 --> 00:00:57,000
+“Graph sine of x over x”
+
+18
+00:01:00,000 --> 00:01:01,400
+“Use my computer to turn on dark mode in Chrome”
+

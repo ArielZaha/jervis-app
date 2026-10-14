@@ -1,0 +1,80 @@
+{
+ "note": "The trailer's narration. `say` is the line (and its subtitle); `spoken` is how it is given to the voice when that differs (pauses, a name's pronunciation). The film places each line by its id (film/trailer.js).",
+ "direction": "Read as a deep, mature male movie-trailer narrator: calm, confident and unhurried, with a sense of mystery",
+ "kokoro_voice": "am_onyx",
+ "speed": 0.92,
+ "deepen": 0.94,
+ "lines": [
+  {
+   "id": "n01",
+   "say": "What if your computer could do more than wait for your next click?",
+   "speed": 0.84
+  },
+  {
+   "id": "n02a",
+   "say": "What if it could listen...",
+   "spoken": "What if it could listen,",
+   "speed": 0.84
+  },
+  {
+   "id": "n02b",
+   "say": "understand...",
+   "spoken": "understand,",
+   "speed": 0.84
+  },
+  {
+   "id": "n02c",
+   "say": "and act?",
+   "speed": 0.84
+  },
+  {
+   "id": "n03",
+   "say": "Meet Jarvis.",
+   "speed": 0.84
+  },
+  {
+   "id": "n04",
+   "say": "Your personal AI assistant.",
+   "speed": 0.88
+  },
+  {
+   "id": "n05",
+   "say": "Speak naturally."
+  },
+  {
+   "id": "n06",
+   "say": "Ask it anything."
+  },
+  {
+   "id": "n07",
+   "say": "And watch it happen."
+  },
+  {
+   "id": "n08",
+   "say": "From conversation... to control."
+  },
+  {
+   "id": "n09",
+   "say": "From your phone... to your computer."
+  },
+  {
+   "id": "n10",
+   "say": "From a simple request... to something done."
+  },
+  {
+   "id": "n11",
+   "say": "Your computer.",
+   "speed": 0.85
+  },
+  {
+   "id": "n12",
+   "say": "Your commands.",
+   "speed": 0.85
+  },
+  {
+   "id": "n13",
+   "say": "Your Jarvis.",
+   "speed": 0.82
+  }
+ ]
+}

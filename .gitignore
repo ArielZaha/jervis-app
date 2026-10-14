@@ -49,3 +49,8 @@ models/
 *.log
 .jervis-netflix-profile/
 .tmp/
+
+# Jarvis's own data in a copy run from source (Coding Mode history and backups), and graphify's generated map
+coding_history.json
+code_backups/
+graphify-out/

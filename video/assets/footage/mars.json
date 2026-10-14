@@ -1,0 +1,13 @@
+{
+ "name": "mars",
+ "frames": 338,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "sent:Show me Mars": 41,
+  "reply:Show me Mars": 56
+ },
+ "notes": {},
+ "opened": []
+}

@@ -1,0 +1,12 @@
+{
+ "name": "saturn",
+ "frames": 354,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "sent:Tell me about Saturn": 57,
+  "reply:Tell me about Saturn": 72
+ },
+ "opened": []
+}

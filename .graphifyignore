@@ -1,0 +1,3 @@
+# Third-party minified code and Jarvis's own backup copies are not part of the project's map.
+vendor/
+code_backups/

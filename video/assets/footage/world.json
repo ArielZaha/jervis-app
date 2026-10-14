@@ -1,0 +1,42 @@
+{
+ "name": "world",
+ "frames": 888,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "listening:What is the distance between Tokyo and New York": 10,
+  "heard:What is the distance between Tokyo and New York": 67,
+  "reply:What is the distance between Tokyo and New York": 76,
+  "fast": 154,
+  "slow": 340,
+  "listening:Show sunrise over Tokyo": 407,
+  "heard:Show sunrise over Tokyo": 443,
+  "reply:Show sunrise over Tokyo": 452,
+  "listening:Tell me about Saturn": 621,
+  "heard:Tell me about Saturn": 654,
+  "reply:Tell me about Saturn": 663
+ },
+ "notes": {},
+ "lines": [
+  {
+   "file": "world_01.wav",
+   "frame": 76,
+   "text": "The distance between Tokyo, Japan and New York, United States is about 10,849 kilometers, or 6,741 miles, in a straight line. I've put the details on your screen.",
+   "seconds": 12.24
+  },
+  {
+   "file": "world_02.wav",
+   "frame": 452,
+   "text": "The Sun rises in Tokyo at 5:45 AM local time today, October 13. Here's the globe at that moment, with the dawn line passing over it.",
+   "seconds": 10
+  },
+  {
+   "file": "world_03.wav",
+   "frame": 663,
+   "text": "Saturn is a planet, about 1,434 million kilometers from the Sun. It's so much less dense than water that, if you found an ocean big enough, it would float. I've put the details on your screen.",
+   "seconds": 12.15
+  }
+ ],
+ "opened": []
+}

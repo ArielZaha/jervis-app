@@ -236,6 +236,9 @@
 }
 .wx-day:first-child { border-top: 0; }
 .wx-day:hover { background: rgb(var(--wx-rgb) / .06); }
+.wx-day.asked { border-top-color: transparent; border-radius: 8px; background: rgb(var(--wx-rgb) / .11); box-shadow: inset 0 0 0 1px rgb(var(--wx-rgb) / .42); }   /* the day that was asked about */
+.wx-day.asked + .wx-day { border-top-color: transparent; }
+.wx-day.asked .wx-day-name { color: rgb(var(--wx-rgb)); font-weight: 600; }
 .wx-day-name { font-size: 13px; font-weight: 500; color: var(--wx-ink); }
 .wx-day:first-child .wx-day-name { color: rgb(var(--wx-rgb)); }
 .wx-day-icon svg { width: 26px; height: 26px; display: block; }

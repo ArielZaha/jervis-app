@@ -242,3 +242,89 @@ def test_release_never_touches_an_ollama_on_another_computer(machine, monkeypatc
     machine["loaded"] = {"http://192.168.1.50:11434": {"llama3.2:latest": 1}}
     local_ai.release()
     assert machine["unloaded"] == [] and not any("192.168" in url for url in machine["asked"])
+
+
+# ---------- size: only what is needed is downloaded ----------
+def test_setup_downloads_only_the_text_model(monkeypatch):
+    """The vision model (3 GB) is no longer part of the first download, even on a 16 GB computer."""
+    manager = local_ai.LocalAI()
+    pulled = []
+    monkeypatch.setattr(local_ai, "wants_vision", lambda: True)
+    monkeypatch.setattr(manager, "_installed", lambda: [])
+    monkeypatch.setattr(manager, "_check_disk", lambda need: pulled.append(("disk", need)))
+    monkeypatch.setattr(manager, "_pull", lambda model, label: pulled.append(model))
+    manager._ensure_models()
+    assert pulled == [("disk", int(local_ai.APPROX_MODEL_BYTES["llama3.2"] * 1.1)), "llama3.2"]
+    assert manager._models_bytes() == int(local_ai.APPROX_MODEL_BYTES["llama3.2"] * 1.1)   # the disk check before the engine too
+
+
+def test_the_vision_model_is_fetched_once_when_first_needed(monkeypatch):
+    manager = local_ai.LocalAI()
+    manager.url = "http://127.0.0.1:1"
+    manager.ready.set()
+    pulled, done = [], threading.Event()
+    monkeypatch.setattr(local_ai, "wants_vision", lambda: True)
+    monkeypatch.setattr(manager, "_installed", lambda: ["llama3.2:latest"])
+    monkeypatch.setattr(manager, "_check_disk", lambda need: None)
+
+    def pull(model, label):
+        pulled.append(model)
+        done.wait(5)
+    monkeypatch.setattr(manager, "_pull", pull)
+    assert manager.fetch_vision() == "started"
+    assert manager.fetch_vision() == "fetching"          # asking again while it downloads starts nothing new
+    done.set()
+    for _ in range(50):
+        if not manager.vision_fetching:
+            break
+        threading.Event().wait(0.05)
+    assert pulled == ["qwen2.5vl:3b"]
+    monkeypatch.setattr(manager, "_installed", lambda: ["llama3.2:latest", "qwen2.5vl:3b"])
+    assert manager.fetch_vision() == "installed"
+    monkeypatch.setattr(local_ai, "wants_vision", lambda: False)
+    assert manager.fetch_vision() == "not_wanted"         # an 8 GB computer, or Settings "Off": never downloaded
+    manager.url = None
+    monkeypatch.setattr(local_ai, "wants_vision", lambda: True)
+    assert manager.fetch_vision() == "not_ready"
+
+
+def test_a_picture_question_starts_the_vision_download_and_says_so(monkeypatch):
+    import images
+    manager = local_ai.LocalAI()
+    monkeypatch.setattr(manager, "fetch_vision", lambda: "started")
+    assert "downloading my vision model now" in images.vision_missing_message() and "3 GB" in images.vision_missing_message()
+    monkeypatch.setattr(manager, "fetch_vision", lambda: "not_wanted")
+    assert "set not to download" in images.vision_missing_message()
+
+
+def _fake_engine_zip(path):
+    import zipfile
+    with zipfile.ZipFile(path, "w") as z:
+        for name in ("ollama.exe", "lib/ollama/ggml-cpu.dll", "lib/ollama/vulkan/ggml-vulkan.dll",
+                     "lib/ollama/cuda_v12/cublas64_12.dll", "lib/ollama/cuda_v13/cublasLt64_13.dll", "lib/ollama/rocm/x.dll"):
+            z.writestr(name, b"x" * 10)
+    return hashlib.sha256(open(path, "rb").read()).hexdigest()
+
+
+@pytest.mark.parametrize("nvidia,expected", [
+    (False, {"ollama.exe", "lib/ollama/ggml-cpu.dll", "lib/ollama/vulkan/ggml-vulkan.dll"}),
+    (True, {"ollama.exe", "lib/ollama/ggml-cpu.dll", "lib/ollama/vulkan/ggml-vulkan.dll", "lib/ollama/cuda_v12/cublas64_12.dll",
+            "lib/ollama/cuda_v13/cublasLt64_13.dll", "lib/ollama/rocm/x.dll"}),
+])
+def test_nvidia_libraries_are_only_unpacked_on_a_pc_with_nvidia(tmp_path, monkeypatch, nvidia, expected):
+    monkeypatch.setattr(paths, "DATA_DIR", str(tmp_path))
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    old = runtime / "ollama-v0.0.1"
+    (old / "lib").mkdir(parents=True)           # an engine an earlier Jarvis left behind
+    sha = _fake_engine_zip(runtime / "ollama-windows-amd64.zip")
+    manager = local_ai.LocalAI()
+    monkeypatch.setattr(manager, "_asset", lambda: ("ollama-windows-amd64.zip", (runtime / "ollama-windows-amd64.zip").stat().st_size, sha))
+    monkeypatch.setattr(manager, "_check_disk", lambda need: None)
+    monkeypatch.setattr(local_ai, "has_nvidia_gpu", lambda: nvidia)
+    monkeypatch.setattr(local_ai, "_IS_WIN", True)
+    manager._download_engine()
+    target = tmp_path / "runtime" / f"ollama-{local_ai.OLLAMA_VERSION}"
+    got = {str(p.relative_to(target)).replace(os.sep, "/") for p in target.rglob("*") if p.is_file()}
+    assert got == expected
+    assert not old.exists() and not (runtime / "ollama-windows-amd64.zip").exists()   # no old engine, no leftover archive

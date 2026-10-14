@@ -268,6 +268,14 @@ document.addEventListener('DOMContentLoaded', () => {
   $('settingsBtn').addEventListener('click', openSettings);
   $('settingsClose').addEventListener('click', closeSettings);
   $('settingsAdvanced').addEventListener('change', () => { if (loaded) renderSettings(loaded); });
+  // The window's look: the new one, or the classic one it replaced. Changes at once and is remembered on this computer.
+  $('classicLook').checked = document.documentElement.dataset.ui === 'classic';
+  $('classicLook').addEventListener('change', (e) => {
+    const look = e.target.checked ? 'classic' : 'next';
+    document.documentElement.dataset.ui = look;
+    try { localStorage.setItem('jarvis-look', look); } catch (err) { /* it still changes for this session */ }
+    window.dispatchEvent(new Event('resize'));   // the orb and the sky measure their space again
+  });
   $('settingsSave').addEventListener('click', () => {
     const values = pendingChanges();
     if (!values) return;

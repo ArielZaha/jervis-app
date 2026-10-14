@@ -1,0 +1,17 @@
+{
+ "name": "plan",
+ "frames": 557,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "sent:Set a timer for 10 minutes": 72,
+  "reply:Set a timer for 10 minutes": 87,
+  "sent:Add a dentist appointment tomorrow at 5pm": 283,
+  "reply:Add a dentist appointment tomorrow at 5pm": 298,
+  "sent:1 hour before": 425,
+  "reply:1 hour before": 440
+ },
+ "notes": {},
+ "opened": []
+}

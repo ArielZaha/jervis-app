@@ -1,0 +1,33 @@
+{
+ "name": "wake",
+ "frames": 527,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "listening:Hey Jarvis": 19,
+  "heard:Hey Jarvis": 46,
+  "reply:Hey Jarvis": 55,
+  "listening:Set a timer for twenty minutes and show me the weather in Paris": 95,
+  "heard:Set a timer for twenty minutes and show me the weather in Paris": 173,
+  "reply:Set a timer for twenty minutes and show me the weather in Paris": 182,
+  "result": 182,
+  "timer": 422
+ },
+ "notes": {},
+ "lines": [
+  {
+   "file": "wake_01.wav",
+   "frame": 55,
+   "text": "I'm here.",
+   "seconds": 0.88
+  },
+  {
+   "file": "wake_02.wav",
+   "frame": 182,
+   "text": "Timer set for 20 minutes. It's 20 degrees and overcast in Paris, feeling like 18. Today: a high of 21 and a low of 8. The full forecast is on your screen.",
+   "seconds": 11.68
+  }
+ ],
+ "opened": []
+}

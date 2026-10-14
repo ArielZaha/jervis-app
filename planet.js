@@ -197,6 +197,7 @@
   const MAX_HISTORY = 40;
 
   function present(index) {
+    window.hideGraph?.(); window.hideGlobe?.(); window.hideClock?.();   // one picture at a time: the newest is the one on screen
     current = index;
     data = history[index];
     if (data.texture !== textureKey) {
@@ -211,6 +212,7 @@
       const s = document.createElement('span'); s.textContent = label;
       const b = document.createElement('b'); b.textContent = text;
       li.append(s, b);
+      li.classList.toggle('asked', label === data.asked);   // "how many moons…": the fact that was asked for stands out
       $('planetFacts').append(li);
     });
     const many = history.length > 1;

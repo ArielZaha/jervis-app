@@ -1,0 +1,16 @@
+{
+ "name": "orbsleep",
+ "frames": 645,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "asleep": 0,
+  "wake": 360,
+  "listening": 435,
+  "speaking": 525
+ },
+ "notes": {},
+ "lines": [],
+ "opened": []
+}

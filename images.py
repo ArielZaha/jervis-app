@@ -109,6 +109,20 @@ def _use_local_vision() -> bool:
     return not _groq_key() or (os.getenv("LLM_BACKEND") or "").strip().lower() in ("ollama", "local")
 
 
+def vision_missing_message() -> str:
+    """The vision model isn't on this computer yet: start its one-time download (if this computer is set to have it)
+    and say what is happening."""
+    import local_ai
+    state = local_ai.MANAGER.fetch_vision() if local_ai.MANAGER else "not_ready"
+    if state in ("started", "fetching"):
+        return ("I'm downloading my vision model now, so I can see pictures and the screen on this computer: a one-time "
+                "download of about 3 GB. Ask me again in a few minutes.")
+    if state == "not_wanted":
+        return ("This computer is set not to download the local vision model (it needs 16 GB of memory to run well). "
+                "Settings can turn it on, or a Groq key in Settings lets me see pictures online.")
+    return "My local AI isn't ready yet, so I can't look at pictures right now. Try again in a little while."
+
+
 LOCAL_VISION_MAX_DIMENSION = 768    # a small local model: the work grows with the picture's area, so keep it modest
 
 
@@ -131,8 +145,7 @@ def _local_vision_call(image_paths: list, prompt: str, max_tokens: int) -> str:
         raise ImageError("My local AI isn't running yet (it may still be setting up), so I can't look at pictures "
                          "right now. Try again in a little while.")
     if response.status_code == 404:
-        raise ImageError("This computer doesn't have the local vision model (it's installed automatically on "
-                         "computers with 16 GB of memory; Settings can turn it on). A Groq key in Settings works too.")
+        raise ImageError(vision_missing_message())
     if not response.ok:
         raise ImageError(f"Looking at the image failed (the local AI answered {response.status_code}).")
     text = ((response.json().get("message") or {}).get("content") or "").strip()

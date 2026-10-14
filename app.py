@@ -73,11 +73,15 @@ import classroom
 import earth
 import geo
 import equations
+import arithmetic
 import forecast
 import functions
 import graphs
 import images
 import planets
+import worldclock
+import coder
+import code_destinations
 import web_search
 import whatsapp
 import phone_control
@@ -88,7 +92,7 @@ import push
 import sms
 import queue
 from timers import TimerManager, format_duration, parse_timer_command
-from speech_fixes import fix_names
+from speech_fixes import fix_names, fix_spoken
 import timeparse
 from timeparse import format_time, parse_start_time
 
@@ -612,6 +616,13 @@ async def handle_client(websocket):
             elif data.get("type") == "setup_retry":
                 if LLM_BACKEND != "groq":   # the online AI only: the local one stays closed
                     local_ai_manager.start_background()
+            elif str(data.get("type") or "").startswith("code_"):   # the Coding Mode window
+                coding_window_says(data)
+            elif data.get("type") == "clock_add":   # the clock window's "add a city" field
+                if str(data.get("name") or "").strip():
+                    add_clock_city(str(data["name"]).strip()[:80])
+            elif data.get("type") == "clock_cities":
+                clock_window_reports(data)
             elif data.get("type") == "weather_refresh":   # the weather window's refresh button, or a click on the card
                 refresh_weather_window(str(data.get("city") or "")[:80], refresh=data.get("refresh") is not False)
             elif data.get("type") == "window_visibility":
@@ -1061,38 +1072,504 @@ def weather_loop():
         settings_changed.wait(timeout=delay)   # a new city in Settings refreshes the panel right away
 
 
+# ---------- Coding Mode: "write a Python calculator and open it in VS Code" (coder.py is the engine, code_destinations.py the
+# places it can put the result, coding/ the window) ----------
+# Which AI writes the code: Groq's larger model, which the same free key reaches (asked for by the user, 2026-10-13: free, and
+# better at code than the small one Jarvis talks with). It is used for code whatever LLM_BACKEND says, because that line is
+# about who Jarvis talks with. A CODE_MODEL line in .env names another model; with no Groq key at all, the AI on this
+# computer writes the code. Groq's free plan allows 8,000 tokens a minute: a wait for that limit is shown, not hidden.
+DEFAULT_CODE_MODEL = "openai/gpt-oss-120b"
+CODE_MODEL = (os.getenv("CODE_MODEL") or "").strip().strip("\"'") or DEFAULT_CODE_MODEL
+code_state = {"open": False, "job": None, "project": None, "busy": False, "at": 0.0}
+_code_lock = threading.Lock()
+_code_model_refused = False   # the chosen model isn't offered to this key any more: the chat model writes the code instead
+
+
+def code_model_name() -> str:
+    """The model that will really write the code now (shown in the window, never a hoped-for one)."""
+    if not GROQ_KEY:
+        return f"{local_ai_manager.text_model} (on this computer)"
+    return GROQ_MODEL if _code_model_refused else CODE_MODEL
+
+
+def _code_chat(messages: list, max_tokens: int) -> str:
+    """The coding engine's question to the AI: a longer answer than chat ever needs, patient with the rate limit."""
+    global _code_model_refused
+    if not GROQ_KEY:   # no online AI at all: the one on this computer
+        return groq_chat(model=GROQ_MODEL, messages=messages, max_tokens=max_tokens).choices[0].message.content or ""
+    kwargs = {"messages": messages, "max_tokens": max_tokens}
+    for attempt in range(5):
+        model = code_model_name()
+        if "gpt-oss" in model:   # its thinking counts against the answer's length: little for a plan, more for code
+            kwargs["reasoning_effort"] = "low" if max_tokens <= 4000 else "medium"
+        else:
+            kwargs.pop("reasoning_effort", None)
+        try:
+            return groq_client.with_options(timeout=150, max_retries=0).chat.completions.create(   # no hidden retries: waits are done below, in the open
+                model=model, **kwargs).choices[0].message.content or ""
+        except Exception as e:
+            text = str(e)
+            if not _code_model_refused and model != GROQ_MODEL and re.search(r"model.{0,40}(?:not found|does not exist|decommissioned|no longer)|404", text, re.I):
+                print(f"The coding model {model} isn't available to this key ({text[:120]}); using {GROQ_MODEL}.", flush=True)
+                _code_model_refused = True
+                continue
+            if re.search(r"too large|413|max_tokens|maximum", text, re.I) and kwargs["max_tokens"] > 3000:
+                kwargs["max_tokens"] //= 2      # this account's limit is smaller than what was asked for: ask for less
+                continue
+            wait = re.search(r"try again in (?:(\d+)m)?([\d.]+)\s*(ms|s)", text, re.I)
+            if attempt < 4 and re.search(r"rate.?limit|429", text, re.I):
+                seconds = (int(wait.group(1) or 0) * 60 + float(wait.group(2)) * (0.001 if wait.group(3).lower() == "ms" else 1)) if wait else 20
+                if seconds <= 90:
+                    job = code_state["job"]
+                    if job and code_state["busy"]:   # say why nothing is moving
+                        job.step = f"Waiting {int(seconds) + 1} seconds for the AI's free-plan limit"
+                        send_ui_update_once({"type": "coding", "data": job.public()})
+                    time.sleep(seconds + 1)
+                    continue
+            raise
+    raise coder.CodeError("The AI kept refusing that request.")
+
+
+def _code_progress(job) -> None:
+    code_state.update(job=job, at=time.time())
+    send_ui_update_once({"type": "coding", "data": job.public()})
+
+
+def code_engine():
+    return coder.Engine(_code_chat, _code_progress, model=code_model_name())
+
+
+def current_code_project():
+    """The project follow-ups mean: the one just made or chosen, else the last one that still exists on disk."""
+    project = code_state["project"]
+    return project if project and os.path.isdir(project.get("path", "")) else coder.latest_project()
+
+
+def coding_info() -> dict:
+    """What the Coding Mode window needs to draw itself: languages, destinations (and why one can't be used), recent work."""
+    return {"languages": [{"key": l.key, "name": l.name} for l in coder.LANGUAGES.values()],
+            "destinations": code_destinations.describe(), "history": coder.load_history()[:12], "model": code_model_name(),
+            "projectsDir": coder.default_projects_dir(), "busy": code_state["busy"], "drive": code_destinations.drive_status(),
+            "sandbox": sys.platform == "darwin" and os.path.exists("/usr/bin/sandbox-exec"),   # whether tests can be fenced in here
+            "job": code_state["job"].public() if code_state["job"] else None}
+
+
+def _deliver_code(job, destination: str) -> str:
+    """Send a finished project to where it was asked to go; what to say about that (true to what really happened)."""
+    project = {**job.public(), "title": job.name.replace("-", " ").title()}
+    files = {p: c for p, c in coder.read_project(job.path)["files"].items() if not p.endswith(".docx")}
+    result = code_destinations.deliver(destination, project, files)
+    job.delivered = {"destination": destination, **result}
+    job.destination = destination
+    coder.save_project_record(job.public())
+    _code_progress(job)
+    return result["message"]
+
+
+def _run_code_job(job, destination: str, language: str = "", name: str = "", location: str = "", project: dict = None, announce: bool = True) -> str:
+    try:
+        engine = code_engine()
+        if job.action == "change":
+            before = (project or {}).get("tests") or {}
+            engine.change(job, project, evidence=before.get("output", "") if before.get("status") == "failed" else "")
+            if job.phase == "done" and before.get("status") in ("passed", "failed"):
+                # its tests were run before at the user's request: run them again on the changed code, and say the real result
+                job.tests = coder.run_tests(job.path, job.test)
+                coder.save_project_record(job.public())
+        else:
+            engine.create(job, language=language, name=name, location=location)
+        reply = coder.result_sentence(job)
+        if job.phase == "done":
+            code_state["project"] = job.public()
+            if job.action == "change" and job.tests.get("status") in ("passed", "failed", "not_run"):
+                reply += " I ran the tests again. " + _tests_reply(job.tests, job.name)
+            if destination:
+                reply += " " + _deliver_code(job, destination)
+            elif job.action == "change" and job.diffs:
+                reply += " The changes are in the coding window."
+            else:   # nowhere was asked for: it is simply made, and this is where
+                reply += f" It's in {job.path}."
+    except Exception as e:   # the engine reports its own failures; this is a bug in the glue, said plainly
+        traceback.print_exc()
+        job.phase, job.error = "failed", coder.friendly_error(e)
+        reply = job.error
+    finally:
+        code_state["busy"] = False
+        _code_progress(job)
+    if announce:
+        broadcast("ai", reply)
+        speak(reply)
+    return reply
+
+
+def start_code_job(action: str, request: str, language: str = "", destination: str = "", name: str = "", location: str = "", wait: bool = False) -> str:
+    """Begin writing (or changing) code. In the window's own time unless wait: then the result comes back as the answer."""
+    with _code_lock:
+        if code_state["busy"]:
+            return f"I'm still working on {code_state['job'].name or 'the last request'}. One at a time: ask again when it's done."
+        project = current_code_project() if action == "change" else None
+        if action == "change" and not project:
+            return "There's no project to change yet. Tell me what to build first."
+        if destination and destination not in code_destinations.DESTINATIONS:
+            destination = ""
+        if location:
+            location = os.path.abspath(os.path.expanduser(location))
+            if not os.path.isdir(location):
+                return f"I couldn't find the folder {location}. Choose a folder that exists, or leave it empty."
+        job = coder.Job(id=datetime.now().strftime("%Y%m%d-%H%M%S"), request=request.strip(), action=action, destination=destination,
+                        created=time.time(), model=code_model_name())
+        code_state.update(busy=True, job=job, at=time.time())
+    if ws_loop and connected_clients:
+        send_ui_update_once({"type": "coding_open", "data": coding_info()})
+    kwargs = {"language": language, "name": name, "location": location, "project": project}
+    if wait or not (ws_loop and connected_clients):
+        return _run_code_job(job, destination, announce=False, **kwargs)
+    threading.Thread(target=_run_code_job, args=(job, destination), kwargs=kwargs, daemon=True, name="coding").start()
+    what = f"changing {project['name']}" if action == "change" else "writing it"
+    return f"On it: I'm {what} now. You can watch in the coding window; I'll tell you when it's done."
+
+
+def _tests_reply(result: dict, name: str) -> str:
+    if result["status"] == "not_run":
+        return f"I didn't run any tests for {name}: {result['output']}"
+    lines = [ln for ln in result["output"].splitlines() if ln.strip()]
+    tail = lines[-1] if lines else ""
+    where = " (in a sandbox, without network)" if result["sandboxed"] else ""
+    if result["status"] == "passed":
+        return f"The tests of {name} passed{where}: {tail}"
+    return f"The tests of {name} failed{where}. The last line says: {tail} The full output is in the coding window; say \"fix the errors\" and I'll work on them."
+
+
+def run_code_tests(announce: bool = False) -> str:
+    """Run the current project's own tests. Only ever on an explicit request: this is the one place its code is executed."""
+    project = current_code_project()
+    if not project:
+        return "There's no project yet whose tests I could run."
+    job = code_state["job"] if code_state["job"] and code_state["job"].path == project["path"] else coder.Job(
+        id=project["id"], request=project.get("request", ""), **{k: project.get(k, "") for k in ("name", "language", "path", "summary", "run", "test", "needs")},
+        files=project.get("files", []), checks=project.get("checks", []), phase="done")
+    job.tests = {"status": "running", "command": "", "output": ""}
+    _code_progress(job)
+    job.tests = coder.run_tests(project["path"], project.get("test", ""))
+    code_state["project"] = job.public()
+    coder.save_project_record(job.public())
+    _code_progress(job)
+    reply = _tests_reply(job.tests, project["name"])
+    if announce:
+        broadcast("ai", reply)
+        speak(reply)
+    return reply
+
+
+def handle_code_command(text: str):
+    project = current_code_project()
+    recent = bool(project) and (code_state["open"] or time.time() - code_state["at"] < 15 * 60)
+    request = coder.parse_request(text, have_project=bool(project), recent=recent)
+    if request is None:
+        return None
+    action = request["action"]
+    window = bool(ws_loop and connected_clients)
+    if action == "open_mode":
+        if not window:
+            return "Coding Mode is in Jarvis's window, which isn't open. You can still ask me to write code: just say what to build."
+        send_ui_update_once({"type": "coding_open", "data": coding_info()})
+        return "Coding Mode is open. Tell me what to build."
+    if action == "close_mode":
+        send_ui_update_once({"type": "close_coding"})
+        return "Okay, I closed Coding Mode." if window else None
+    if action == "create":
+        if code_state["busy"]:
+            return f"I'm still working on {code_state['job'].name or 'the last request'}. Ask again when it's done."
+        return start_code_job("create", request["request"], request["language"] or "", request["destination"] or "")
+    if action == "deliver":
+        if not project:
+            return "I haven't written any code yet. Tell me what to build, and where to put it."
+        job = coder.Job(id=project["id"], request=project.get("request", ""), phase="done", files=project.get("files", []), checks=project.get("checks", []),
+                        **{k: project.get(k, "") for k in ("name", "language", "path", "summary", "run", "test", "needs")})
+        return _deliver_code(job, request["destination"])
+    if action == "change":
+        return start_code_job("change", request["request"], destination=request.get("destination") or "")
+    if action == "tests":
+        if window:
+            threading.Thread(target=run_code_tests, kwargs={"announce": True}, daemon=True, name="coding-tests").start()
+            return f"Running the tests of {project['name']}."
+        return run_code_tests()
+    if action == "check":
+        results = coder.check_project(project["path"])
+        return f"{project['name']}: {coder.checks_summary(results)}" + "".join(f" {r['file']}: {r['output'].splitlines()[0]}" for r in results if r["status"] == "failed" and r["output"])[:300]
+    if action == "continue":
+        code_state["project"] = project
+        if window:
+            send_ui_update_once({"type": "coding_open", "data": {**coding_info(), "project": project}})
+        return f"The last project is {project['name']}, in {project['path']}. Tell me what to change, or say \"run the tests\"."
+    if action == "explain":
+        try:
+            return code_engine().explain(request["request"], project)
+        except coder.CodeError as e:
+            return str(e)
+        except Exception as e:
+            return coder.friendly_error(e)
+    return None
+
+
+def tool_write_code(request: str = "", language: str = "", destination: str = "", **_ignored) -> str:
+    """The write_code tool: the AI's way in, for a coding request the direct command didn't catch. It waits for the real
+    result (files written, checks run), which is what the AI is given back."""
+    request = (request or "").strip()
+    if len(request.split()) < 2:
+        return "Nothing was written: the request didn't say what to build. Ask the user what they want."
+    language = coder.language_for(language or "") or coder.language_for(request) or ""
+    destination = coder.destination_for("in " + (destination or "")) or (destination if destination in code_destinations.DESTINATIONS else "")
+    return start_code_job("create", request, language, destination, wait=True)
+
+
+def is_code_request(text: str) -> bool:
+    """Asking for code to be written or changed (the only time the write_code tool is offered or allowed)."""
+    n = " ".join((text or "").lower().replace("’", "'").split())
+    if re.match(r"^(?:i|we|my|he|she|they|it)\b", n) and not re.match(r"^i (?:want|need|would like|'d like)\b", n):
+        return False
+    return bool(re.search(r"\b(?:write|build|create|make|code|program|develop|generate)\b.{0,60}\b(?:code|program|script|app|application|website|web ?page|project|"
+                          r"game|api|tool|bot)\b", n)) and not coder._NOT_CODE.search(n)
+
+
+def coding_window_says(data: dict) -> None:
+    """Everything the Coding Mode window asks for. Slow work (the AI, tests, sign-in) runs off the socket's thread."""
+    kind = data.get("type")
+    reply = lambda payload: send_ui_update_once(payload)
+    if kind == "code_window":
+        code_state["open"] = data.get("open") is True
+    elif kind == "code_info":
+        reply({"type": "coding_info", "data": coding_info()})
+    elif kind == "code_start":
+        text = str(data.get("request") or "").strip()[:4000]
+        if len(text.split()) < 2:
+            return reply({"type": "coding_note", "message": "Say what to build, in a sentence or two."})
+        answer = start_code_job("create", text, coder.language_for(text) or "", coder.destination_for(text) or "")
+        if not answer.startswith("On it"):
+            reply({"type": "coding_note", "message": answer})
+    elif kind == "code_change":
+        project = next((p for p in coder.load_history() if p["id"] == data.get("id")), None)
+        if project:
+            code_state["project"] = project
+        answer = start_code_job("change", str(data.get("request") or "").strip()[:4000])
+        if not answer.startswith("On it"):
+            reply({"type": "coding_note", "message": answer})
+    elif kind == "code_pick":
+        project = next((p for p in coder.load_history() if p["id"] == data.get("id")), None)
+        if project and os.path.isdir(project["path"]):
+            code_state.update(project=project, at=time.time())
+            reply({"type": "coding", "data": {**project, "phase": "done", "changed": []}})
+        else:
+            reply({"type": "coding_note", "message": "That project's folder isn't there any more."})
+    elif kind == "code_file":
+        project = current_code_project()
+        job = code_state["job"]
+        path = str(data.get("path") or "")
+        try:
+            with open(coder.safe_path(project["path"], path), encoding="utf-8") as f:
+                content = f.read(coder.MAX_FILE_BYTES)
+            reply({"type": "coding_file", "path": path, "content": content,
+                   "diff": job.diffs.get(path, "") if job and job.path == project["path"] else ""})
+        except (coder.CodeError, OSError, UnicodeDecodeError, TypeError) as e:
+            reply({"type": "coding_file", "path": path, "content": "", "error": f"I couldn't read that file ({type(e).__name__})."})
+    elif kind in ("code_tests", "code_deliver", "code_connect_drive", "code_check"):
+        def work():
+            if kind == "code_tests":
+                run_code_tests()
+            elif kind == "code_check":
+                project = current_code_project()
+                if project and code_state["job"] and code_state["job"].path == project["path"]:
+                    code_state["job"].checks = coder.check_project(project["path"])
+                    _code_progress(code_state["job"])
+            elif kind == "code_deliver":
+                answer = handle_code_command(f"save it in {code_destinations.SPOKEN.get(str(data.get('destination')), 'a folder on this computer')}") \
+                    if str(data.get("destination")) in code_destinations.DESTINATIONS else "I don't know that place."
+                reply({"type": "coding_note", "message": answer or ""})
+            else:
+                try:
+                    code_destinations.drive_credentials(interactive=True)
+                    message = "Google Drive is connected."
+                except code_destinations.DriveUnavailable as e:
+                    message = str(e)
+                reply({"type": "coding_info", "data": coding_info()})
+                reply({"type": "coding_note", "message": message})
+        threading.Thread(target=work, daemon=True, name=kind).start()
+
+
+# ---------- The world clock: "what time is it in Tokyo?" opens it (see worldclock.py for the places and what is said, clock/ for the window) ----------
+clock_state = {"open": False, "places": [], "at": 0.0}   # what the clock window shows (it reports its own changes too)
+pending_clock_choice = None   # "Which Valencia do you mean…?": the request waiting for that answer
+last_place_asked = {"name": "", "place": None, "at": 0.0}   # the last place a time or weather question named, for "what time is it there?"
+
+
+def clock_in_use() -> bool:
+    return bool(clock_state["open"] and ws_loop and connected_clients)
+
+
+def _clock_home() -> dict:
+    """The user's own place for the clock window: named after the weather city, with its coordinates when they are
+    already known (for the daylight strip); never a network wait."""
+    city = os.getenv("WEATHER_CITY", "")
+    try:
+        found = earth._CACHE.get(city.strip().lower()) if city.strip() else None
+    except Exception:
+        found = None
+    if not found or not found.get("timezone"):
+        return worldclock.home_place()   # where the weather city is isn't known yet: "Your time", no Sun claimed
+    home = worldclock.home_place(city, found["timezone"])   # the window uses it only if it matches the computer's own time
+    home.update(lat=found["lat"], lon=found["lon"])
+    return home
+
+
+def show_world_clock(names: list, difference: bool = False, daylight: bool = False, mode: str = "set", known: dict = None) -> str:
+    """Find every place, say the time there and put it on the clock window. A place that can't be told apart or
+    found is asked about or reported instead: the window never shows a guessed time. known: names already settled."""
+    global pending_clock_choice
+    known = dict(known or {})
+    places = []
+    for name in names[:worldclock.MAX_PLACES]:
+        if name in known:
+            places.append(known[name])
+            continue
+        outcome, found = worldclock.resolve(name)
+        if outcome == "home":
+            places.append(_clock_home())
+        elif outcome == "ok":
+            places.append(found)
+            known[name] = found
+        elif outcome == "ambiguous":
+            pending_clock_choice = {"names": names, "name": name, "options": found, "known": known, "difference": difference,
+                                    "daylight": daylight, "mode": mode, "at": time.time()}
+            label = lambda p: f"{p['name']}, {p['country']}" if p.get("country") else p["name"]
+            return f"Which {name.title()} do you mean: {label(found[0])}, or {label(found[1])}?"
+        else:   # more than one time zone, or no such place: say so, show nothing
+            return found
+    pending_clock_choice = None
+    there = [p for p in places if not p.get("home")]
+    if not there:
+        return None
+    text = worldclock.describe(places, difference=difference, daylight=daylight)
+    last_place_asked.update(name=there[0]["name"], place=there[0], at=time.time())
+    if ws_loop and connected_clients:
+        send_ui_update_once({"type": "clock", "data": {**worldclock.window(there, mode), "home": _clock_home()}})
+        shown = there if mode == "set" else [*clock_state["places"], *[p for p in there if p["name"] not in {q["name"] for q in clock_state["places"]}]]
+        clock_state.update(open=True, places=shown[-worldclock.MAX_PLACES:], at=time.time())
+        text += " The world clock is on your screen." if mode == "set" else " I added it to the world clock."
+    return text
+
+
+def handle_clock_choice(text: str):
+    """The answer to "Which Valencia do you mean: Valencia, Spain, or Valencia, Venezuela?"."""
+    global pending_clock_choice
+    pending = pending_clock_choice
+    if not pending or time.time() - pending["at"] > 3 * 60:
+        return None
+    n = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
+    options, chosen = pending["options"], None
+    if re.search(r"\b(?:first|1st|former)\b", n):
+        chosen = options[0]
+    elif re.search(r"\b(?:second|2nd|latter|other one)\b", n):
+        chosen = options[1]
+    else:
+        said, asked = set(n.split()), set(re.findall(r"[a-z]+", pending["name"].lower()))
+        scores = [len((set(re.findall(r"[a-z]+", f"{o['name']} {o['country']}".lower())) - asked) & said) for o in options]
+        if max(scores) > 0 and scores.count(max(scores)) == 1:
+            chosen = options[scores.index(max(scores))]
+    if not chosen:
+        pending_clock_choice = None   # they moved on to something else
+        return None
+    return show_world_clock(pending["names"], pending["difference"], pending["daylight"], pending["mode"],
+                            {**pending["known"], pending["name"]: chosen})
+
+
+def handle_clock_command(text: str):
+    request = worldclock.parse_request(text, clock_open=clock_in_use(), shown=[p["name"] for p in clock_state["places"]])
+    if request is None:
+        return None
+    action = request["action"]
+    if action == "close":
+        if not clock_in_use():
+            return "The world clock isn't open."
+        send_ui_update_once({"type": "close_clock"})
+        clock_state.update(open=False)
+        return "Okay, I closed the clock."
+    if action == "world":
+        places = worldclock.around_the_world()
+        text = worldclock.describe(places[1:4])   # said: three of them; shown: all
+        if ws_loop and connected_clients:
+            send_ui_update_once({"type": "clock", "data": {**worldclock.window(places, "set", focus=-1), "home": _clock_home()}})
+            clock_state.update(open=True, places=places, at=time.time())
+            text += " The rest are on the world clock."
+        return text
+    if action == "there":
+        place = last_place_asked["place"] if time.time() - last_place_asked["at"] < 10 * 60 else None
+        if not place and clock_in_use() and clock_state["places"]:
+            place = clock_state["places"][0]
+        if not place:
+            return None   # nothing here says where "there" is: the AI has the conversation, and the world_clock tool
+        return show_world_clock([place["name"]], daylight=request.get("daylight", False), known={place["name"]: place})
+    if action == "remove":
+        said = {worldclock._key(n) for n in request["places"]} | {worldclock.known_name(n).lower() for n in request["places"]}
+        gone = [p for p in clock_state["places"] if p["name"].lower() in said]
+        if not gone:
+            return f"{request['places'][0].title()} isn't on the world clock."
+        send_ui_update_once({"type": "clock", "data": worldclock.window(gone, "remove")})
+        clock_state["places"] = [p for p in clock_state["places"] if p not in gone]
+        return f"Removed {' and '.join(p['name'] for p in gone)} from the clock."
+    mode = "add" if action == "add" else "set"
+    return show_world_clock(request["places"], request.get("difference", False), request.get("daylight", False), mode)
+
+
+def tool_world_clock(places=None, **_ignored) -> str:
+    """The world_clock tool: the AI's way in, for a time question the direct command didn't catch ("and there?")."""
+    if isinstance(places, str):
+        places = [p for p in re.split(r"\s*(?:,|;|\band\b)\s*", places) if p]
+    names = [str(p).strip() for p in (places or []) if str(p).strip()]
+    if not names:
+        return "No place was named. Ask the user which city they mean."
+    return show_world_clock(names) or "That is the user's own time zone: tell them their local time instead."
+
+
+def add_clock_city(name: str) -> None:
+    """The clock window's own "add a city" field: find it and send it back, or say why not (in the window, unspoken)."""
+    def work():
+        outcome, found = worldclock.resolve(name)
+        if outcome == "ok":
+            send_ui_update_once({"type": "clock", "data": worldclock.window([found], "add")})
+        elif outcome == "ambiguous":
+            send_ui_update_once({"type": "clock_note", "message": f"Which {name.title()}?", "options": worldclock.window(found)["cities"]})
+        elif outcome == "home":
+            send_ui_update_once({"type": "clock_note", "message": "Your own time is always on the clock."})
+        else:
+            send_ui_update_once({"type": "clock_note", "message": found})
+    threading.Thread(target=work, daemon=True, name="clock-add").start()
+
+
+def clock_window_reports(data: dict) -> None:
+    """The window says what it shows now (a city added or removed there, or the window closed)."""
+    cities = [c for c in (data.get("cities") or []) if isinstance(c, dict) and c.get("name") and c.get("tz")][:worldclock.MAX_PLACES]
+    clock_state.update(open=data.get("open") is True, at=time.time(),
+                       places=[{"name": str(c["name"])[:80], "country": str(c.get("country") or "")[:80], "tz": str(c["tz"])[:64],
+                                "lat": c.get("lat"), "lon": c.get("lon")} for c in cities])
+
+
 # ---------- The weather window: "what's the weather?" opens it (see forecast.py for the data, weather/ for the window) ----------
-_WEATHER_ASK = re.compile(
-    r"\b(?:what'?s|what is|how'?s|how is|check|tell me|show me|show|open|give me|get me|bring up|display)\b.*\bweather\b"
-    r"|\bweather\b.*\b(?:like|today|tonight|tomorrow|now|outside|forecast|this week|right now)\b"
-    r"|^(?:the )?(?:weather|forecast|weather forecast|weather report)(?: please)?$"
-    r"|\b(?:what'?s|what is|show me|show|open|check|give me) (?:the |my )?(?:weather )?forecast\b"
-    r"|\bis it (?:raining|snowing|sunny|cloudy|cold|hot|windy)(?: outside| now| right now| today)?$"
-    r"|\b(?:temperature|forecast)\b.*\b(?:outside|today|now)\b"
-    r"|\bdo i need (?:an umbrella|a jacket|a coat)\b")
 _WEATHER_CLOSE = re.compile(r"^(?:(?:please|can you|could you) )*(?:close|hide|dismiss|exit) (?:the |my )?weather"
                             r"(?: (?:window|panel|screen|app|forecast))?$")
-_WEATHER_TALK = re.compile(r"^(?:i|we|my|our|he|she|they|it was|the weather (?:was|has been))\b")
 
 
 def parse_weather_request(text: str):
-    """{"action": "show", "city": "" | "Paris"} / {"action": "close"} for a weather request, else None. Talking
-    about the weather ("I was talking about the weather yesterday") is not a request."""
+    """{"action": "show", "city": "" | "paris", "when": ..., "about": ...} (see forecast.parse_request) or
+    {"action": "close"} for a weather request, else None."""
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower().replace("’", "'")).split())
-    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jarvis|jervis) ", "", n)
-    if _WEATHER_CLOSE.match(n):
+    if _WEATHER_CLOSE.match(re.sub(r"^(?:(?:hey|ok|okay) )?(?:jarvis|jervis) ", "", n)):
         return {"action": "close"}
-    if _WEATHER_TALK.match(n) or not _WEATHER_ASK.search(n):
-        return None
-    city = ""
-    m = re.search(r"\b(?:weather|forecast|temperature|raining|snowing|sunny|cloudy|cold|hot|windy)\b.*?\b(?:in|for|at) "
-                  r"(?P<c>[a-z' ]+?)(?: (?:today|tonight|tomorrow|now|right now|this week|please))*$", n)
-    if m and m.group("c") not in ("the moment", "general", "my area", "my city", "here", "outside"):
-        city = m.group("c").strip()
-    return {"action": "show", "city": city}
+    request = forecast.parse_request(text)
+    return {"action": "show", **request} if request else None
 
 
-def show_weather(city: str = "", refresh: bool = False, speak_reply: bool = True, open_window: bool = True) -> str:
+def show_weather(city: str = "", refresh: bool = False, speak_reply: bool = True, open_window: bool = True,
+                 when: str = "", about: str = "") -> str:
     """Open the weather window (straight away, as a skeleton), fetch, then fill it. Returns what to say.
     open_window=False only updates a window that is already open (its own refresh button)."""
     window = bool(ws_loop and connected_clients)
@@ -1107,10 +1584,15 @@ def show_weather(city: str = "", refresh: bool = False, speak_reply: bool = True
         traceback.print_exc()
         send_ui_update_once({"type": "weather_panel", "error": "Weather data is temporarily unavailable."})
         return f"The weather couldn't be loaded ({type(e).__name__})."
-    send_ui_update_once({"type": "weather_panel", "data": data})
+    send_ui_update_once({"type": "weather_panel", "data": {**data, "asked": forecast.asked_dates(data, when)}})
+    if city and data.get("timezone"):   # "…and what time is it there?"
+        parts = [p.strip() for p in data["place"]["name"].split(",") if p.strip()]
+        last_place_asked.update(name=parts[0], at=time.time(), place={
+            "name": parts[0], "country": parts[-1] if len(parts) > 1 else "", "tz": data["timezone"],
+            "lat": data["place"].get("lat"), "lon": data["place"].get("lon")})
     if not city:
         send_ui_update("weather", weather_card(data))   # keep the small card in step with what was just shown
-    text = forecast.summary(data)
+    text = forecast.day_summary(data, when, about)   # "tomorrow", "will it rain on friday": that day, that question
     if window and speak_reply:
         text += " The full forecast is on your screen."
     return text
@@ -1123,7 +1605,7 @@ def handle_weather_command(text: str):
     if request["action"] == "close":
         send_ui_update_once({"type": "close_weather"})
         return "Okay, I closed the weather." if ws_loop and connected_clients else "The weather window isn't open."
-    return show_weather(request["city"])
+    return show_weather(request["city"], when=request["when"], about=request["about"])
 
 
 def refresh_weather_window(city: str = "", refresh: bool = True) -> None:
@@ -1697,6 +2179,8 @@ def youtube_playback_action(text: str):
 def parse_volume_command(text: str):
     """Return (action, amount) for "volume up", "turn it down", "set volume to 40", "mute", else None."""
     n = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
+    if re.search(r"\b(?:volume|sound)\b", n) and not re.search(r"\d", n):
+        n = " ".join(re.sub(r"[^a-z0-9 ]", " ", functions.normalize(n)).split())   # "to fifty percent" -> "to 50 percent"
     m = re.search(r"\bvolume (?:to |at |on )?(\d{1,3})\b|\bset (?:the )?(?:volume|sound) (?:to )?(\d{1,3})\b", n)
     if m:
         return "set", min(100, int(next(g for g in m.groups() if g)))
@@ -2068,7 +2552,7 @@ def handle_math_followup(text: str):
     asks_yint = bool(_ASK_YINT.search(n))
     if not (asks_steps or asks_roots or asks_vertex or asks_yint):
         return None
-    if not (_REFERS.search(n) or asks_steps or re.search(r"\bwhat\s+(?:is|are)\s+the\b", n)):
+    if not (_REFERS.search(n) or asks_steps or re.search(r"\bwhat(?:'?s|\s+(?:is|are))\s+the\b", n)):
         return None
     if asks_steps or asks_roots:
         worksheet = equations.solve(*(equation if equation else (tree, None)))
@@ -2185,6 +2669,7 @@ def answer_earth_request(request: dict, known: dict = None):
         request = {"action": "distance", "a": last_globe_route["a"]["name"], "b": last_globe_route["b"]["name"],
                    "wants": request["wants"]}
         known.update({request["a"]: last_globe_route["a"], request["b"]: last_globe_route["b"]})
+    request = earth.settle_split(request)   # "from tel aviv london or new york": where the first place ends
     for name in dict.fromkeys(_request_place_names(request)):
         if name in known:
             continue
@@ -2321,9 +2806,11 @@ def handle_planet_command(text: str):
         return {"prev": "Here is the previous one.", "next": "Here is the next one.", "first": "Here is the first one."}.get(request["which"], "Here it is again.")
     if request["action"] == "ask":
         return "Which one? Try Mars, Jupiter, Saturn, or any other planet, the Sun, or the Moon."
-    info = planets.build(request["body"])
+    info = planets.build(request["body"], request.get("fact", ""))
     planets_shown += 1
     send_ui_update_once({"type": "planet", "data": info})
+    if request.get("fact"):   # "how big is jupiter": the answer first, then the rest of what's on screen
+        return planets.answer(request["body"], request["fact"], request.get("from_earth", False)) + "\n\n" + info["text"].split("\n\n", 1)[-1]
     return info["text"]
 
 
@@ -2793,7 +3280,8 @@ _TASK_SPLIT = re.compile(
 def split_tasks(text: str) -> list:
     """The separate things asked for in one message (each starts with an action or a question), or the whole text as one."""
     parts = [p.strip(" ,.;") for p in _TASK_SPLIT.split((text or "").strip())]
-    return [p for p in parts if p] or [text]
+    parts = [p for p in parts if p and not re.fullmatch(r"(?:hey |ok |okay )?(?:jarvis|jervis)", p, re.I)]   # "Jarvis, …" is not a task
+    return parts or [text]
 
 
 def handle_multi_task(text: str):
@@ -3362,6 +3850,9 @@ def handle_direct_command(text: str):
     blender_reply = handle_blender_command(text)
     if blender_reply:
         return blender_reply
+    code_reply = handle_code_command(text)   # "write a Python calculator and open it in VS Code": one task
+    if code_reply:
+        return code_reply
     spotify = handle_spotify_search(text)   # before splitting "take control and search … in Spotify" into parts
     if spotify:
         return spotify
@@ -3390,6 +3881,14 @@ def handle_direct_command(text: str):
     followup = handle_math_followup(text)
     if followup:
         return followup
+    sum_reply = arithmetic.answer(text)   # "what's 12 times 12": exact and immediate, never a guess from the AI
+    if sum_reply:
+        return sum_reply
+    clock_reply = handle_clock_choice(text) or handle_clock_command(text)   # "what time is it in Tokyo?"
+    if clock_reply:
+        return clock_reply
+    if (planets.parse_request(text) or {}).get("fact"):   # "how far is mars from earth" is about the planets, not two towns
+        return handle_planet_command(text)
     earth_reply = handle_earth_choice(text) or handle_earth_command(text) or handle_earth_places_answer(text)
     if earth_reply:
         return earth_reply
@@ -3519,6 +4018,9 @@ def handle_direct_command(text: str):
     volume = parse_volume_command(text)
     if volume:
         return change_volume(*volume)
+    playing_reply = what_is_playing(text)
+    if playing_reply:
+        return playing_reply
     seek_to = parse_seek_command(text)
     if seek_to is not None:
         if stremio_active and not (youtube_active or netflix_active):
@@ -4190,6 +4692,34 @@ def play_another_by_artist(artist: str) -> str:
     return f"Playing {pick['name']} by {artist_info['name']}."
 
 
+_WHAT_PLAYING = re.compile(
+    r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:what(?:'?s| is) (?:this |that |the )?(?:song|track|music)(?: is (?:this|that|playing))?"
+    r"(?: called| playing| on)?|what (?:song|track|music) is (?:this|that|playing|on)|what(?:'?s| is) (?:playing|on spotify)|"
+    r"who (?:sings|is singing|sang|plays|made) (?:this|that)(?: song| track)?|what am i listening to|"
+    r"(?:what(?:'?s| is) )?the name of (?:this|that|the) (?:song|track))(?: right now| now| on spotify| please)*$")
+
+
+def what_is_playing(text: str):
+    """"What song is this?" -> the song Spotify is playing, by name. None for anything else."""
+    n = " ".join(re.sub(r"[^a-z0-9' ]", " ", (text or "").lower().replace("\u2019", "'")).split())
+    if not _WHAT_PLAYING.match(n):
+        return None
+    try:
+        if sp:
+            state = sp.current_playback() or {}
+            item = state.get("item") or {}
+            artist = (item.get("artists") or [{}])[0].get("name", "")
+            playing, name = bool(state.get("is_playing")), item.get("name", "") + (f" by {artist}" if artist and item.get("name") else "")
+        else:
+            playing, name = spotify_local.now_playing()
+    except Exception as e:
+        print(f"Asking Spotify what is playing failed: {e!r}", flush=True)
+        return "I couldn't ask Spotify what's playing right now."
+    if not name:
+        return "Nothing is playing on Spotify right now."
+    return f"This is {name}." if playing else f"Spotify is paused on {name}."
+
+
 def skip_track(direction: str) -> str:
     """Spotify: jump to the next or previous song and say what is playing now."""
     if not sp:
@@ -4569,6 +5099,8 @@ TOOL_FUNCTIONS = {
     "edit_image": tool_edit_image,
     "use_computer": tool_use_computer,
     "get_weather": tool_get_weather,
+    "world_clock": tool_world_clock,
+    "write_code": tool_write_code,
     "show_distance": lambda place_a="", place_b="", **kw: handle_earth_command(
         f"what is the distance between {place_a} and {place_b}") or "I couldn't show that distance.",
 }
@@ -4756,6 +5288,36 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "write_code",
+            "description": "Write real code as files on the user's computer: a program, script, website, API or whole project, in any "
+                           "programming language. Call it when the user asks for code to be written or built as files (not for a short "
+                           "snippet they only want explained in the chat). It writes the files, checks their syntax and reports exactly "
+                           "what happened; it does not run the code. Repeat its result faithfully.",
+            "parameters": {"type": "object", "properties": {
+                "request": {"type": "string", "description": "What to build, in the user's own words, with every detail they gave."},
+                "language": {"type": "string", "description": "The programming language, if the user named one."},
+                "destination": {"type": "string", "enum": ["vscode", "local", "word", "notes", "gdrive", "zip"],
+                                "description": "Only if the user asked for a place: VS Code, a local folder, a Word document, Apple Notes, Google Drive or a zip. Leave it out otherwise."}},
+                "required": ["request"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "world_clock",
+            "description": "Get the current local time in one or more places (cities, countries, states) and show them on "
+                           "Jarvis's world clock window. Call it whenever the user asks what time it is somewhere else, or "
+                           "for the time difference between places. The result is the real time: repeat it, never work it out yourself.",
+            "parameters": {"type": "object", "properties": {
+                "places": {"type": "array", "items": {"type": "string"},
+                           "description": "Each place as a name, e.g. [\"Tokyo\"] or [\"Tel Aviv\", \"Los Angeles\"]. "
+                                          "For 'there', use the place the conversation was just about."}},
+                "required": ["places"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "show_distance",
             "description": "Work out the distance between two places and show the route on Jarvis's 3D globe. Call it "
                            "whenever the user asks how far apart two places are (cities, countries, landmarks).",
@@ -4778,6 +5340,8 @@ SYSTEM_PROMPT = """You are Jarvis, an AI desktop assistant.
 - use_computer lets you work in an app on the user's screen with the mouse and keyboard. Call it only when the user explicitly asks you to do something on screen (for example "scroll down" or "fill in this form"). The user is asked for permission and can stop you at any time; say in one short sentence what you're starting, never that it's finished.
 - show_distance shows how far apart two places are on a 3D globe: call it for every question about the distance between two places, instead of answering from memory.
 - get_weather answers a direct weather question with the city set in Settings. Call it only when the user is actually asking about the weather.
+- write_code writes real code files on the user's computer and checks them. Call it when the user asks for a program, script, website or project to be built. Say only what its result says: never that code was run, tested or works unless the result says so.
+- world_clock gives the real current time in other places and shows the world clock. Call it for every question about what time it is somewhere else, or the time difference between places, and say the time exactly as its result gives it. Never work out another place's time yourself.
 - After using a tool, give the user a short natural spoken confirmation.
 - Keep casual answers concise and natural, never emoji.
 - When you recommend a movie or series, always write its exact title in **bold**.
@@ -5091,7 +5655,8 @@ def write_document(request: str, app_key: str, into_open: bool = False) -> str:
     try:
         response = groq_chat(
             model=GROQ_MODEL,
-            messages=[{"role": "system", "content": DOC_SYSTEM_PROMPT}, {"role": "user", "content": request}],
+            messages=[{"role": "system", "content": DOC_SYSTEM_PROMPT},
+                      {"role": "user", "content": documents.what_to_write(request)}],
             max_tokens=2500,
         )
         text = (response.choices[0].message.content or "").strip()
@@ -5145,7 +5710,15 @@ def should_enable_tools(text: str) -> bool:
     """Do not expose tools during ordinary conversation or incomplete phrases."""
     return (is_google_search_command(text) or is_music_command(text) or is_app_command(text) or is_youtube_command(text)
             or images.is_image_command(text) or images.has_pending_context() or is_computer_request(text)
-            or is_weather_command(text) or is_distance_question(text))
+            or is_weather_command(text) or is_distance_question(text) or is_clock_question(text) or is_code_request(text))
+
+
+def is_clock_question(text: str) -> bool:
+    """A question about the time somewhere else ("what time is it there?", "the time difference between…"): the only
+    kind the world_clock tool may answer. "I had a great time in Paris" is not one."""
+    n = " ".join((text or "").lower().replace("’", "'").split())
+    return bool(re.search(r"\bwhat(?:'s| is)? (?:the )?(?:current |local )?time\b.*\b(?:in|there|at)\b|\btime (?:is it|difference|zone)\b.*\b(?:in|there|between)\b|"
+                          r"\bworld clock\b|\bhours? (?:ahead|behind)\b", n))
 
 
 def is_distance_question(text: str) -> bool:
@@ -5419,7 +5992,7 @@ def _failed_generation_text(error: Exception) -> str:
     return ""
 
 
-ACTION_TOOLS = {"use_computer", "play_song", "play_music", "pause_music", "open_application", "play_youtube_video"}
+ACTION_TOOLS = {"use_computer", "play_song", "play_music", "pause_music", "open_application", "play_youtube_video", "write_code"}
 # Overheard talk about what someone else is doing ("no, he's doing it on the screen"): not a request to Jarvis, whatever
 # words it shares with one. It gets an ordinary answer, never the "say it as a command" correction.
 _ABOUT_SOMEONE_ELSE = re.compile(r"^(?:(?:no|yes|yeah|oh|well|look|see|wait)[, ]+)*(?:he|she|they|it)(?:'s|'re| is| are| was| were)\b", re.I)
@@ -5507,6 +6080,10 @@ def ask_jarvis(messages, user_text=""):
                 result = "Image editing was blocked because the user did not explicitly ask to edit the image. Respond without editing it."
             elif name == "use_computer" and not is_computer_request(user_text):
                 result = "Using the computer was blocked because the user did not ask for anything to be done on screen. Respond normally."
+            elif name == "write_code" and not is_code_request(user_text):
+                result = "Writing code was blocked because the user did not ask for code to be written. Respond normally."
+            elif name == "world_clock" and not is_clock_question(user_text):
+                result = "The world clock was blocked because the user did not ask what time it is somewhere. Respond normally."
             elif name == "get_weather" and not is_weather_command(user_text):
                 result = "The weather tool was blocked because the user did not explicitly ask about the weather. Respond normally."
             elif func:
@@ -5997,7 +6574,7 @@ def main_loop():
         if not isinstance(text, ImageCaption):  # already shown together with the image itself, in handle_client
             broadcast("user", text)
         if not typed:
-            text = fix_names(text) or text  # "Streamio", "Stream here" -> "stremio", etc.
+            text = fix_spoken(text) or text  # "Streamio", "Stream here" -> "stremio"; the sentence itself is left as heard
             if is_explicit_wake(text):  # "Hey Jarvis" while already awake: bring the window up, full screen
                 reopened = not window_visible
                 show_fullscreen()

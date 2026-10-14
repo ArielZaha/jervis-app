@@ -1,0 +1,22 @@
+{
+ "name": "awaken",
+ "frames": 559,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "asleep": 0,
+  "called": 195,
+  "awake": 229
+ },
+ "notes": {},
+ "lines": [
+  {
+   "file": "awaken_01.wav",
+   "frame": 229,
+   "text": "Good evening, Sir. How can I help you today?",
+   "seconds": 2.84
+  }
+ ],
+ "opened": []
+}

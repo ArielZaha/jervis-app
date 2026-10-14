@@ -115,7 +115,7 @@ FILLER_TAIL = (" app", " application", " for me", " please", " now", " on my com
 
 _LEAD = (r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) |please |can you |could you |would you |"
          r"i want you to |i want to |i need to |go ahead and |just )*")
-_OPEN_RE = re.compile(_LEAD + r"(open|launch|start|run)(?: up)? (.+)$")
+_OPEN_RE = re.compile(_LEAD + r"(open|launch|start|run|go to|go on|visit|take me to|bring up|pull up)(?: up)? (.+)$")
 _CLOSE_RE = re.compile(_LEAD + r"(?:close|quit|exit)(?: out of)? (.+?)(?: for me| please| now)*$")
 # "Open this app" / "close this app": no name, so "this" means the window being worked in (never Jarvis's own).
 THIS_APP = {"this", "that", "it", "this app", "that app", "the app", "this application", "this program", "this window",
@@ -330,6 +330,8 @@ def parse_open_request(text: str):
         return None
     if verb in ("open", "launch"):
         return target
+    if verb not in ("start", "run"):   # "go to wikipedia", "take me to youtube": only a website Jarvis knows
+        return target if _site_for(target) else None
     return target if resolve_app(target)[0] != "missing" else None
 
 

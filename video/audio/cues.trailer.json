@@ -1,0 +1,587 @@
+{
+ "fps": 30,
+ "bpm": 120,
+ "bar": 2,
+ "duration": 68.6,
+ "scenes": [
+  {
+   "id": "mystery",
+   "start": 0,
+   "end": 10,
+   "mix": {
+    "pad": 0.6,
+    "bass": 0,
+    "arp": 0,
+    "kick": 0,
+    "hat": 0,
+    "clap": 0,
+    "bright": 2,
+    "pulse": 1
+   }
+  },
+  {
+   "id": "awakening",
+   "start": 10,
+   "end": 20,
+   "mix": {
+    "pad": 0.75,
+    "bass": 0.55,
+    "arp": 0.3,
+    "kick": 0,
+    "hat": 0,
+    "clap": 0,
+    "bright": 4,
+    "build": 1
+   }
+  },
+  {
+   "id": "power",
+   "start": 20,
+   "end": 44,
+   "mix": {
+    "pad": 0.9,
+    "bass": 0.92,
+    "arp": 0.8,
+    "kick": 0.9,
+    "hat": 0.5,
+    "clap": 0.3,
+    "bright": 6
+   }
+  },
+  {
+   "id": "escalation",
+   "start": 44,
+   "end": 60,
+   "mix": {
+    "pad": 1,
+    "bass": 1,
+    "arp": 0.95,
+    "kick": 1,
+    "hat": 0.85,
+    "clap": 0.6,
+    "bright": 8,
+    "build": 1
+   }
+  },
+  {
+   "id": "reveal",
+   "start": 60,
+   "end": 68,
+   "mix": {
+    "pad": 1,
+    "bass": 0.8,
+    "arp": 0.4,
+    "kick": 0,
+    "hat": 0,
+    "clap": 0,
+    "bright": 8
+   }
+  }
+ ],
+ "cues": [
+  {
+   "kind": "drone",
+   "t": 0.2,
+   "scene": "mystery"
+  },
+  {
+   "kind": "narrate",
+   "t": 1,
+   "scene": "mystery",
+   "file": "n01.wav",
+   "len": 3.48,
+   "text": "What if your computer could do more than wait for your next click?"
+  },
+  {
+   "kind": "heartbeat",
+   "t": 1,
+   "scene": "mystery"
+  },
+  {
+   "kind": "heartbeat",
+   "t": 3,
+   "scene": "mystery"
+  },
+  {
+   "kind": "heartbeat",
+   "t": 5,
+   "scene": "mystery"
+  },
+  {
+   "kind": "narrate",
+   "t": 5.3,
+   "scene": "mystery",
+   "file": "n02a.wav",
+   "len": 1.77,
+   "text": "What if it could listen..."
+  },
+  {
+   "kind": "heartbeat",
+   "t": 6,
+   "scene": "mystery"
+  },
+  {
+   "kind": "heartbeat",
+   "t": 7,
+   "scene": "mystery"
+  },
+  {
+   "kind": "narrate",
+   "t": 7.25,
+   "scene": "mystery",
+   "file": "n02b.wav",
+   "len": 1.29,
+   "text": "understand..."
+  },
+  {
+   "kind": "heartbeat",
+   "t": 8,
+   "scene": "mystery"
+  },
+  {
+   "kind": "narrate",
+   "t": 8.7,
+   "scene": "mystery",
+   "file": "n02c.wav",
+   "len": 1.02,
+   "text": "and act?"
+  },
+  {
+   "kind": "tick",
+   "t": 9,
+   "scene": "mystery"
+  },
+  {
+   "kind": "tick",
+   "t": 9.25,
+   "scene": "mystery"
+  },
+  {
+   "kind": "tick",
+   "t": 9.5,
+   "scene": "mystery"
+  },
+  {
+   "kind": "cutout",
+   "t": 9.72,
+   "scene": "mystery",
+   "len": 0.28
+  },
+  {
+   "kind": "hit",
+   "t": 10,
+   "scene": "awakening"
+  },
+  {
+   "kind": "ask",
+   "t": 10.35,
+   "scene": "awakening",
+   "text": "Hey Jarvis",
+   "len": 1,
+   "how": "said"
+  },
+  {
+   "kind": "listen",
+   "t": 10.4,
+   "scene": "awakening"
+  },
+  {
+   "kind": "wake",
+   "t": 11.7,
+   "scene": "awakening"
+  },
+  {
+   "kind": "voice",
+   "t": 12.2,
+   "scene": "awakening",
+   "file": "awaken_01.wav",
+   "len": 2.84,
+   "text": "Good evening, Sir. How can I help you today?"
+  },
+  {
+   "kind": "cutout",
+   "t": 14.78,
+   "scene": "awakening",
+   "len": 0.22
+  },
+  {
+   "kind": "hit",
+   "t": 15,
+   "scene": "awakening"
+  },
+  {
+   "kind": "narrate",
+   "t": 15.05,
+   "scene": "awakening",
+   "file": "n03.wav",
+   "len": 1.43,
+   "text": "Meet Jarvis."
+  },
+  {
+   "kind": "narrate",
+   "t": 17,
+   "scene": "awakening",
+   "file": "n04.wav",
+   "len": 2.42,
+   "text": "Your personal AI assistant."
+  },
+  {
+   "kind": "swell",
+   "t": 18.4,
+   "scene": "awakening"
+  },
+  {
+   "kind": "hit",
+   "t": 20,
+   "scene": "power"
+  },
+  {
+   "kind": "ask",
+   "t": 20.2,
+   "scene": "power",
+   "text": "Set a timer for twenty minutes and show me the weather in Paris",
+   "len": 2.3,
+   "how": "said"
+  },
+  {
+   "kind": "listen",
+   "t": 20.2,
+   "scene": "power"
+  },
+  {
+   "kind": "narrate",
+   "t": 20.3,
+   "scene": "power",
+   "file": "n05.wav",
+   "len": 1.59,
+   "text": "Speak naturally."
+  },
+  {
+   "kind": "open",
+   "t": 22.9,
+   "scene": "power"
+  },
+  {
+   "kind": "voice",
+   "t": 23.05,
+   "scene": "power",
+   "file": "wake_02.wav",
+   "len": 2.1,
+   "text": "Timer set for 20 minutes. It's 20 degrees and overcast in Paris, feeling like 18. Today: a high of 21 and a low of 8. The full forecast is on your screen."
+  },
+  {
+   "kind": "narrate",
+   "t": 25.4,
+   "scene": "power",
+   "file": "n06.wav",
+   "len": 1.47,
+   "text": "Ask it anything."
+  },
+  {
+   "kind": "whoosh",
+   "t": 25.4,
+   "scene": "power"
+  },
+  {
+   "kind": "ask",
+   "t": 25.5,
+   "scene": "power",
+   "text": "Solve x squared minus five x plus six equals zero, and draw the function",
+   "len": 1,
+   "how": "said"
+  },
+  {
+   "kind": "draw",
+   "t": 25.6,
+   "scene": "power"
+  },
+  {
+   "kind": "voice",
+   "t": 27.2,
+   "scene": "power",
+   "file": "mind_01.wav",
+   "len": 3.1,
+   "text": "The solutions are x equals 2 and x equals 3. I've put the details on your screen."
+  },
+  {
+   "kind": "ask",
+   "t": 28.3,
+   "scene": "power",
+   "text": "Compare x squared and x plus one",
+   "len": 0.6999999999999993,
+   "how": "said"
+  },
+  {
+   "kind": "slide",
+   "t": 28.8,
+   "scene": "power"
+  },
+  {
+   "kind": "draw",
+   "t": 28.9,
+   "scene": "power"
+  },
+  {
+   "kind": "ask",
+   "t": 31.1,
+   "scene": "power",
+   "text": "What is the distance between Tokyo and New York?",
+   "len": 0.8000000000000007,
+   "how": "said"
+  },
+  {
+   "kind": "globe",
+   "t": 31.4,
+   "scene": "power"
+  },
+  {
+   "kind": "narrate",
+   "t": 32.9,
+   "scene": "power",
+   "file": "n07.wav",
+   "len": 1.46,
+   "text": "And watch it happen."
+  },
+  {
+   "kind": "ask",
+   "t": 37.7,
+   "scene": "power",
+   "text": "Show sunrise over Tokyo",
+   "len": 0.6000000000000014,
+   "how": "said"
+  },
+  {
+   "kind": "slide",
+   "t": 38,
+   "scene": "power"
+  },
+  {
+   "kind": "draw",
+   "t": 38.1,
+   "scene": "power"
+  },
+  {
+   "kind": "ask",
+   "t": 40.3,
+   "scene": "power",
+   "text": "Tell me about Saturn",
+   "len": 0.6000000000000014,
+   "how": "said"
+  },
+  {
+   "kind": "globe",
+   "t": 40.6,
+   "scene": "power"
+  },
+  {
+   "kind": "swell",
+   "t": 42.4,
+   "scene": "power"
+  },
+  {
+   "kind": "ask",
+   "t": 44,
+   "scene": "escalation",
+   "text": "Use my computer to turn on dark mode in Chrome",
+   "len": 0.4,
+   "how": "typed"
+  },
+  {
+   "kind": "hit",
+   "t": 44,
+   "scene": "escalation"
+  },
+  {
+   "kind": "sheet",
+   "t": 44.35,
+   "scene": "escalation"
+  },
+  {
+   "kind": "narrate",
+   "t": 44.5,
+   "scene": "escalation",
+   "file": "n08.wav",
+   "len": 2.42,
+   "text": "From conversation... to control."
+  },
+  {
+   "kind": "click",
+   "t": 47.2,
+   "scene": "escalation"
+  },
+  {
+   "kind": "whoosh",
+   "t": 47.4,
+   "scene": "escalation"
+  },
+  {
+   "kind": "tick",
+   "t": 48.6,
+   "scene": "escalation"
+  },
+  {
+   "kind": "tick",
+   "t": 49.6,
+   "scene": "escalation"
+  },
+  {
+   "kind": "whoosh",
+   "t": 50,
+   "scene": "escalation"
+  },
+  {
+   "kind": "ask",
+   "t": 50.2,
+   "scene": "escalation",
+   "text": "Show me Mars",
+   "len": 1,
+   "how": "typed on the phone"
+  },
+  {
+   "kind": "keys",
+   "t": 50.2,
+   "scene": "escalation",
+   "len": 1
+  },
+  {
+   "kind": "narrate",
+   "t": 50.55,
+   "scene": "escalation",
+   "file": "n09.wav",
+   "len": 2.23,
+   "text": "From your phone... to your computer."
+  },
+  {
+   "kind": "send",
+   "t": 51.22,
+   "scene": "escalation"
+  },
+  {
+   "kind": "globe",
+   "t": 51.5,
+   "scene": "escalation"
+  },
+  {
+   "kind": "ask",
+   "t": 53.3,
+   "scene": "escalation",
+   "text": "Distance between Paris and Rome",
+   "len": 0.4,
+   "how": "typed on the phone"
+  },
+  {
+   "kind": "globe",
+   "t": 53.7,
+   "scene": "escalation"
+  },
+  {
+   "kind": "slide",
+   "t": 55.78,
+   "scene": "escalation"
+  },
+  {
+   "kind": "hit",
+   "t": 55.8,
+   "scene": "escalation"
+  },
+  {
+   "kind": "narrate",
+   "t": 55.95,
+   "scene": "escalation",
+   "file": "n10.wav",
+   "len": 2.67,
+   "text": "From a simple request... to something done."
+  },
+  {
+   "kind": "slide",
+   "t": 56.28,
+   "scene": "escalation"
+  },
+  {
+   "kind": "slide",
+   "t": 56.78,
+   "scene": "escalation"
+  },
+  {
+   "kind": "slide",
+   "t": 57.28,
+   "scene": "escalation"
+  },
+  {
+   "kind": "slide",
+   "t": 57.78,
+   "scene": "escalation"
+  },
+  {
+   "kind": "slide",
+   "t": 58.28,
+   "scene": "escalation"
+  },
+  {
+   "kind": "slide",
+   "t": 58.78,
+   "scene": "escalation"
+  },
+  {
+   "kind": "slide",
+   "t": 59.28,
+   "scene": "escalation"
+  },
+  {
+   "kind": "cutout",
+   "t": 59.7,
+   "scene": "escalation",
+   "len": 0.3
+  },
+  {
+   "kind": "hit",
+   "t": 60,
+   "scene": "reveal"
+  },
+  {
+   "kind": "narrate",
+   "t": 60.35,
+   "scene": "reveal",
+   "file": "n11.wav",
+   "len": 1.29,
+   "text": "Your computer."
+  },
+  {
+   "kind": "hit",
+   "t": 61.9,
+   "scene": "reveal"
+  },
+  {
+   "kind": "narrate",
+   "t": 62.1,
+   "scene": "reveal",
+   "file": "n12.wav",
+   "len": 1.34,
+   "text": "Your commands."
+  },
+  {
+   "kind": "cutout",
+   "t": 63.78,
+   "scene": "reveal",
+   "len": 0.22
+  },
+  {
+   "kind": "final",
+   "t": 64,
+   "scene": "reveal"
+  },
+  {
+   "kind": "narrate",
+   "t": 64.6,
+   "scene": "reveal",
+   "file": "n13.wav",
+   "len": 1.41,
+   "text": "Your Jarvis."
+  },
+  {
+   "kind": "end",
+   "t": 67.6,
+   "scene": "reveal"
+  }
+ ]
+}

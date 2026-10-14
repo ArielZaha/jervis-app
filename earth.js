@@ -168,6 +168,7 @@
   let lastInteractAt = -1e9;
 
   function present(index) {
+    window.hideGraph?.(); window.hidePlanet?.(); window.hideClock?.();   // one picture at a time: the newest is the one on screen
     current = index;
     data = prepare(history[index]);
     $('earthTitle').textContent = data.title || `${data.a.name} → ${data.b.name}`;
