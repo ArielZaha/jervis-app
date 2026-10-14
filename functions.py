@@ -49,6 +49,9 @@ def normalize(text: str) -> str:
                  ("√", " sqrt "), ("π", " pi "), ("−", "-")):
         t = t.replace(a, b)
     t = re.sub(r"[?!,;:]", " ", t)
+    # "2x 2 + 6767": copied from somewhere that lost the raised 2. Nobody writes "x times 2" as "x 2", so an x followed
+    # by a lone small number, then an operator or the end, is that power.
+    t = re.sub(r"(?<![a-z])x\s+([2-9])(?=\s*(?:[-+=)]|\.?\s*$))", r"x^\1", t)
     t = _NUMBER_PHRASE.sub(lambda m: " " + _phrase_value(m.group(0)) + " ", t)
     # function names
     t = re.sub(r"\b(?:arc|inverse)\s*(sin|sine|cos|cosine|tan|tangent)\b", lambda m: "a" + m.group(1)[:3], t)
@@ -81,7 +84,7 @@ _TOKEN = re.compile(r"\d+(?:\.\d+)?|\.\d+|[a-z]+\d*|[-+*/^()|=]")
 _FILLER = {"of", "for", "the", "a", "an", "me", "please", "function", "functions", "equation", "curve", "graph", "graphs", "plot", "wave", "with",
            "that", "is", "whose", "like", "called", "following", "this", "given", "my", "i", "want", "you", "to", "can", "could", "would", "make",
            "create", "show", "draw", "paint", "sketch", "chart", "picture", "image", "drawing", "visualize", "visualise", "illustrate", "it",
-           "on", "in", "screen", "and", "then", "now", "hey", "jervis", "some", "simple", "just", "nice", "beautiful", "pretty", "cool", "here",
+           "on", "in", "screen", "and", "then", "now", "hey", "jarvis", "some", "simple", "just", "nice", "beautiful", "pretty", "cool", "here",
            "give", "get", "let", "lets", "see", "look", "at", "up", "out", "again", "once", "more", "same", "previous", "last", "earlier", "there", "polynomial", "shape", "line", "straight"}
 _SHAPES = {"parabola": None, "parabolas": None, "quadratic": None, "quadratics": None,
            "cubic": ["pow", ["x"], ["num", 3]], "hyperbola": ["div", ["num", 1], ["x"]], "reciprocal": ["div", ["num", 1], ["x"]],

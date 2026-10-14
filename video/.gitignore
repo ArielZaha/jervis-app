@@ -1,0 +1,10 @@
+# scratch renders and the bundled ffmpeg: rebuilt on demand, never needed in git
+cache.nosync/
+tools.nosync/
+# large generated media: on this computer, but too big for git (re-record with capture/record.sh, rebuild with build.sh)
+assets/footage/*.mp4
+assets/audio/*.wav
+out/*.mp4
+assets/audio/**/*.wav
+assets/narration/*.wav
+out/*.srt.bak

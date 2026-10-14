@@ -1,6 +1,6 @@
-"""Languages other than English, around Jervis's English pipeline (Hebrew today; built so more can be added).
+"""Languages other than English, around Jarvis's English pipeline (Hebrew today; built so more can be added).
 
-    speech -> stt_local (hears English or Hebrew, writes it) -> to_english() -> Jervis's English pipeline, unchanged
+    speech -> stt_local (hears English or Hebrew, writes it) -> to_english() -> Jarvis's English pipeline, unchanged
     (commands, Blender, programs, chat and its tools, context, corrections) -> English reply -> to_user_language()
     -> shown and spoken in the language the user is speaking.
 
@@ -37,7 +37,7 @@ class Language:
     letters: str                # a regex character class of its script
     to_english_examples: tuple  # (said, previous request or "", English; None = too garbled to translate)
     from_english_examples: tuple  # (English reply, translation)
-    phrases: dict               # fixed short replies Jervis says often: a model gets these wrong out of context
+    phrases: dict               # fixed short replies Jarvis says often: a model gets these wrong out of context
     answers: dict               # short answers to a question ("yes", "no", "thanks") -> English
     risky: str                  # regex: words that delete, close, send... (checked against the English)
     negation: str               # regex: "not", "don't"...
@@ -122,7 +122,7 @@ HEBREW = Language(
         "Sorry, something went wrong with that command.": "סליחה, משהו השתבש בפקודה הזאת.",
         "I've put the details on your screen.": "שמתי את הפרטים על המסך.",
         "Here's what I found.": "הנה מה שמצאתי.",
-        "Going to sleep. Say Hey Jervis when you want me.": "הולך לישון. תגיד היי ג'רביס כשתצטרך אותי.",
+        "Going to sleep. Say Hey Jarvis when you want me.": "הולך לישון. תגיד היי ג'רביס כשתצטרך אותי.",
         "Say yes or no.": "תגיד כן או לא.",
         "(yes / no)": "(כן / לא)",
         # what this module itself says
@@ -151,7 +151,7 @@ HEBREW = Language(
 
 
 def confirm_question(heard: "Understanding") -> tuple:
-    """(shown, spoken): Jervis asks whether he understood `heard` right — its meaning said back in the user's
+    """(shown, spoken): Jarvis asks whether he understood `heard` right — its meaning said back in the user's
     language (translated back from the English, so a misreading shows), and the English it would act on."""
     lang = LANGUAGES.get(heard.language)
     if not lang:
@@ -194,8 +194,8 @@ ENGLISH_SWITCH_WORDS = 3
 
 
 def turn_language(text: str) -> str:
-    """The language a request switches Jervis's answers to: Hebrew (or mixed) -> "he"; English -> "en" only when
-    it's really English — not a lone "OK", "yes" or "hey Jervis" from someone speaking Hebrew. "" = no change."""
+    """The language a request switches Jarvis's answers to: Hebrew (or mixed) -> "he"; English -> "en" only when
+    it's really English — not a lone "OK", "yes" or "hey Jarvis" from someone speaking Hebrew. "" = no change."""
     code, _mixed = detect(text)
     if code in LANGUAGES:
         return code
@@ -204,7 +204,7 @@ def turn_language(text: str) -> str:
     return ""
 
 
-# ---------------------------------------------------------------- the user's language (what Jervis answers in)
+# ---------------------------------------------------------------- the user's language (what Jarvis answers in)
 
 _STATE_FILE = "language.json"
 _state = {"reply": None}
@@ -212,8 +212,8 @@ _state_lock = threading.Lock()
 
 
 def reply_language() -> str:
-    """What Jervis answers in: the language of the user's last request (Settings can fix it: JERVIS_REPLY_LANGUAGE)."""
-    fixed = (os.getenv("JERVIS_REPLY_LANGUAGE") or "auto").strip().lower()
+    """What Jarvis answers in: the language of the user's last request (Settings can fix it: JARVIS_REPLY_LANGUAGE)."""
+    fixed = (os.getenv("JARVIS_REPLY_LANGUAGE") or "auto").strip().lower()
     if fixed in LANGUAGES or fixed == "en":
         return fixed
     with _state_lock:
@@ -327,26 +327,26 @@ def _markers_intact(text: str, kept: list) -> bool:
     return all(text.count(f"[{i}]") == 1 for i in range(1, len(kept) + 1))
 
 
-TRANSLATION_PROMPT = """Jervis is a voice assistant on the user's PC: he opens apps, builds 3D models in Blender, writes and runs code and plays music. You do two translation jobs for him; each message starts with which one.
+TRANSLATION_PROMPT = """Jarvis is a voice assistant on the user's PC: he opens apps, builds 3D models in Blender, writes and runs code and plays music. You do two translation jobs for him; each message starts with which one.
 
-"TO ENGLISH:" - what the user said to Jervis, in {name} (often mixed with English), into natural English, exactly as the user would have said it in English.
+"TO ENGLISH:" - what the user said to Jarvis, in {name} (often mixed with English), into natural English, exactly as the user would have said it in English.
 - Translate EVERY word that carries meaning: never drop an adjective, material, size, colour, number, place, name or step ("ממש מפורט" = "really detailed", "גג רעפים" = "tiled roof", "עץ" may be wood or a tree: read the sentence).
 - A command stays a command, a question stays a question, a correction stays a correction ("No, I meant ..."). "Don't" stays "don't".
 - Write numbers as digits, the way speech recognition writes English: "תשעים מעלות" = "90 degrees", "פי שלוש" = "3 times", "עשר דקות" = "10 minutes".
 - Copy English words, names, code, file names, paths and URLs exactly as written. Copy every marker like [1] as it is.
 - English words spelled in {name} letters get their English spelling (בלנדר = Blender, ספוטיפיי = Spotify, פייתון = Python, דיטייל = detail, פרויקט = project).
-- The user speaks about himself or herself ("I", "me", "my": אני, לי, שלי) and to Jervis ("you": אתה). Keep who is who: "לאמא" is "to Mom", "המסך" is "the screen", never "your" unless the user said "שלך".
+- The user speaks about himself or herself ("I", "me", "my": אני, לי, שלי) and to Jarvis ("you": אתה). Keep who is who: "לאמא" is "to Mom", "המסך" is "the screen", never "your" unless the user said "שלך".
 - Keep references as references ("it", "that", "the roof", "the windows"): never guess what they refer to. The previous request, when given, is only there to help you read the words: never translate it or copy from it.
 - Never add anything that wasn't said, never answer it, never explain. "לי" ("for me") is usually dropped.
-- The words come from speech recognition, which sometimes mishears a word as a similar-sounding one (often an English word said inside {name}, written in {name} letters). When a word is clearly a mishearing and the similar-sounding word makes the sentence a sensible request to Jervis, translate what was meant ("תצאו" said as a command is "תיצור", "דיטייל האוס" is "detailed house"). When you can't tell what was meant, never invent a meaning.
+- The words come from speech recognition, which sometimes mishears a word as a similar-sounding one (often an English word said inside {name}, written in {name} letters). When a word is clearly a mishearing and the similar-sounding word makes the sentence a sensible request to Jarvis, translate what was meant ("תצאו" said as a command is "תיצור", "דיטייל האוס" is "detailed house"). When you can't tell what was meant, never invent a meaning.
 - {to_english_format}
 
-"TO {upper}:" - Jervis's English reply into natural spoken {name}. Jervis speaks about himself in the masculine first person and addresses the user. Translate exactly what is written - add no greeting, no question and no comment of your own. Keep names of apps, products, people, songs, films and code as they are. Keep every number in digits exactly as written ("8 windows" = "8 חלונות"). Copy every marker like [1] exactly as it is, and keep Markdown (**, #, -) where it is. {to_user_format}"""
+"TO {upper}:" - Jarvis's English reply into natural spoken {name}. Jarvis speaks about himself in the masculine first person and addresses the user. Translate exactly what is written - add no greeting, no question and no comment of your own. Keep names of apps, products, people, songs, films and code as they are. Keep every number in digits exactly as written ("8 windows" = "8 חלונות"). Copy every marker like [1] exactly as it is, and keep Markdown (**, #, -) where it is. {to_user_format}"""
 # (Measured: asked this way, DictaLM marks gibberish; an optional "unclear" flag it never set.)
 # Plain text (the default) or JSON answers. Plain: the answer is the sentence itself, on one line — a JSON answer's
 # own keys and quotes were most of the tokens generated (18 for "Make the roof red", vs 5), and generating under a
-# JSON grammar is slower per token too. JERVIS_TRANSLATE_FORMAT=json goes back to JSON.
-PLAIN = (os.getenv("JERVIS_TRANSLATE_FORMAT") or "plain").strip().lower() != "json"
+# JSON grammar is slower per token too. JARVIS_TRANSLATE_FORMAT=json goes back to JSON.
+PLAIN = (os.getenv("JARVIS_TRANSLATE_FORMAT") or "plain").strip().lower() != "json"
 GARBLED = "???"
 # Without JSON, DictaLM doesn't end its turn by itself: it goes on writing the next turn of its chat template.
 _STOP = ["\n", "[INST]", "</s>"]
@@ -408,7 +408,7 @@ def _trusted(model: str) -> bool:
 
 
 KNOWN_NAMES = {n.lower() for n in nlu.APPS_HE.values()} | {
-    "i", "jervis", "blender", "python", "javascript", "windows", "mac", "linux", "spotify", "youtube", "google",
+    "i", "jarvis", "jervis", "blender", "python", "javascript", "windows", "mac", "linux", "spotify", "youtube", "google",
     "chrome", "whatsapp", "excel", "word", "powerpoint", "notepad", "minecraft", "mom", "dad", "hello", "world",
     "english", "hebrew", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january",
     "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
@@ -494,7 +494,7 @@ def check_english(lang: Language, source: str, english: str, kept: list, model: 
 
 
 def to_english(text: str, previous: str = "") -> Understanding:
-    """The user's words in English, for Jervis's English pipeline, with how sure that is. `previous`: the request
+    """The user's words in English, for Jarvis's English pipeline, with how sure that is. `previous`: the request
     before this one (in English), which helps read a follow-up or a correction."""
     started = time.time()
     original = (text or "").strip()
@@ -624,7 +624,7 @@ def status_for(fatal: list, ask: list, english: str, real_words: bool = True) ->
     return "ok"
 
 
-# ---------------------------------------------------------------- Jervis's English replies -> the user's language
+# ---------------------------------------------------------------- Jarvis's English replies -> the user's language
 
 _FROM_ENGLISH_SCHEMA = {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}
 _STRUCTURE = re.compile(r"^(\s*(?:#{1,6}\s+|[-*•]\s+|\d+[.)]\s+|>\s?)?)(.*)$")
@@ -632,7 +632,7 @@ _GREETING = re.compile(r"^Good (morning|noon|afternoon|evening), (.+?)\. How can
 
 
 def phrase(english: str, code: str = None) -> str:
-    """A fixed sentence Jervis says, in the user's language when there's a translation for it."""
+    """A fixed sentence Jarvis says, in the user's language when there's a translation for it."""
     code = code or reply_language()
     lang = LANGUAGES.get(code)
     return lang.phrases.get(english, english) if lang else english

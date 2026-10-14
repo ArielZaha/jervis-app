@@ -1,0 +1,15 @@
+{
+ "name": "globe",
+ "frames": 579,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "sent:What is the distance between Tokyo and New York?": 111,
+  "reply:What is the distance between Tokyo and New York?": 126,
+  "fast": 204,
+  "slow": 432
+ },
+ "notes": {},
+ "opened": []
+}

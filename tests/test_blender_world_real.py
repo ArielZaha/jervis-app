@@ -43,7 +43,7 @@ def emission(obj_name):
         b = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None) if m and m.use_nodes else None
         if b is None:
             continue
-        power = m.node_tree.nodes.get("Jervis glow power")
+        power = m.node_tree.nodes.get("Jarvis glow power")
         vals.append(power.inputs[1].default_value if power else b.inputs["Emission Strength"].default_value)
     return max(vals) if vals else 0.0
 run("ground", "ground('Ground', size=120, kind='lawn')")
@@ -75,10 +75,10 @@ out["night_lanterns"] = emission("Shop Lanterns")
 out["night_exposure"] = S.view_settings.exposure
 run("fog1", "fog('fog')")
 run("fog2", "fog(factor=1.7)")
-out["fogs"] = names("Jervis Fog")
+out["fogs"] = names("Jarvis Fog")
 out["fog_env"] = json.loads(ns["env_state"]())["set"].get("fog")
 run("fog_off", "fog(remove=True)")
-out["fogs_after"] = names("Jervis Fog")
+out["fogs_after"] = names("Jarvis Fog")
 run("rain", "weather('rain')")
 asph = bpy.data.objects["Road Asphalt"].active_material
 out["wet_rough"] = [asph.get("jervis_dry_rough"), asph.get("jervis_wet")]
@@ -124,15 +124,15 @@ run("regrow", "rebuild_asset('Villa', width=30.0)")
 out["regrown"] = [ns["asset_info"]("Villa")["params"].get("width"), json.loads(bpy.data.objects["Villa"].get("jervis_semantic", "{}")).get("kind")]
 run("clouds", "time_of_day('day')\nsky_clouds(cover=0.4)")
 wn = S.world.node_tree.nodes
-out["cloud_day"] = list(wn["Jervis clouds tint"].inputs["B"].default_value)[:3] if "Jervis clouds tint" in wn else None
+out["cloud_day"] = list(wn["Jarvis clouds tint"].inputs["B"].default_value)[:3] if "Jarvis clouds tint" in wn else None
 run("clouds_sunset", "time_of_day('sunset')")
-out["cloud_sunset"] = list(wn["Jervis clouds tint"].inputs["B"].default_value)[:3] if "Jervis clouds tint" in wn else None
+out["cloud_sunset"] = list(wn["Jarvis clouds tint"].inputs["B"].default_value)[:3] if "Jarvis clouds tint" in wn else None
 out["cloud_env"] = json.loads(ns["env_state"]())["set"].get("clouds")
 run("mist", "fog('mist')")
-out["mist_glow"] = bpy.data.objects["Jervis Fog"].active_material.node_tree.nodes["Jervis fog glow"].inputs[1].default_value
+out["mist_glow"] = bpy.data.objects["Jarvis Fog"].active_material.node_tree.nodes["Jarvis fog glow"].inputs[1].default_value
 run("clouds_off", "sky_clouds(remove=True)")
 bg = next(n for n in wn if n.type == "BACKGROUND")
-out["clouds_after"] = [len([n for n in wn if n.name.startswith("Jervis clouds")]), bg.inputs["Color"].is_linked]
+out["clouds_after"] = [len([n for n in wn if n.name.startswith("Jarvis clouds")]), bg.inputs["Color"].is_linked]
 print("RESULT_JSON " + json.dumps(out, default=str))
 '''
 
@@ -176,7 +176,7 @@ def test_night_lights_windows_pane_by_pane_signs_and_lamps_and_day_turns_them_of
 
 def test_fog_is_one_volume_thickened_then_cleared(kit):
     ok(kit, "fog1", "fog2", "fog_off")
-    assert kit["fogs"] == ["Jervis Fog"]
+    assert kit["fogs"] == ["Jarvis Fog"]
     assert abs(kit["fog_env"]["density"] - 0.03 * 1.7) < 1e-4   # the default fog (~100 m visibility), thickened
     assert kit["fogs_after"] == []
 

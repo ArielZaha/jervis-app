@@ -1,9 +1,9 @@
-"""`jervis-backend --selftest`: check that an installed copy has every part it needs.
+"""`jarvis-backend --selftest`: check that an installed copy has every part it needs.
 
 Needs no microphone, no network and no permissions, so it runs on a build machine right after installing: a missing
 package, a native library that doesn't load, or a data file left out of the bundle fails here instead of on a user's
 computer. Prints one line starting with SELFTEST and a JSON report; the exit code is 0 only if everything required is
-there. Reached through app.py, so importing all of Jervis's own modules has already succeeded by the time this runs.
+there. Reached through app.py, so importing all of Jarvis's own modules has already succeeded by the time this runs.
 """
 import importlib
 import json
@@ -18,7 +18,7 @@ REQUIRED = ["websockets", "requests", "groq", "speech_recognition", "pyaudio", "
 # Read with paths.resource(): an installed engine without one of them fails only when that feature is used (a
 # missing phone page once broke every phone connection), so the self-test checks each is really there.
 BUNDLED_FILES = ["phone_client.html", "phone_sw.js", "confirm.html", "blender_bridge.py", "blender_kit.py",
-                 "blender_assets.py"]
+                 "blender_assets.py", "phone_manifest.webmanifest", "phone_agent.js", "phone_icons", "geo_data"]
 PLATFORM = {
     "win32": ["uiautomation", "comtypes", "pycaw", "screen_windows", "winctl"],
     "darwin": ["Quartz", "AppKit", "ApplicationServices", "screen_mac"],
@@ -44,7 +44,7 @@ def run() -> int:
 
     def bundled_files():   # files the engine reads from its own folder (pages for the phone, Blender scripts)
         import paths
-        missing = [name for name in BUNDLED_FILES if not os.path.isfile(paths.resource(name))]
+        missing = [name for name in BUNDLED_FILES if not os.path.exists(paths.resource(name))]   # (two are folders)
         if missing:
             raise FileNotFoundError(", ".join(missing))
         return f"ok ({len(BUNDLED_FILES)} files)"
@@ -144,5 +144,5 @@ def run() -> int:
 
 
 if __name__ == "__main__":
-    os.environ.setdefault("JERVIS_DATA_DIR", tempfile.mkdtemp(prefix="jervis-selftest-"))
+    os.environ.setdefault("JARVIS_DATA_DIR", tempfile.mkdtemp(prefix="jarvis-selftest-"))
     sys.exit(run())

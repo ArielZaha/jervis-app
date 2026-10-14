@@ -150,13 +150,13 @@ def test_invalid_colours_never_crash_a_build(kit):
     assert kit["colour_number"]["ok"] and "Unknown color 4" in kit["colour_number"]["warnings"][0]
     assert kit["colour_words"]["ok"] and kit["colour_words"]["warnings"]
     assert kit["colour_by_name"]["ok"] and "used water" in kit["colour_by_name"]["warnings"][0]
-    assert kit["crate_material"] == "Jervis light grey"
+    assert kit["crate_material"] == "Jarvis light grey"
 
 
 def test_shaping_a_group_works_on_its_parts_instead_of_crashing(kit):
     # roughen('Thing') on an assembly's empty once raised "'NoneType' object has no attribute 'vertices'"
     assert kit["roughen_group"]["ok"], kit["roughen_group"]
-    assert kit["group_colours"] == ["Jervis red", "Jervis red"]
+    assert kit["group_colours"] == ["Jarvis red", "Jarvis red"]
     assert not kit["taper_group"]["ok"] and "group of 2 parts" in kit["taper_group"]["error"]
 
 

@@ -1,6 +1,6 @@
 // The weather window's map, built only from sources that are free to use, with no account and no key:
 //   base map   OpenFreeMap vector tiles (OpenStreetMap data): roads, coastlines, borders, towns and cities. Free with
-//              no limits, commercial use allowed. Its "dark" style is recoloured here to Jervis's navy.
+//              no limits, commercial use allowed. Its "dark" style is recoloured here to Jarvis's navy.
 //   terrain    Mapzen terrain tiles on AWS Open Data, drawn as soft hillshading so hills and valleys read
 //   radar      RainViewer's latest rain-radar frames, as a loop (free for personal use; tiles exist up to zoom 7 and
 //              are scaled up beyond that, which is what radar resolution allows anyway)
@@ -16,7 +16,7 @@
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const BASE = document.currentScript ? new URL('..', document.currentScript.src).href : '';
 
-  // Jervis's palette for the map: deep navy land, a slightly lifted sea, quiet roads, readable names.
+  // Jarvis's palette for the map: deep navy land, a slightly lifted sea, quiet roads, readable names.
   const C = {
     background: '#0a1426', water: '#0f2546', waterway: '#143059', landcover: '#0c1830', park: '#0d1d33',
     landuse: '#0c172a', building: '#0f1c33', buildingEdge: '#16263f', minor: '#18294a', major: '#203759',
@@ -33,7 +33,7 @@
         css.rel = 'stylesheet';
         css.href = `${BASE}vendor/maplibre/maplibre-gl.css`;
         document.head.append(css);
-        // Jervis's window has Node enabled, which makes the bundle export through require instead of a global.
+        // Jarvis's window has Node enabled, which makes the bundle export through require instead of a global.
         if (typeof require === 'function') {
           try { resolve(require('./vendor/maplibre/maplibre-gl.js')); return; } catch (e) { /* fall back to a tag */ }
         }

@@ -1,22 +1,23 @@
 """The AI that runs on this computer: finding it, installing it on first run, starting it, and keeping it running.
 
-Jervis's local AI is Ollama (see local_llm.py for how questions are asked). A normal user never installs it by hand:
+Jarvis's local AI is Ollama (see local_llm.py for how questions are asked). A normal user never installs it by hand:
 
   1. An Ollama the user already runs is reused, with the models it already has.
   2. An Ollama that is installed but not running is started quietly.
-  3. Otherwise Jervis downloads Ollama's official standalone build (pinned version, checked against its published
+  3. Otherwise Jarvis downloads Ollama's official standalone build (pinned version, checked against its published
      SHA-256) into his own data folder and runs a private copy on its own port, so it never clashes with anything.
 
-Then the models are downloaded with progress (a text model, and a small vision model that lets Jervis see pictures and
-the screen), checked with a real question, and Jervis reports "ready". Every step reports human-readable progress to
+Then the models are downloaded with progress (a text model, and a small vision model that lets Jarvis see pictures and
+the screen), checked with a real question, and Jarvis reports "ready". Every step reports human-readable progress to
 the window; a failure says what went wrong and what to do, and can be retried. The engine is watched and restarted
-if it crashes, and stopped when Jervis quits.
+if it crashes, and stopped when Jarvis quits.
 """
 import atexit
 import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tarfile
@@ -42,7 +43,7 @@ ASSETS = {
 }
 DOWNLOAD_URL = "https://github.com/ollama/ollama/releases/download/{version}/{name}"
 USER_OLLAMA_URL = "http://127.0.0.1:11434"
-MANAGED_PORT = 11435            # Jervis's own copy: never the port an Ollama the user runs is on
+MANAGED_PORT = 11435            # Jarvis's own copy: never the port an Ollama the user runs is on
 APPROX_MODEL_BYTES = {"llama3.2": 2_019_393_189, "qwen2.5vl:3b": 3_200_000_000, "qwen2.5vl:7b": 6_000_000_000,
                       "qwen2.5:7b": 4_683_087_332,
                       local_llm.DICTALM: 4_369_000_000}
@@ -54,6 +55,19 @@ MIN_RAM_FOR_HEBREW = 11 * 1024 ** 3   # "12 GB" machines report a little less
 MIN_RAM_FOR_VISION = 15 * 1024 ** 3   # "16 GB" machines report a little less
 _IS_WIN = platform.system() == "Windows"
 _NO_WINDOW = 0x08000000 if _IS_WIN else 0
+
+
+MANAGER = None   # the one LocalAI the backend runs, so a feature can ask for the vision model when it first needs it
+
+
+def has_nvidia_gpu() -> bool:
+    """Whether this Windows PC has an NVIDIA driver (it installs nvcuda.dll). Without one, the engine's CUDA libraries
+    (1.8 GB of its 1.9 GB) can never be used, so they aren't unpacked."""
+    return os.path.exists(os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "nvcuda.dll"))
+
+
+def _gpu_only(name: str) -> bool:
+    return bool(re.match(r"(?:^|.*/)lib/ollama/(?:cuda|rocm)[^/]*/", name.replace("\\", "/")))
 
 
 class SetupError(Exception):
@@ -86,7 +100,7 @@ def _machine() -> str:
 
 
 def system_ollama():
-    """An Ollama program installed on this computer (not Jervis's own copy), or None."""
+    """An Ollama program installed on this computer (not Jarvis's own copy), or None."""
     found = shutil.which("ollama")
     if found:
         return found
@@ -108,14 +122,14 @@ def default_vision_model() -> str:
 
 def wants_vision() -> bool:
     """Whether to use the local vision model: Settings can force it on or off; otherwise only with 16 GB or more."""
-    choice = (os.getenv("JERVIS_LOCAL_VISION") or "auto").strip().lower()
+    choice = (os.getenv("JARVIS_LOCAL_VISION") or "auto").strip().lower()
     if choice in ("on", "off"):
         return choice == "on"
     return psutil.virtual_memory().total >= MIN_RAM_FOR_VISION
 
 
 def first_role() -> str:
-    """The local model Jervis needs first: the translator for someone who speaks Hebrew to him, else chat."""
+    """The local model Jarvis needs first: the translator for someone who speaks Hebrew to him, else chat."""
     try:
         import language
         if language.reply_language() != "en" and local_llm.role_model("translate"):
@@ -132,7 +146,7 @@ def _bilingual() -> bool:
 
 def wants_hebrew() -> bool:
     """Whether to set up Hebrew (its translation model): with Hebrew speech on (the default) and enough memory."""
-    if not _bilingual() or (os.getenv("JERVIS_TRANSLATE_MODEL") or "").strip().lower() == "off":
+    if not _bilingual() or (os.getenv("JARVIS_TRANSLATE_MODEL") or "").strip().lower() == "off":
         return False
     return psutil.virtual_memory().total >= MIN_RAM_FOR_HEBREW
 
@@ -150,6 +164,7 @@ class LocalAI:
         self.text_model = os.getenv("OLLAMA_MODEL") or local_llm.DEFAULT_MODEL
         self.vision_model = os.getenv("OLLAMA_VISION_MODEL") or default_vision_model()
         self.use_vision = True
+        self.vision_fetching = False
         self.ready = threading.Event()
         self._lock = threading.Lock()
         self._running = False
@@ -157,6 +172,8 @@ class LocalAI:
         self.state = {"active": False, "done": False, "error": None, "hint": None, "summary": "",
                       "steps": [{"id": sid, "label": label, "state": "pending", "detail": "", "progress": None}
                                 for sid, label in self.STEPS]}
+        global MANAGER
+        MANAGER = self
 
     # ---------- progress reporting ----------
     def _step(self, sid: str, state: str = None, detail: str = None, progress=None) -> None:
@@ -193,7 +210,7 @@ class LocalAI:
 
     def ensure_ready(self) -> bool:
         self.state.update(active=True, done=False, error=None, hint=None,
-                          summary="Getting Jervis’s AI ready. This happens once.")
+                          summary="Getting Jarvis’s AI ready. This happens once.")
         for step in self.state["steps"]:
             if step["state"] != "done":
                 step.update(state="pending", detail="", progress=None)
@@ -213,7 +230,7 @@ class LocalAI:
         except SetupError as e:
             self._step(current, "error", e.message)
             self.state.update(active=False, error=e.message, hint=e.hint,
-                              summary="Jervis’s AI isn’t ready yet. Everything that doesn’t need the AI already works.")
+                              summary="Jarvis’s AI isn’t ready yet. Everything that doesn’t need the AI already works.")
             self._publish()
             print(f"Local AI setup stopped at '{current}': {e.message} {e.hint}", flush=True)
             return False
@@ -223,10 +240,10 @@ class LocalAI:
             self._step(current, "error", f"Unexpected problem: {e}")
             self.state.update(active=False, error=f"Something unexpected went wrong ({type(e).__name__}).",
                               hint="Try again. If it keeps happening, the details are in the log (Settings, Diagnostics).",
-                              summary="Jervis’s AI isn’t ready yet.")
+                              summary="Jarvis’s AI isn’t ready yet.")
             self._publish()
             return False
-        self.state.update(active=False, done=True, error=None, hint=None, summary="Jervis’s AI is ready.")
+        self.state.update(active=False, done=True, error=None, hint=None, summary="Jarvis’s AI is ready.")
         self._publish()
         self.ready.set()
         print(f"Local AI ready: {self.text_model}" + (f" + {self.vision_model}" if self.use_vision else "")
@@ -238,7 +255,7 @@ class LocalAI:
         self._step("engine", "active", "Looking for an AI engine on this computer…")
         configured = os.getenv("OLLAMA_URL", "").rstrip("/")
         for url, label in ((configured, "the configured"), (USER_OLLAMA_URL, "your"),
-                           (f"http://127.0.0.1:{MANAGED_PORT}", "Jervis’s")):
+                           (f"http://127.0.0.1:{MANAGED_PORT}", "Jarvis’s")):
             if url and _probe(url):
                 self._use(url)
                 self._step("engine", "done", f"Using {label} Ollama.")
@@ -275,19 +292,19 @@ class LocalAI:
         system = platform.system()
         key = (system, "any") if system == "Darwin" else (system, _machine())
         if key not in ASSETS:
-            raise SetupError("Jervis can’t install the AI engine on this kind of computer by himself.",
+            raise SetupError("Jarvis can’t install the AI engine on this kind of computer by himself.",
                              "Install Ollama from ollama.com, then press Try again.")
         return ASSETS[key]
 
     def _check_disk(self, need: int) -> None:
         free = shutil.disk_usage(paths.DATA_DIR).free
         if free < need:
-            raise SetupError(f"Not enough free disk space: Jervis needs about {_mb(need)} and there’s {_mb(free)}.",
+            raise SetupError(f"Not enough free disk space: Jarvis needs about {_mb(need)} and there’s {_mb(free)}.",
                              "Free up some space, then press Try again.")
 
     def _download_engine(self) -> str:
         name, size, sha256 = self._asset()
-        self._check_disk(size * 2 + self._models_bytes())   # the archive and its unpacked copy, then the models
+        self._check_disk(size * 2 + self._models_bytes())   # the archive and its unpacked copy, then the model
         folder = paths.data_dir("runtime")
         archive = os.path.join(folder, name)
         partial = archive + ".part"
@@ -311,7 +328,8 @@ class LocalAI:
         try:
             if name.endswith(".zip"):
                 with zipfile.ZipFile(archive) as z:
-                    z.extractall(tmp_target)
+                    keep = z.namelist() if has_nvidia_gpu() else [m for m in z.namelist() if not _gpu_only(m)]
+                    z.extractall(tmp_target, members=keep)
             else:
                 with tarfile.open(archive) as t:
                     t.extractall(tmp_target, filter="data")
@@ -321,6 +339,9 @@ class LocalAI:
         shutil.rmtree(target, ignore_errors=True)
         os.replace(tmp_target, target)
         os.remove(archive)
+        for old in os.listdir(folder):   # an engine left by an earlier Jarvis version: superseded, never used again
+            if old.startswith("ollama-") and os.path.join(folder, old) != target and os.path.isdir(os.path.join(folder, old)):
+                shutil.rmtree(os.path.join(folder, old), ignore_errors=True)
         binary = self._managed_binary()
         if not binary:
             raise SetupError("The AI engine download didn’t contain the expected program.", "Press Try again.")
@@ -359,7 +380,7 @@ class LocalAI:
     def _start_serve(self, binary: str, models_dir) -> None:
         port = MANAGED_PORT
         url = f"http://127.0.0.1:{port}"
-        if _probe(url):   # a copy Jervis started earlier is still running (e.g. after a crash): reuse it
+        if _probe(url):   # a copy Jarvis started earlier is still running (e.g. after a crash): reuse it
             self._use(url)
             return
         env = {**os.environ, "OLLAMA_HOST": f"127.0.0.1:{port}", "OLLAMA_KEEP_ALIVE": "30m"}
@@ -385,7 +406,7 @@ class LocalAI:
                          "Press Try again. The details are in logs/ollama.log.")
 
     def _watchdog(self) -> None:
-        """If the engine Jervis started stops, start it again (a few times), so the AI comes back by itself."""
+        """If the engine Jarvis started stops, start it again (a few times), so the AI comes back by itself."""
         restarts = 0
         while not self._stop.is_set():
             time.sleep(5)
@@ -394,7 +415,7 @@ class LocalAI:
             if restarts >= 3:
                 print("The AI engine keeps stopping; not restarting it again.", flush=True)
                 self.state.update(error="The AI engine keeps stopping.", done=False,
-                                  hint="Press Try again, or restart Jervis. The details are in logs/ollama.log.")
+                                  hint="Press Try again, or restart Jarvis. The details are in logs/ollama.log.")
                 self._publish()
                 return
             restarts += 1
@@ -406,8 +427,7 @@ class LocalAI:
 
     # ---------- 2. the models ----------
     def _models_bytes(self) -> int:
-        wanted = [self.text_model] + ([self.vision_model] if self.use_vision else [])
-        return int(sum(APPROX_MODEL_BYTES.get(m, 2.5e9) for m in wanted) * 1.1)
+        return int(APPROX_MODEL_BYTES.get(self.text_model, 2.5e9) * 1.1)   # the vision model comes later, when needed
 
     def _installed(self) -> list:
         try:
@@ -423,18 +443,47 @@ class LocalAI:
         return any(name == wanted or name == base for name in installed)
 
     def _ensure_models(self) -> None:
+        """Only the text model is downloaded at setup. The vision model (3 GB) waits until something first needs to
+        see a picture or the screen (fetch_vision): most people never do, and it was most of the first download."""
         self.use_vision = wants_vision()
-        wanted = [self.text_model] + ([self.vision_model] if self.use_vision else [])
-        installed = self._installed()
-        missing = [m for m in wanted if not self._has(installed, m)]
-        if not missing:
-            self._step("models", "done", "Models ready." + ("" if self.use_vision else
-                       " (No vision model: it needs a computer with 16 GB of memory; see Settings.)"))
+        if self._has(self._installed(), self.text_model):
+            self._step("models", "done", "Model ready.")
             return
-        self._check_disk(int(sum(APPROX_MODEL_BYTES.get(m, 2.5e9) for m in missing) * 1.1))
-        for index, model in enumerate(missing, 1):
-            self._pull(model, f"Downloading model {index} of {len(missing)} ({model})")
-        self._step("models", "done", "Models ready.")
+        self._check_disk(int(APPROX_MODEL_BYTES.get(self.text_model, 2.5e9) * 1.1))
+        self._pull(self.text_model, f"Downloading the AI model ({self.text_model})")
+        self._step("models", "done", "Model ready.")
+
+    def vision_installed(self) -> bool:
+        return bool(self.url) and self._has(self._installed(), self.vision_model)
+
+    def fetch_vision(self) -> str:
+        """Download the vision model in the background, the first time it's needed. What to tell the user:
+        "started", "fetching" (already on its way), "installed", "not_wanted" (this computer is set not to) or
+        "not_ready" (the local AI itself isn't running)."""
+        if not wants_vision():
+            return "not_wanted"
+        if not self.url or not self.ready.is_set():
+            return "not_ready"
+        with self._lock:
+            if self.vision_fetching:
+                return "fetching"
+            if self.vision_installed():
+                return "installed"
+            self.vision_fetching = True
+
+        def work():
+            try:
+                self._check_disk(int(APPROX_MODEL_BYTES.get(self.vision_model, 2.5e9) * 1.1))
+                self._pull(self.vision_model, f"Downloading the vision model ({self.vision_model})")
+                self._step("models", "done", "Models ready, including vision.")
+            except SetupError as e:
+                print(f"The vision model couldn't be downloaded: {e.message}", flush=True)
+            except Exception as e:
+                print(f"The vision model couldn't be downloaded: {e!r}", flush=True)
+            finally:
+                self.vision_fetching = False
+        threading.Thread(target=work, daemon=True, name="vision-model").start()
+        return "started"
 
     def _pull(self, model: str, label: str, step: str = "models") -> None:
         for attempt in range(3):
@@ -475,7 +524,7 @@ class LocalAI:
 
     # ---------- 3b. Hebrew ----------
     def _ensure_hebrew(self) -> None:
-        """DictaLM 2.0 (Dicta; Apache-2.0; 4.4 GB) translates Hebrew requests into English for Jervis, and his answers
+        """DictaLM 2.0 (Dicta; Apache-2.0; 4.4 GB) translates Hebrew requests into English for Jarvis, and his answers
         back (language.py). A failed download doesn't stop the rest: English works without it."""
         if not wants_hebrew():
             self._step("language", "skipped", "English only." if not _bilingual() else
@@ -570,11 +619,103 @@ class LocalAI:
                     pass
 
 
+# ---------- letting go of the local AI (the user chose the online AI only) ----------
+_ENGINE_NAMES = ("ollama", "ollama.exe", "ollama app", "ollama app.exe")   # the server, and the menu-bar / tray app
+
+
+def _local_urls() -> list:
+    """Where an Ollama on this computer may be answering: the user's own, Jarvis's copy, and a configured one (only if
+    it is on this computer: an Ollama on another machine is not ours to unload)."""
+    configured = os.getenv("OLLAMA_URL", "").rstrip("/")
+    here = configured if configured.split("//")[-1].split(":")[0] in ("127.0.0.1", "localhost") else ""
+    return list(dict.fromkeys(u for u in (here, USER_OLLAMA_URL, f"http://127.0.0.1:{MANAGED_PORT}") if u))
+
+
+def _unload_models(url: str) -> int:
+    """Ask the Ollama at `url` to drop every model it holds in memory. Returns how many bytes they took."""
+    try:
+        loaded = requests.get(f"{url}/api/ps", timeout=3).json().get("models") or []
+    except (requests.RequestException, ValueError, AttributeError):
+        return 0
+    freed = 0
+    for model in loaded:
+        try:
+            requests.post(f"{url}/api/generate", json={"model": model.get("name"), "keep_alive": 0}, timeout=20)
+            freed += int(model.get("size") or 0)
+        except (requests.RequestException, ValueError, TypeError):
+            pass
+    return freed
+
+
+def _engine_processes() -> list:
+    """Every Ollama program this user is running: the app, its server, and the model runners under them."""
+    try:
+        me = psutil.Process().username()
+    except psutil.Error:
+        me = None
+    found = {}
+    for proc in psutil.process_iter(["name", "username"]):
+        try:
+            if (proc.info["name"] or "").lower() not in _ENGINE_NAMES or proc.pid == os.getpid():
+                continue
+            if me and proc.info["username"] and proc.info["username"] != me:
+                continue   # someone else's
+            found[proc.pid] = proc
+            for child in proc.children(recursive=True):
+                found[child.pid] = child
+        except psutil.Error:
+            continue
+    return list(found.values())
+
+
+def release() -> dict:
+    """Free the memory the local AI holds, for when only the online AI is used: unload its models, then close the
+    Ollama programs. Unloading alone already gives the memory back, so this still helps where a program can't be closed
+    or the system starts it again. Returns {"freed": bytes of models unloaded, "stopped": programs closed, "left":
+    programs still running}. Choosing the local AI again later starts it the usual way (LocalAI above)."""
+    freed = sum(_unload_models(url) for url in _local_urls())
+    stopped = _close(_engine_processes())
+    time.sleep(1.5)   # an app that reopens itself (after its own update, say), or a system service, does it right away
+    again = _engine_processes()
+    if again:
+        freed += sum(_unload_models(url) for url in _local_urls())
+        _close(again)   # once more; if the system insists on running it, it now holds no model at least
+        time.sleep(1.5)
+    return {"freed": freed, "stopped": stopped, "left": len(_engine_processes())}
+
+
+def _close(processes: list) -> int:
+    """Ask each program to quit, force the ones that don't. Returns how many are gone."""
+    for proc in processes:
+        try:
+            proc.terminate()
+        except psutil.Error:
+            pass
+    _, alive = psutil.wait_procs(processes, timeout=6)
+    for proc in alive:
+        try:
+            proc.kill()
+        except psutil.Error:
+            pass
+    _, alive = psutil.wait_procs(alive, timeout=3)
+    return len(processes) - len(alive)
+
+
+def release_summary(result: dict) -> str:
+    if not result["stopped"] and not result["freed"]:
+        return "The AI on this computer wasn't running, so there was nothing to close."
+    text = "Closed the AI on this computer (Ollama)"
+    text += f" and freed about {_mb(result['freed'])} of memory." if result["freed"] else "; it had no model in memory."
+    if result["left"]:
+        text += " This computer started Ollama again by itself; it holds no model now, so it uses very little memory."
+    return text
+
+
 _cleanup_registered = []
 
 
 def _register_cleanup(instance: LocalAI) -> None:
-    """Stop the engine Jervis started when Jervis stops. app.py turns SIGTERM (how the window stops the backend) into
+    """Stop the engine Jarvis started when Jarvis stops. app.py turns SIGTERM (how the window stops the backend) into
     a normal exit, so this runs then too; on Windows the window ends the whole process tree instead."""
     if _cleanup_registered:
         return

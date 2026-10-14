@@ -134,6 +134,6 @@ def toggle_playback() -> str:
     if result.returncode != 0:
         if "not allowed" in result.stderr or "1002" in result.stderr:
             return ("I need Accessibility permission to press keys. Open System Settings, Privacy and Security, "
-                    "Accessibility, and allow the app running Jervis.")
+                    "Accessibility, and allow the app running Jarvis.")
         return "I couldn't control Stremio."
     return "Toggled play and pause in Stremio."

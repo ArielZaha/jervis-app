@@ -1,4 +1,4 @@
-// Jervis holographic core: a wireframe sphere of points held inside three tilting gimbal rings, orbiting satellites,
+// Jarvis holographic core: a wireframe sphere of points held inside three tilting gimbal rings, orbiting satellites,
 // an equalizer ring and a rotating HUD dial. Each assistant state maps to a target look; the current look eases toward it.
 //
 // Smoothness rules this file follows:

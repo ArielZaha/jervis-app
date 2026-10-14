@@ -1,0 +1,13 @@
+{
+ "name": "question",
+ "frames": 222,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "sent:Why is the sky blue?": 60,
+  "reply:Why is the sky blue?": 75
+ },
+ "notes": {},
+ "opened": []
+}

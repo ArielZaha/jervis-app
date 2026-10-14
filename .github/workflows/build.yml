@@ -21,7 +21,7 @@ jobs:
         include:
           - os: windows-latest
             platform: --win
-            installer: release/Jervis Setup.exe
+            installer: release/Jarvis Setup.exe
           - os: macos-14
             platform: --mac
             installer: release/*.dmg
@@ -50,7 +50,7 @@ jobs:
 
       - name: Tests
         env:
-          JERVIS_AUDIO: 'off'
+          JARVIS_AUDIO: 'off'
         run: python -m pytest -q
 
       - name: Computer control on a real desktop (Windows)
@@ -58,21 +58,21 @@ jobs:
         continue-on-error: true   # hosted runners' desktops may not take input; the result is still worth reading
         run: python tests/installer/windows_control.py
 
-      - name: Build Jervis's engine
-        run: pyinstaller --noconfirm --distpath backend-dist --workpath build/pyinstaller jervis-backend.spec
+      - name: Build Jarvis's engine
+        run: pyinstaller --noconfirm --distpath backend-dist --workpath build/pyinstaller jarvis-backend.spec
 
       - name: Engine self-test
         shell: bash
         run: |
-          export JERVIS_DATA_DIR="$RUNNER_TEMP/selftest"
-          ./backend-dist/jervis-backend/jervis-backend --selftest | grep '^SELFTEST'
+          export JARVIS_DATA_DIR="$RUNNER_TEMP/selftest"
+          ./backend-dist/jarvis-backend/jarvis-backend --selftest | grep '^SELFTEST'
 
       - name: Offline speech in a folder with Hebrew letters (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:JERVIS_DATA_DIR = Join-Path $env:RUNNER_TEMP 'ג׳רוויס בדיקה'
-          $report = ./backend-dist/jervis-backend/jervis-backend.exe --selftest --speech | Select-String '^SELFTEST'
+          $env:JARVIS_DATA_DIR = Join-Path $env:RUNNER_TEMP 'ג׳רוויס בדיקה'
+          $report = ./backend-dist/jarvis-backend/jarvis-backend.exe --selftest --speech | Select-String '^SELFTEST'
           Write-Host $report
           if ($LASTEXITCODE -ne 0 -or -not ("$report" -match '"offline_speech": "ok')) { exit 1 }
 
@@ -90,7 +90,7 @@ jobs:
           MAC_SIGNING_PASSWORD: ${{ secrets.MAC_SIGNING_PASSWORD }}
         run: |
           # Every build signed with the same (self-made) certificate: macOS then keeps the permissions people gave
-          # Jervis (Accessibility, microphone) across updates. Without it, each build has a new ad-hoc signature.
+          # Jarvis (Accessibility, microphone) across updates. Without it, each build has a new ad-hoc signature.
           if [ -z "$MAC_SIGNING_P12" ]; then echo "No signing certificate: ad-hoc signature."; exit 0; fi
           KC="$RUNNER_TEMP/signing.keychain-db"
           security create-keychain -p ci "$KC"
@@ -100,10 +100,10 @@ jobs:
           security import "$RUNNER_TEMP/sign.p12" -k "$KC" -P "$MAC_SIGNING_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KC" >/dev/null
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
-          security find-certificate -c "Jervis Code Signing" -p "$KC" > "$RUNNER_TEMP/cert.pem"
+          security find-certificate -c "Jarvis Code Signing" -p "$KC" > "$RUNNER_TEMP/cert.pem"
           sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cert.pem"
           security find-identity -v -p codesigning "$KC"
-          echo "JERVIS_MAC_IDENTITY=Jervis Code Signing" >> "$GITHUB_ENV"
+          echo "JARVIS_MAC_IDENTITY=Jarvis Code Signing" >> "$GITHUB_ENV"
 
       - name: Build the installer
         env:
@@ -113,7 +113,7 @@ jobs:
       - name: SignPath availability check (Windows)
         # Free code signing for open-source projects, which is what stops SmartScreen from calling the
         # installer unrecognized: https://signpath.io/product/open-source . Apply at
-        # https://signpath.org/apply.html, create a project (slug "jervis") with a "test-signing" and a
+        # https://signpath.org/apply.html, create a project (slug "jarvis") with a "test-signing" and a
         # "release-signing" policy once approved, then add the SIGNPATH_API_TOKEN and SIGNPATH_ORG_ID repo
         # secrets. Until those secrets exist, the installer is built and tested unsigned, same as today.
         if: runner.os == 'Windows'
@@ -134,8 +134,8 @@ jobs:
         id: upload_unsigned
         uses: actions/upload-artifact@v4
         with:
-          name: jervis-installer-unsigned
-          path: release/Jervis Setup.exe
+          name: jarvis-installer-unsigned
+          path: release/Jarvis Setup.exe
           retention-days: 1
 
       - name: Submit to SignPath and wait for the signed installer
@@ -144,7 +144,7 @@ jobs:
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '${{ secrets.SIGNPATH_ORG_ID }}'
-          project-slug: 'jervis'
+          project-slug: 'jarvis'
           signing-policy-slug: ${{ startsWith(github.ref, 'refs/tags/v') && 'release-signing' || 'test-signing' }}
           github-artifact-id: '${{ steps.upload_unsigned.outputs.artifact-id }}'
           wait-for-completion: true
@@ -153,18 +153,18 @@ jobs:
       - name: Replace the installer with the signed one
         if: steps.signpath_check.outputs.configured == 'true'
         shell: bash
-        run: mv "release-signed/Jervis Setup.exe" "release/Jervis Setup.exe"
+        run: mv "release-signed/Jarvis Setup.exe" "release/Jarvis Setup.exe"
 
       - name: Installer reliability (Windows, diagnostic)
         if: runner.os == 'Windows'
         continue-on-error: true
         shell: pwsh
-        run: ./tests/installer/windows_stress.ps1 -Installer "release/Jervis Setup.exe" -Rounds 12
+        run: ./tests/installer/windows_stress.ps1 -Installer "release/Jarvis Setup.exe" -Rounds 12
 
       - name: Fresh install test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./tests/installer/windows_smoke.ps1 -Installer "release/Jervis Setup.exe"
+        run: ./tests/installer/windows_smoke.ps1 -Installer "release/Jarvis Setup.exe"
 
       - name: Fresh install test (macOS)
         if: runner.os == 'macOS'
@@ -172,7 +172,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: jervis-${{ runner.os }}
+          name: jarvis-${{ runner.os }}
           path: ${{ matrix.installer }}
           if-no-files-found: error
           retention-days: 30
@@ -194,5 +194,5 @@ jobs:
         run: |
           cd installers
           sha256sum * > SHA256SUMS.txt
-          gh release create "$GITHUB_REF_NAME" * --repo "$GITHUB_REPOSITORY" --title "Jervis $GITHUB_REF_NAME" \
-            --notes "Windows: run Jervis Setup.exe. Mac (Apple Silicon): open the .dmg and drag Jervis to Applications. Checksums in SHA256SUMS.txt."
+          gh release create "$GITHUB_REF_NAME" * --repo "$GITHUB_REPOSITORY" --title "Jarvis $GITHUB_REF_NAME" \
+            --notes "Windows: run Jarvis Setup.exe. Mac (Apple Silicon): open the .dmg and drag Jarvis to Applications. Checksums in SHA256SUMS.txt."

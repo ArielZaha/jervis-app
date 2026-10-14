@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Jarvis — product film</title>
+  <link rel="stylesheet" href="film.css" />
+</head>
+<body>
+  <div id="stage"></div>
+  <!-- index.html?film=trailer plays the trailer (trailer.js), ?film=showcase the 90-second showcase (showcase.js); without it, the first, longer film (scenes.js) -->
+  <script>
+    window.FILM_NAME = new URLSearchParams(location.search).get('film') || 'scenes';
+    window.FILM_BPM = window.FILM_NAME === 'scenes' ? 100 : 120;
+  </script>
+  <script src="core.js"></script>
+  <script>document.write(`<script src="${window.FILM_NAME}.js"><\/script>`);</script>
+</body>
+</html>

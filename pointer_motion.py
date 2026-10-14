@@ -1,4 +1,4 @@
-"""How Jervis moves the mouse pointer: a short, smooth glide to the target instead of a jump.
+"""How Jarvis moves the mouse pointer: a short, smooth glide to the target instead of a jump.
 
 A person watching should be able to follow where the pointer goes before it clicks, so the movement:
   - takes time that grows with the distance, the way a hand's does (Fitts's law: ~0.15 s for a nudge, ~0.6 s
@@ -58,12 +58,12 @@ def path(start, end, rate_hz: int = RATE_HZ) -> list:
 
 
 class PointerTakenOver(Exception):
-    """The user moved the mouse while Jervis was moving it: stop at once, they're taking over."""
+    """The user moved the mouse while Jarvis was moving it: stop at once, they're taking over."""
 
 
 def glide(start, end, set_position, get_position, sleep, abort_pixels: int = 25, rate_hz: int = RATE_HZ) -> None:
     """Move the pointer from `start` to `end` along path(), through the platform's own functions. Raises
-    PointerTakenOver as soon as the pointer is somewhere Jervis didn't put it (the user grabbed the mouse)."""
+    PointerTakenOver as soon as the pointer is somewhere Jarvis didn't put it (the user grabbed the mouse)."""
     last = (int(start[0]), int(start[1]))
     for point in path(start, end, rate_hz):
         now = get_position()

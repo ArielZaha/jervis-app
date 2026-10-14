@@ -1,4 +1,4 @@
-"""Finished places for Jervis's Blender kit: the bigger things a picture or a request is made of — a modern villa,
+"""Finished places for Jarvis's Blender kit: the bigger things a picture or a request is made of — a modern villa,
 a storefront, a room, a road, a shoreline, ground, distant hills, a forest. Real geometry with real thickness, glass,
 frames, trims and materials, named by role ('<Name> Window Glass', '<Name> Sign') so lighting, editing and the scene's
 semantic memory can find each part.
@@ -197,7 +197,7 @@ def villa(name="Villa", at=None, floors=2, width=20.0, depth=11.0, wings=2, glas
              floors_p.done(f"{name} Floors", at, "travertine", bevel=0.01),
              terrace_p.done(f"{name} Terrace", at, "travertine", bevel=0.01),
              interior.done(f"{name} Interior", at, "#d9cbb8"),
-             lights_p.done(f"{name} Downlights", at, material("#fff1d6", name="Jervis downlight", emission=0.0)),   # noqa: F821
+             lights_p.done(f"{name} Downlights", at, material("#fff1d6", name="Jarvis downlight", emission=0.0)),   # noqa: F821
              door.done(f"{name} Door", at, "dark wood", bevel=0.01),
              handle.done(f"{name} Door Handle", at, "steel")]
     root = _finish_asset(name, "villa", params, made, at, rotation,   # noqa: F821
@@ -286,7 +286,7 @@ def storefront(name="Shop", at=None, width=8.0, depth=9.0, floors=2, facade="woo
             crates.box((gx, y_f - 0.45, 0.32), (0.9, 0.6, 0.64))
         made.append(crates.done(f"{name} Display", at, "light wood", bevel=0.01))
         goods_obj = goods.done(f"{name} Goods", at, None, smooth=True)
-        goods_obj.data.materials.append(material(palette[r.randrange(len(palette))], name="Jervis produce"))   # noqa: F821
+        goods_obj.data.materials.append(material(palette[r.randrange(len(palette))], name="Jarvis produce"))   # noqa: F821
         made.append(goods_obj)
     # the sign over the front, and an awning or a tiled eave between the floors
     sign.box((0, y_f - 0.12, GF - 0.32), (shopfront_w * 0.8, 0.12, 0.55))
@@ -321,10 +321,10 @@ def storefront(name="Shop", at=None, width=8.0, depth=9.0, floors=2, facade="woo
              display_glass.done(f"{name} Display Glass", at, "clear glass"),
              door.done(f"{name} Door", at, "dark wood" if style == "traditional" else "dark metal", bevel=0.005),
              inside.done(f"{name} Interior", at, "#e9d5b3"),
-             sign.done(f"{name} Sign", at, material(sign_color, name=f"Jervis sign {name}", emission=0.0)),   # noqa: F821
+             sign.done(f"{name} Sign", at, material(sign_color, name=f"Jarvis sign {name}", emission=0.0)),   # noqa: F821
              eave.done(f"{name} Awning" if with_awning else f"{name} Eaves", at,
                        "#7a2a22" if with_awning else "slate", bevel=0.01),
-             lant.done(f"{name} Lanterns", at, material("#f2e6c8", name=f"Jervis lantern {name}", emission=0.0),   # noqa: F821
+             lant.done(f"{name} Lanterns", at, material("#f2e6c8", name=f"Jarvis lantern {name}", emission=0.0),   # noqa: F821
                        smooth=True),
              roof.done(f"{name} Roof", at, "slate" if style == "traditional" else "concrete", bevel=0.01)]
     root = _finish_asset(name, "storefront", params, [m for m in made if m is not None], at, rotation,   # noqa: F821
@@ -399,9 +399,9 @@ def room(name="Room", at=None, width=6.0, depth=5.0, height=2.8, walls="white re
     made = [walls_obj, floor_p.done(f"{name} Floor", at, floor), ceil.done(f"{name} Ceiling", at, "white render"),
             skirt.done(f"{name} Skirting", at, "#f2f0ea"), frames.done(f"{name} Windows", at, "#f4f4f2", bevel=0.004),
             glass.done(f"{name} Window Glass", at, "clear glass"),
-            view.done(f"{name} View", at, material("#cfe3f0", name="Jervis daylight view", emission=1.5)),   # noqa: F821
+            view.done(f"{name} View", at, material("#cfe3f0", name="Jarvis daylight view", emission=1.5)),   # noqa: F821
             door_p.done(f"{name} Door", at, "light wood", bevel=0.005),
-            fix.done(f"{name} Ceiling Light", at, material("#fff6e5", name="Jervis ceiling light", emission=0.0))]   # noqa: F821
+            fix.done(f"{name} Ceiling Light", at, material("#fff6e5", name="Jarvis ceiling light", emission=0.0))]   # noqa: F821
     root = _finish_asset(name, "room", params, [m for m in made if m is not None], at, rotation,   # noqa: F821
                          f"a {W:.1f} by {D:.1f} m room with {sum(len(v) for v in per_wall.values())} window(s), "
                          f"a {floor} floor and {walls} walls")
@@ -453,7 +453,7 @@ _NATURAL_GROUND = {"lawn": ((0.72, 0.78, 0.6), (1.2, 1.12, 0.78)), "wild grass":
 def _natural_variation(mat, kind):
     """Tone the material over a few metres (two scales of noise): the ground of a real place, not one colour."""
     tones = _NATURAL_GROUND.get(str(kind).lower())
-    if tones is None or mat is None or not mat.use_nodes or mat.node_tree.nodes.get("Jervis ground variation"):
+    if tones is None or mat is None or not mat.use_nodes or mat.node_tree.nodes.get("Jarvis ground variation"):
         return
     nt = mat.node_tree
     bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
@@ -474,7 +474,7 @@ def _natural_variation(mat, kind):
     nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
     mix = nt.nodes.new("ShaderNodeMix")
     mix.data_type, mix.blend_type = "RGBA", "MULTIPLY"
-    mix.name = "Jervis ground variation"
+    mix.name = "Jarvis ground variation"
     mix.inputs["Factor"].default_value = 1.0
     if src is not None:
         nt.links.new(src, mix.inputs["A"])
@@ -548,7 +548,7 @@ def shore(name="Beach", at=None, width=120.0, sand_depth=30.0, sea_depth=400.0, 
             x = -Wd / 2 + (k + 0.5) * Wd / int(Wd / 3)
             y = SD / 2 - 3.0 + 1.2 * mathutils.noise.noise(Vector((x / 7.0, 0.3, 0)))
             surf.box((x, y, 0.02), (3.2, 0.35 + 0.25 * abs(mathutils.noise.noise(Vector((x / 3.0, 1.1, 0)))), 0.02))
-        made.append(surf.done(f"{name} Surf", at, material("#eef4f2", name="Jervis surf", roughness=0.6)))   # noqa: F821
+        made.append(surf.done(f"{name} Surf", at, material("#eef4f2", name="Jarvis surf", roughness=0.6)))   # noqa: F821
     root = _finish_asset(name, "shore", params, made, at, 0,   # noqa: F821
                          f"a {round(Wd)} m sandy beach sloping into the sea, with surf along the shore and open water "
                          "to the horizon")

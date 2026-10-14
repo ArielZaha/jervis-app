@@ -1,8 +1,9 @@
 # Secrets and personal data: never committed
 .env
 .cache
+.cache-*
 .calendar_token.json
-.jervis-netflix-profile/
+.jarvis-netflix-profile/
 transcripts/
 logs/
 images/
@@ -17,9 +18,10 @@ relay_identity.json
 agent_memory.json
 
 # Environments, dependencies, build output
-venv/
+venv
+*.nosync
 .venv/
-node_modules/
+node_modules
 __pycache__/
 *.pyc
 .electron-cache/
@@ -31,7 +33,7 @@ release/
 # Old hand-made copies of the app
 *.zip
 
-# The website has its own repository (ArielZaha/jervis)
+# The website has its own repository (ArielZaha/jarvis)
 website/
 
 # Downloaded ML models (large binaries, fetched at runtime)
@@ -46,3 +48,10 @@ models/
 
 # Build logs
 *.log
+.jervis-netflix-profile/
+.tmp/
+
+# Jarvis's own data in a copy run from source (Coding Mode history and backups), and graphify's generated map
+coding_history.json
+code_backups/
+graphify-out/

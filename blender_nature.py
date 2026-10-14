@@ -1,4 +1,4 @@
-"""The small, many things a place is covered in, for Jervis's Blender kit: tufts of grass, wild flowers, reeds and
+"""The small, many things a place is covered in, for Jarvis's Blender kit: tufts of grass, wild flowers, reeds and
 ferns (real blades, each tuft its own; forest() repeats them as cheap instances, clumped as plants grow), and patches
 of other ground (wild grass, bare earth, rock) with ragged natural edges laid over the ground — so a lawn isn't one
 flat colour from the door to the horizon.

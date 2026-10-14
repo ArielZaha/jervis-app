@@ -143,7 +143,7 @@ def _forms(w: str) -> list:
 
 def _resolve_reference(ref_text: str, session, bridge=None):
     """Which object (its real Blender name) `ref_text` ("it", "the second one", "the cube") means, or None if
-    nothing matches. Objects Jervis made this session come first; otherwise the real scene is asked (Blender's
+    nothing matches. Objects Jarvis made this session come first; otherwise the real scene is asked (Blender's
     default "Cube", or whatever the user selected by hand), never guessed."""
     found = _resolve_tracked(ref_text, session)
     if found and bridge is not None and not _exists(bridge, found):
@@ -263,7 +263,7 @@ def _focus_group(ref_text: str, session, bridge=None):
         return list(group)
     names = [o["name"] for o in getattr(session, "blender_objects", [])]
     if bridge is not None and w and not any(n.lower().startswith(w + " ") for n in names):
-        # Built before this session (Jervis restarted): ask the scene itself.
+        # Built before this session (Jarvis restarted): ask the scene itself.
         listed = _run(bridge, _SCENE + "RESULT = '|'.join(o.name for o in scene.objects if o.type == 'MESH')  # scene names",
                       timeout=8)
         names = [n for n in (listed.get("output") or "").split("|") if n] if listed.get("ok") else names
@@ -568,7 +568,7 @@ def _color_action(bridge, session, ref_text: str, color: str):
     r, g, b = _COLORS[color.lower()]
 
     def action():
-        material = f"Jervis {color.lower()}"
+        material = f"Jarvis {color.lower()}"
         group = _focus_group(ref_text, session, bridge)
         name = None
         if group:
@@ -814,9 +814,9 @@ def _focus_action():
 
 
 def _undo_action(bridge, session):
-    """Reverses whatever Jervis's own last deterministic action did, rather than calling Blender's native
+    """Reverses whatever Jarvis's own last deterministic action did, rather than calling Blender's native
     bpy.ops.ed.undo() — that operator's poll() rejects calls made from a script/timer context (confirmed: it fails
-    even with temp_override supplying a window/area/region), and more importantly, undoing Jervis's own last change
+    even with temp_override supplying a window/area/region), and more importantly, undoing Jarvis's own last change
     specifically is what "undo that" means here — not whatever the user may have done by hand in Blender."""
     def action():
         pending = session.last_undo

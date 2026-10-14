@@ -1,4 +1,4 @@
-"""Seeing, for Jervis: a local vision-language model (Ollama) asked focused questions about a picture, answering in
+"""Seeing, for Jarvis: a local vision-language model (Ollama) asked focused questions about a picture, answering in
 machine-usable form — JSON attributes, and object boxes in the picture's own pixels.
 
 Why it is built this way (measured on an RTX 4060 8 GB, Ollama 0.35):

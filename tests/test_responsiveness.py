@@ -33,7 +33,7 @@ def gpu(monkeypatch):
     monkeypatch.setattr(local_llm, "_loaded", lambda: dict(state["loaded"]))
     monkeypatch.setattr(local_llm, "_shape", lambda model: (33, 4100.0, 128.0))   # DictaLM-like: 33 layers
     monkeypatch.setattr(local_llm.requests, "post", post)
-    monkeypatch.setenv("JERVIS_GPU_FIT", "on")
+    monkeypatch.setenv("JARVIS_GPU_FIT", "on")
     local_llm._gpu_plans.clear()
     yield state
     local_llm._gpu_plans.clear()
@@ -144,7 +144,7 @@ def test_no_nvidia_gpu_means_no_plan(gpu, monkeypatch):
 
 
 def test_the_fit_can_be_switched_off(gpu, monkeypatch):
-    monkeypatch.setenv("JERVIS_GPU_FIT", "off")
+    monkeypatch.setenv("JARVIS_GPU_FIT", "off")
     gpu["memory"] = (8188, 7000)
     assert local_llm.gpu_options("dicta", 4096) == {}
 
@@ -292,7 +292,7 @@ def test_every_request_leaves_one_timing_line_without_its_words(sandboxed, capsy
 def test_the_first_model_warmed_is_the_one_the_conversation_needs(monkeypatch):
     import local_ai
     monkeypatch.setattr(local_ai.local_llm, "role_model", lambda role: local_llm.DICTALM)
-    monkeypatch.delenv("JERVIS_REPLY_LANGUAGE", raising=False)
+    monkeypatch.delenv("JARVIS_REPLY_LANGUAGE", raising=False)
     language.set_reply_language("he")
     assert local_ai.first_role() == "translate"
     language.set_reply_language("en")

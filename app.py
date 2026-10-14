@@ -9,18 +9,19 @@ try:  # running app.py by hand skips the first-run setup; say what to do instead
     import dotenv, groq, psutil, requests, speech_recognition, spotipy, websockets  # noqa: F401
 except ImportError as _missing:
     raise SystemExit(
-        f"\nJervis is missing a Python package ({_missing.name}). Don't run app.py directly.\n"
-        "  Windows: double-click start_jervis.bat (or run:  py -3 run.py)\n"
+        f"\nJarvis is missing a Python package ({_missing.name}). Don't run app.py directly.\n"
+        "  Windows: double-click start_jarvis.bat (or run:  py -3 run.py)\n"
         "  Mac:     python3 run.py\n"
-        "The first run installs everything Jervis needs.\n")
-import paths  # noqa: E402  where Jervis reads his files and where he writes (see paths.py)
+        "The first run installs everything Jarvis needs.\n")
+import paths  # noqa: E402  where Jarvis reads his files and where he writes (see paths.py)
 import logbook  # noqa: E402
 import settings  # noqa: E402
-if "--selftest" not in __import__("sys").argv:   # (an installed copy checking itself isn't Jervis starting up)
-    logbook.install()   # before anything prints, so startup problems end up in logs/jervis.log too
+if "--selftest" not in __import__("sys").argv:   # (an installed copy checking itself isn't Jarvis starting up)
+    logbook.install()   # before anything prints, so startup problems end up in logs/jarvis.log too
 settings.load()     # before any module reads its configuration from the environment
 import platform
 import re
+import string
 import secrets
 import shutil
 import subprocess
@@ -28,9 +29,10 @@ import threading
 import time
 import traceback
 import webbrowser
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import hmac
+import random
 import signal
 import sys
 import urllib.parse
@@ -55,6 +57,7 @@ import netflix
 import stremio
 from volume import change_volume
 import documents
+import music
 import google_accounts
 import local_llm
 import local_ai
@@ -76,16 +79,22 @@ import computer_use
 import spotify_local
 import spotify_match
 import osal
+import apple_calendar
 import calendar_api
 import calendar_time
 import classroom
 import earth
+import geo
 import equations
+import arithmetic
 import forecast
 import functions
 import graphs
 import images
 import planets
+import worldclock
+import coder
+import code_destinations
 import web_search
 import whatsapp
 import phone_control
@@ -96,18 +105,20 @@ import push
 import sms
 import queue
 from timers import TimerManager, format_duration, parse_timer_command
-from speech_fixes import fix_names
+from speech_fixes import fix_names, fix_spoken
 import speech_fixes
 import timeparse
 from timeparse import format_time, parse_start_time
 
-APP_DIR = paths.RESOURCE_DIR  # Jervis's own files; everything he writes goes to paths.DATA_DIR instead
+APP_DIR = paths.RESOURCE_DIR  # Jarvis's own files; everything he writes goes to paths.DATA_DIR instead
 load_dotenv(os.path.join(APP_DIR, ".env"))  # settings.load() already applied .env; this only keeps old setups identical
 
 GROQ_MODEL = "openai/gpt-oss-20b"
 STT_MODEL = "whisper-large-v3-turbo"
 # Which AI answers: "auto" = the online AI (Groq) and, if it can't be reached, the local one (Ollama); "groq" or "ollama" force one.
-LLM_BACKEND = (os.getenv("LLM_BACKEND") or "auto").strip().lower()
+# Chosen by the LLM_BACKEND line in .env, or in Settings. With "groq" the local one is closed at startup, to free its memory.
+LLM_BACKEND = (os.getenv("LLM_BACKEND") or "auto").strip().strip("\"'").lower()
+LLM_BACKEND = {"grok": "groq", "online": "groq", "both": "auto"}.get(LLM_BACKEND, LLM_BACKEND)
 groq_down_until = 0.0  # while Groq is known to be unreachable, skip straight to the local AI instead of waiting for timeouts
 GROQ_KEY = (os.getenv("GROQ_API_KEY") or "").strip().strip("\"'")  # tolerate spaces or quotes pasted around the key
 groq_client = Groq(api_key=GROQ_KEY or "missing-key")
@@ -118,37 +129,37 @@ if not GROQ_KEY and LLM_BACKEND in ("auto", "groq"):
 
 # How this backend was started. The installed app (and `npm start`) runs it as a child of the window, which picks a
 # free port and a secret for the window connection, and restarts the backend when it exits with RESTART_EXIT_CODE.
-SUPERVISED = os.getenv("JERVIS_SUPERVISED") == "1"
+SUPERVISED = os.getenv("JARVIS_SUPERVISED") == "1"
 WS_HOST = "127.0.0.1"
-WS_PORT = int(os.getenv("JERVIS_WS_PORT") or 8765)
-WS_TOKEN = os.getenv("JERVIS_WS_TOKEN") or ""
+WS_PORT = int(os.getenv("JARVIS_WS_PORT") or 8765)
+WS_TOKEN = os.getenv("JARVIS_WS_TOKEN") or ""
 # A phone, once paired: a separate server, LAN-bound on purpose (see phone_control.py for why this is never the
-# same channel the Electron window uses). JERVIS_RELAY_URL (Settings, Computer control, advanced) defaults to a
-# shared relay Jervis ships with, so a paired phone can reach Jervis away from this Wi-Fi with nothing to set up —
+# same channel the Electron window uses). JARVIS_RELAY_URL (Settings, Computer control, advanced) defaults to a
+# shared relay Jarvis ships with, so a paired phone can reach Jarvis away from this Wi-Fi with nothing to set up —
 # clear it to go back to same-Wi-Fi only, or point it at a different relay (relay/README.md). See relay_client.py.
-PHONE_WS_PORT = int(os.getenv("JERVIS_PHONE_PORT") or 8766)
-RELAY_URL = (os.getenv("JERVIS_RELAY_URL") or "").strip()
+PHONE_WS_PORT = int(os.getenv("JARVIS_PHONE_PORT") or 8766)
+RELAY_URL = (os.getenv("JARVIS_RELAY_URL") or "").strip()
 RESTART_EXIT_CODE = 75
 PORT_BUSY_EXIT_CODE = 76
-AUDIO_OFF = os.getenv("JERVIS_AUDIO", "on").strip().lower() == "off"   # tests: typed input only, replies printed
+AUDIO_OFF = os.getenv("JARVIS_AUDIO", "on").strip().lower() == "off"   # tests: typed input only, replies printed
 
 
 def speak_volume() -> int:
-    """Jervis's own speaking volume (0-100), set from the speaker control next to the mic button."""
+    """Jarvis's own speaking volume (0-100), set from the speaker control next to the mic button."""
     try:
-        return max(0, min(100, int(os.getenv("JERVIS_SPEAK_VOLUME", "100"))))
+        return max(0, min(100, int(os.getenv("JARVIS_SPEAK_VOLUME", "100"))))
     except ValueError:
         return 100
 
 
 def speak_muted() -> bool:
-    return (os.getenv("JERVIS_SPEAK_MUTED") or "off").strip().lower() == "on"
+    return (os.getenv("JARVIS_SPEAK_MUTED") or "off").strip().lower() == "on"
 
 
 def set_speak_volume(volume: int, muted: bool) -> None:
     """Applied instantly (settings.update writes .env/settings.json and re-syncs os.environ) and echoed back to
     every window, including ones that connect later (send_ui_update), so the slider reflects reality on load."""
-    settings.update({"JERVIS_SPEAK_VOLUME": str(volume), "JERVIS_SPEAK_MUTED": "on" if muted else "off"})
+    settings.update({"JARVIS_SPEAK_VOLUME": str(volume), "JARVIS_SPEAK_MUTED": "on" if muted else "off"})
     send_ui_update("speak_volume", {"volume": volume, "muted": muted})
 
 sp = None
@@ -170,7 +181,7 @@ except Exception as e:
 # The noise floor is calibrated once at startup (and recalibrated every few minutes while asleep, see listen()).
 # Dynamic re-adjustment is OFF: it recalculates the threshold on every recognizer.listen() call, and listening in
 # short slices (see listen_or_typed) so that typing is noticed quickly means many calls a second, which used to make
-# the threshold decay toward zero within seconds in a quiet room, and then Jervis genuinely couldn't hear anyone.
+# the threshold decay toward zero within seconds in a quiet room, and then Jarvis genuinely couldn't hear anyone.
 recognizer = sr.Recognizer()
 recognizer.energy_threshold = 300
 recognizer.dynamic_energy_threshold = False
@@ -180,10 +191,10 @@ recognizer.non_speaking_duration = 0.5
 MIN_ENERGY_THRESHOLD = 30   # a floor just to guard against a bad (near-zero) calibration; well below a normal room's own reading
 RECALIBRATE_EVERY = 180     # seconds; keeps up with a room that slowly gets noisier or quieter without the decay bug
 MIN_PHRASE_SECONDS = 0.4
-POST_SPEECH_PAUSE = 0.4  # Lets the speaker's tail fade so Jervis doesn't hear itself.
+POST_SPEECH_PAUSE = 0.4  # Lets the speaker's tail fade so Jarvis doesn't hear itself.
 mic_calibrated = False
 last_calibrated_at = 0.0
-# The window's "stop and listen" button (or Space) sets this to cut Jervis off mid-sentence.
+# The window's "stop and listen" button (or Space) sets this to cut Jarvis off mid-sentence.
 interrupt_speech = threading.Event()
 
 tts_engine = None  # created on first use, and only when the operating system has no better voice
@@ -204,13 +215,15 @@ connected_clients = set()
 ws_loop = None
 ws_loop_ready = threading.Event()
 mic_muted = threading.Event()
+mute_changes = [0]   # bumped on every mute/unmute: a phrase whose recording or transcription spans one is dropped
+last_spoken = {"text": "", "at": 0.0}   # what Jarvis last said, and when he finished: his own voice isn't a request
 
-# Wake-word state: Jervis stays passively listening (only checking for the
+# Wake-word state: Jarvis stays passively listening (only checking for the
 # wake phrase) until woken, then behaves exactly as before until a shutdown
 # phrase puts it back to sleep instead of exiting the process.
 # Only his name wakes him: a bare "hi" or "hello" said in the room would open his window at random, now that he keeps
 # listening with the window closed. Speech recognition often writes "Jarvis", so both spellings count.
-WAKE_PHRASES = [f"{greeting} {name}" for name in ("jervis", "jarvis")
+WAKE_PHRASES = [f"{greeting} {name}" for name in ("jarvis", "jervis")
                 for greeting in ("wake up", "hey", "hello", "hi", "ok", "okay")]
 
 
@@ -226,14 +239,14 @@ def time_greeting() -> str:
         part = "afternoon"
     else:
         part = "evening"
-    who = (os.getenv("JERVIS_USER_NAME") or "").strip() or "Sir"
+    who = (os.getenv("JARVIS_USER_NAME") or "").strip() or "Sir"
     return f"Good {part}, {who}. How can I help you today?"
 
 
 window_visible = True   # the window tells us when it's closed (hidden) or shown again
 awake = False
 ui_launched = False
-youtube_active = False  # True once Jervis started a YouTube video; routes pause/resume there.
+youtube_active = False  # True once Jarvis started a YouTube video; routes pause/resume there.
 netflix_active = False  # Same for a Netflix show.
 DEFAULT_MEDIA_APP = "stremio"  # Where "play the show X" goes before any media app has been used.
 stremio_active = False  # Same for a Stremio title (controlled with key presses).
@@ -250,8 +263,8 @@ _WAKE_LEAD = re.compile(r"^.*?\b(?:wake up|hey|hello|hi|ok|okay)\s+(?:jervis|jar
 
 
 def after_wake_phrase(text: str) -> str:
-    """What was said after the wake phrase, if it's a request ("Hey Jervis, create a house" -> "create a house"),
-    else "" (just "Hey Jervis", or "hey Jervis are you there")."""
+    """What was said after the wake phrase, if it's a request ("Hey Jarvis, create a house" -> "create a house"),
+    else "" (just "Hey Jarvis", or "hey Jarvis are you there")."""
     rest = _WAKE_LEAD.sub("", text or "", count=1).strip(" ,.!?")
     if len(rest.split()) < 2 or _EXPLICIT_WAKE.fullmatch(" ".join(re.sub(r"[^a-z0-9 ]", " ", rest.lower()).split())):
         return ""
@@ -262,18 +275,18 @@ _EXPLICIT_WAKE = re.compile(r"(?:(?:hey|hi|hello|ok|okay|wake up|wake)\s+)?(?:je
 
 
 def is_explicit_wake(text: str) -> bool:
-    """Just "Hey Jervis" / "Wake up Jervis" said on its own (also while he is already awake): the window goes full screen."""
+    """Just "Hey Jarvis" / "Wake up Jarvis" said on its own (also while he is already awake): the window goes full screen."""
     normalized = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
     return bool(_EXPLICIT_WAKE.fullmatch(normalized))
 
 
 ui_process = None
-ui_failures = 0  # times the window died right after starting; after two Jervis stops retrying until restarted
+ui_failures = 0  # times the window died right after starting; after two Jarvis stops retrying until restarted
 
 
 def find_npm():
     """Where npm lives. run.py passes the path it found (a freshly installed Node.js is not on PATH yet)."""
-    found = os.getenv("JERVIS_NPM") or shutil.which("npm.cmd" if platform.system() == "Windows" else "npm") or shutil.which("npm")
+    found = os.getenv("JARVIS_NPM") or shutil.which("npm.cmd" if platform.system() == "Windows" else "npm") or shutil.which("npm")
     if found:
         return found
     for folder in ("/opt/homebrew/bin", "/usr/local/bin"):  # where Homebrew puts it, which a background launch does not have on PATH
@@ -290,18 +303,18 @@ def _watch_window_start(process) -> None:
     code = process.poll()
     if code not in (None, 0):
         ui_failures += 1
-        print(f"\nThe Jervis window closed right after starting (code {code}).\n"
+        print(f"\nThe Jarvis window closed right after starting (code {code}).\n"
               "  - Is Node.js installed?  Open a new terminal and run:  node --version\n"
-              "  - Try once by hand in the Jervis folder:  npm install   then   npm start\n", flush=True)
+              "  - Try once by hand in the Jarvis folder:  npm install   then   npm start\n", flush=True)
 
 
 fullscreen_pending = False  # a wake-up asked for a full-screen window that has not connected yet
 
 
 def show_fullscreen():
-    """Open the window (if needed) and make it full screen. Used when Jervis is woken up."""
+    """Open the window (if needed) and make it full screen. Used when Jarvis is woken up."""
     global fullscreen_pending
-    if control_active():   # the window would cover the app Jervis is working in (and catch his clicks)
+    if control_active():   # the window would cover the app Jarvis is working in (and catch his clicks)
         return
     if connected_clients:
         send_ui_update_once({"type": "fullscreen"})
@@ -321,23 +334,23 @@ def launch_ui():
         return
     if connected_clients or (ui_process is not None and ui_process.poll() is None):
         return
-    if ui_failures >= 2 or os.getenv("JERVIS_NO_WINDOW") == "1":
+    if ui_failures >= 2 or os.getenv("JARVIS_NO_WINDOW") == "1":
         return
     npm = find_npm()
     if not npm:
-        print("\nThe Jervis window can't open because Node.js is not installed.\n"
-              "  Install it from https://nodejs.org (the LTS version), then start Jervis again.\n", flush=True)
+        print("\nThe Jarvis window can't open because Node.js is not installed.\n"
+              "  Install it from https://nodejs.org (the LTS version), then start Jarvis again.\n", flush=True)
         return
     try:
         env = {**os.environ, "PATH": os.path.dirname(npm) + os.pathsep + os.environ.get("PATH", ""),  # so npm finds node
-               "JERVIS_ATTACH_PORT": str(WS_PORT), "JERVIS_WS_TOKEN": WS_TOKEN}
+               "JARVIS_ATTACH_PORT": str(WS_PORT), "JARVIS_WS_TOKEN": WS_TOKEN}
         env.pop("ELECTRON_RUN_AS_NODE", None)   # set in VS Code's terminal; it would start Electron as plain Node
-        print("Opening the Jervis window...", flush=True)
+        print("Opening the Jarvis window...", flush=True)
         ui_process = subprocess.Popen([npm, "start"], cwd=APP_DIR, env=env)
         ui_launched = True
         threading.Thread(target=_watch_window_start, args=(ui_process,), daemon=True).start()
     except Exception as e:
-        print(f"Could not launch the Jervis window: {e}", flush=True)
+        print(f"Could not launch the Jarvis window: {e}", flush=True)
 
 
 async def _send_payload_async(payload_dict):
@@ -371,9 +384,10 @@ class PhoneVoiceInput(str):
     other command text to the main loop, but carries the phone session it came from, so the reply can be sent back
     to that phone (relay_client.deliver_reply) in addition to being spoken here as usual."""
 
-    def __new__(cls, text: str, session_id: str):
+    def __new__(cls, text: str, session_id: str, request_id: str = ""):
         obj = str.__new__(cls, text)
         obj.session_id = session_id
+        obj.request_id = request_id   # the phone app's id for this request (its run_on_computer tool), if any
         return obj
 
 
@@ -410,9 +424,9 @@ def localized(reply):
     return out
 
 
-def broadcast(sender, text="", image=None, image_kind=None):
+def broadcast(sender, text="", image=None, image_kind=None, to_phone=True):
     """Show (and, unless private, log) a chat message. `image` is a data: URL, for a picture the user attached or
-    Jervis made/edited; `text` may be empty when a message is only a picture. Jervis's own messages are shown in the
+    Jarvis made/edited; `text` may be empty when a message is only a picture. Jarvis's own messages are shown in the
     language the user is speaking."""
     if sender != "user" and text:
         text = localized(text)
@@ -420,10 +434,10 @@ def broadcast(sender, text="", image=None, image_kind=None):
     text = str(text).strip() if text else ""
     if not text and not image:
         return
-    if os.getenv("JERVIS_KEEP_TRANSCRIPTS", "on") != "off":   # the user can switch conversation logs off in Settings
+    if os.getenv("JARVIS_KEEP_TRANSCRIPTS", "on") != "off":   # the user can switch conversation logs off in Settings
         try:
             with open(session_file, "a", encoding="utf-8") as f:
-                label = "You" if sender == "user" else "Jervis"
+                label = "You" if sender == "user" else "Jarvis"
                 f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {label}: {PRIVATE_PLACEHOLDER if private else (text or '[image]')}\n")
         except OSError as e:
             print(f"Could not write the conversation log: {e}", flush=True)
@@ -434,12 +448,14 @@ def broadcast(sender, text="", image=None, image_kind=None):
             if image_kind:
                 payload["imageKind"] = image_kind
         asyncio.run_coroutine_threadsafe(_send_payload_async(payload), ws_loop)
-    chat_message = {"type": "chat", "sender": "user" if sender == "user" else "ai", "text": text}
+    chat_message = {"type": "chat", "sender": "user" if sender == "user" else "ai", "text": text,
+                    "ts": int(time.time() * 1000)}
     if image:
         # The relay caps a message at 512 KB (relay/server.py), and encryption grows it by about a third again.
         chat_message["image"] = image if len(image) <= PHONE_IMAGE_MAX_CHARS else ""
     phone_chat_history.append(chat_message)
-    mirror_to_phone(chat_message)
+    if to_phone:
+        mirror_to_phone(chat_message)
 
 
 # ---------- the phone's chat: a live mirror of this window's conversation (see phone_client.html) ----------
@@ -480,10 +496,19 @@ latest_ui_updates["speak_volume"] = {"type": "speak_volume",
                                      "data": {"volume": speak_volume(), "muted": speak_muted()}}
 
 
+# The window's graphs, globe and planets: the phone shows them too, with the same drawing code (see phone_visuals.py),
+# and opens them by itself when it's the phone that asked.
+PHONE_VISUALS = {"graph", "globe", "planet", "show_graph", "show_globe", "show_planet", "close_graph", "close_globe",
+                 "close_planet"}
+turn_from_phone = False   # main_loop: the request being handled right now came from the phone
+
+
 def send_ui_update_once(payload: dict) -> None:
     """Send a one-off message to the window (not replayed to windows that connect later)."""
     if ws_loop:
         asyncio.run_coroutine_threadsafe(_send_payload_async(payload), ws_loop)
+    if payload.get("type") in PHONE_VISUALS:
+        mirror_to_phone({"type": "visual", "visual": payload, "open": turn_from_phone})
 
 
 def send_ui_update(data_type, data):
@@ -505,12 +530,12 @@ alerts_open = 0  # how many alert cards the window is showing
 
 
 def _connection_allowed(websocket) -> bool:
-    """Only Jervis's own window may connect. A web page open in a browser can also reach 127.0.0.1, so browser origins
-    are refused, and when the window gave this backend a secret (JERVIS_WS_TOKEN) the connection must present it."""
+    """Only Jarvis's own window may connect. A web page open in a browser can also reach 127.0.0.1, so browser origins
+    are refused, and when the window gave this backend a secret (JARVIS_WS_TOKEN) the connection must present it."""
     request = getattr(websocket, "request", None)
     headers = getattr(request, "headers", None) or {}
     origin = (headers.get("Origin") or "").lower()
-    allowed = [o.strip().lower() for o in os.getenv("JERVIS_ALLOW_ORIGINS", "").split(",") if o.strip()]  # UI tests only
+    allowed = [o.strip().lower() for o in os.getenv("JARVIS_ALLOW_ORIGINS", "").split(",") if o.strip()]  # UI tests only
     if origin.startswith(("http://", "https://")) and origin not in allowed:
         return False
     if WS_TOKEN:
@@ -578,7 +603,7 @@ local_ai_manager = local_ai.LocalAI(report=lambda state: send_ui_update("setup",
 async def handle_client(websocket):
     global alerts_open, fullscreen_pending
     if not _connection_allowed(websocket):
-        print("Refused a connection that did not come from Jervis's window.", flush=True)
+        print("Refused a connection that did not come from Jarvis's window.", flush=True)
         await websocket.close(1008, "not allowed")
         return
     connected_clients.add(websocket)
@@ -600,8 +625,10 @@ async def handle_client(websocket):
                 continue
             if data.get("type") == "mute":
                 mic_muted.set()
+                mute_changes[0] += 1   # anything heard before this, still being transcribed, is thrown away
             elif data.get("type") == "unmute":
                 mic_muted.clear()
+                mute_changes[0] += 1
             elif data.get("type") == "set_speak_volume":
                 try:
                     volume = max(0, min(100, int(data.get("volume", 100))))
@@ -619,7 +646,7 @@ async def handle_client(websocket):
                 typed = " ".join(str(data.get("text", "")).split())[:500]
                 if typed:
                     typed_inputs.put(typed)
-                    interrupt_speech.set()  # if Jervis is talking, stop so he can answer this
+                    interrupt_speech.set()  # if Jarvis is talking, stop so he can answer this
             elif data.get("type") == "image":  # a picture attached in the window, with an optional caption/instruction
                 name = str(data.get("name", ""))[:120]
                 caption = " ".join(str(data.get("text", "")).split())[:500]
@@ -637,7 +664,15 @@ async def handle_client(websocket):
                                            "it, read any text in it, compare it with another, or edit it if you tell "
                                            "me how.")
             elif data.get("type") == "setup_retry":
-                local_ai_manager.start_background()
+                if LLM_BACKEND != "groq":   # the online AI only: the local one stays closed
+                    local_ai_manager.start_background()
+            elif str(data.get("type") or "").startswith("code_"):   # the Coding Mode window
+                coding_window_says(data)
+            elif data.get("type") == "clock_add":   # the clock window's "add a city" field
+                if str(data.get("name") or "").strip():
+                    add_clock_city(str(data["name"]).strip()[:80])
+            elif data.get("type") == "clock_cities":
+                clock_window_reports(data)
             elif data.get("type") == "weather_refresh":   # the weather window's refresh button, or a click on the card
                 refresh_weather_window(str(data.get("city") or "")[:80], refresh=data.get("refresh") is not False)
             elif data.get("type") == "window_visibility":
@@ -672,7 +707,7 @@ async def handle_client(websocket):
                                                      "message": f"The settings file couldn't be saved: {e}"}))
                 else:
                     global mic_calibrated
-                    if "JERVIS_MIC" in result["saved"]:
+                    if "JARVIS_MIC" in result["saved"]:
                         mic_calibrated = False   # a different microphone has a different noise level
                     settings_changed.set()
                     await websocket.send(json.dumps({"type": "settings_saved", **result}))
@@ -708,9 +743,9 @@ def run_ws_server():
             if SUPERVISED:
                 print(f"Port {WS_PORT} is taken; the window will pick another one.", flush=True)
                 os._exit(PORT_BUSY_EXIT_CODE)
-            print(f"\nJervis is already running (his window's connection, port {WS_PORT}, is taken).\n"
-                  "  Use the copy that is running, or stop it first:  pkill -f app.py   (Windows: close the other Jervis console)\n"
-                  "  then start Jervis again.\n", flush=True)
+            print(f"\nJarvis is already running (his window's connection, port {WS_PORT}, is taken).\n"
+                  "  Use the copy that is running, or stop it first:  pkill -f app.py   (Windows: close the other Jarvis console)\n"
+                  "  then start Jarvis again.\n", flush=True)
             os._exit(1)
         raise
 
@@ -721,7 +756,7 @@ def run_ws_server():
 
 
 def phone_control_mode() -> str:
-    return (os.getenv("JERVIS_PHONE_CONTROL") or "off").strip().lower()
+    return (os.getenv("JARVIS_PHONE_CONTROL") or "off").strip().lower()
 
 
 def session_transport_url() -> str:
@@ -796,8 +831,12 @@ async def handle_phone_client(websocket) -> None:
             elif kind == "pair":
                 if not phone_server.pairing_open():
                     await websocket.send(json.dumps({"type": "pair_error",
-                        "message": "No pairing is open right now. Ask Jervis to connect your phone again."}))
-                elif (paired := phone_server.try_pair(str(data.get("code", "")), str(data.get("deviceName", "")))) is None:
+                        "message": "No pairing is open right now. Ask Jarvis to connect your phone again."}))
+                elif (paired := phone_server.try_pair(
+                        str(data.get("code", "")), str(data.get("deviceName", "")),
+                        # this same phone's previous pairing, if it still has one: replaced, not duplicated
+                        replaces=(str(data.get("previousDeviceId") or ""), str(data.get("previousToken") or ""))
+                        )) is None:
                     await websocket.send(json.dumps({"type": "pair_error",
                         "message": "That code is wrong or has expired."}))
                 else:
@@ -885,10 +924,17 @@ def run_phone_server() -> None:
                                     max_size=phone_session.VOICE_MAX_BYTES + 4096):
             await asyncio.Future()
 
-    try:
-        loop.run_until_complete(main())
-    except OSError as e:
-        print(f"Could not start the phone-control server on port {PHONE_WS_PORT}: {e}", flush=True)
+    # Jarvis Wake (wake/jarvis_wake.py) holds this same port while Jarvis is closed, so opening the phone app can
+    # start him; it lets go the moment it does, but give it a few seconds rather than lose the phone for good.
+    for attempt in range(30):
+        try:
+            loop.run_until_complete(main())
+            return
+        except OSError as e:
+            if attempt == 29:
+                print(f"Could not start the phone-control server on port {PHONE_WS_PORT}: {e}", flush=True)
+                return
+            time.sleep(1)
 
 
 _PHONE_PAIR_COMMAND = re.compile(
@@ -903,22 +949,66 @@ def is_phone_pair_command(text: str) -> bool:
 
 def start_phone_pairing() -> str:
     """"Connect my phone": straight to a QR code on screen — a fresh pairing code inside this computer's local
-    address. Scanning it opens phone_client.html on a Confirmed/Not Confirmed tap (its pairCard); that tap, on the
-    phone in hand, is the approval, and Confirmed lands straight in the phone's chat. Works the same for a brand-new
-    phone and one paired before (which re-pairs, replacing its old record — see handle_phone_client's "pair").
+    address. Scanning it opens phone_client.html, which pairs straight away: the single-use code inside the scanned
+    link — only visible on this screen, valid for minutes, same Wi-Fi only — is the approval, so there's no extra
+    tap (a phone opening the bare address without the code still gets an explicit Pair button). It then lands in
+    the phone's chat and offers to install the app to the Home Screen. Works the same for a brand-new phone and one
+    paired before (which re-pairs, replacing its old record — see handle_phone_client's "pair").
     Needs the phone on the same Wi-Fi: pairing is local-only on purpose, see phone_control.py's module docstring."""
     if phone_control_mode() == "off":
         return ("Phone control is turned off. Turn on “Let your phone control this computer” in Settings, "
                 "Computer control, then ask me again.")
     code = phone_server.begin_pairing()
+    # Asked right after Jarvis started (or restarted to switch phone control on): the relay is still signing in. A few
+    # seconds' wait gets the code that pairs from anywhere, instead of the same-Wi-Fi one.
+    waited = time.time()
+    while RELAY_URL and getattr(relay, "_loop", None) is not None and getattr(relay, "_ws", None) is None and time.time() - waited < 5:
+        time.sleep(0.15)
     address = f"http://{phone_control.lan_address()}:{PHONE_WS_PORT}"
-    pair_url = f"{address}/?code={code}"   # the code travels in the link, never typed; the address and code are
-    # still shown on the panel in full, as a fallback for a phone that can't scan.
+    local_url = f"{address}/?code={code}"   # same Wi-Fi: the code travels in the link, never typed
+    # With the relay reachable, the QR leads to the phone's always-on app instead and carries this pairing's one-time
+    # key (see secure_pair_url): the phone pairs through the relay from wherever it is, and the app it lands in opens
+    # even when this computer is off. The Wi-Fi address and code stay on the panel for a phone that can't scan.
+    secure_url = secure_pair_url()
     # send_ui_update, not the "once" version: still there if the window wasn't open the instant this fired, or gets
     # reopened a minute later. Cleared on "paired" (handle_phone_client), so a later window never sees a stale QR.
-    send_ui_update("phone_pairing", {"address": address, "pairUrl": pair_url, "code": code,
+    send_ui_update("phone_pairing", {"address": address, "pairUrl": secure_url or local_url, "localPairUrl": local_url,
+                                     "code": code, "secure": bool(secure_url),
                                      "expiresAt": time.time() + phone_control.PAIR_CODE_TTL})
-    return "Scan the QR code on your screen with your phone, on the same Wi-Fi, and tap Confirmed."
+    if secure_url:
+        return "Scan the QR code on your screen: with your phone's camera, or with Scan in the Jarvis app."
+    return "Scan the QR code on your screen with your phone's camera, on the same Wi-Fi."
+
+
+def secure_pair_url() -> str:
+    """The always-on app's address with the open pairing's one-time key in its #fragment (never sent to the relay or
+    any server: only the page's own script reads it), or "" when there's no relay to pair through right now."""
+    secret = phone_server.pairing_secret()
+    if not (RELAY_URL and secret and getattr(relay, "_ws", None) is not None):
+        return ""
+    origin = re.sub(r"^ws", "http", RELAY_URL).rstrip("/")
+    return f"{origin}/?computerId={relay.computer_id}#pair={phone_crypto.key_to_b64(secret).rstrip('=')}"
+
+
+def _on_secure_pair(secret: bytes, device_name: str, replaces: tuple):
+    """session_router's callback for a pairing request that opened with the QR's one-time key (phone_session.
+    _pair_secure): pairs the phone and returns what it needs, which goes back sealed with that same key."""
+    paired = phone_server.try_pair_secure(secret, device_name, replaces=replaces)
+    if paired is None:
+        return None
+    device_id, token, key = paired
+    name = phone_server.registry.authenticate(device_id, token)["name"]
+    broadcast("ai", f"{name} is now paired and can talk to me from anywhere.")
+    clear_ui_update("phone_pairing")
+    send_ui_update_once({"type": "phone_paired", "deviceName": name})   # closes the QR panel
+    answer = {"deviceId": device_id, "token": token, "key": phone_crypto.key_to_b64(key), "deviceName": name,
+              "computerId": relay.computer_id, "relayUrl": session_transport_url(),
+              # where this computer is on the home Wi-Fi: the phone app tries that first, the relay otherwise
+              "localUrl": f"ws://{phone_control.lan_address()}:{PHONE_WS_PORT}/"}
+    ai = _phone_ai_config()
+    if ai.get("apiKey"):
+        answer["ai"] = ai   # sealed with the pairing key like the rest: the phone's own Jarvis works from the start
+    return answer
 
 
 def start_phone_session() -> str:
@@ -926,7 +1016,7 @@ def start_phone_session() -> str:
     with Confirmed/Not Confirmed buttons (see phone_sw.js), opening confirm.html — a small, self-contained page
     that decides the session (phone_server.decide_session) using nothing but the session id and secret already in
     its own link, whether or not this phone has ever synced anything with wherever that page happens to be served
-    from. From there, "Open Jervis" optionally goes on to attach a live session with the phone's own device
+    from. From there, "Open Jarvis" optionally goes on to attach a live session with the phone's own device
     credentials (phone_server.attach_session) for voice/commands — that part does still need this phone's data to
     already be on that same origin (see phone_client.html's syncToOtherOrigin), but confirming or rejecting the
     request itself never does. Without a relay configured (Settings, "Relay address"), this still works for a
@@ -939,8 +1029,8 @@ def start_phone_session() -> str:
     # anything about this computer (see confirm.html and phone_sw.js).
     push_data = {"computerId": relay.computer_id, "sessionId": session.id, "secret": session.secret}
     actions = [{"action": "confirm", "title": "Confirmed"}, {"action": "reject", "title": "Not Confirmed"}]
-    sent = push.send_to_all(push_store, "Jervis", "Jervis wants to connect to this computer.",
-                            tag="jervis-session", actions=actions, data=push_data)
+    sent = push.send_to_all(push_store, "Jarvis", "Jarvis wants to connect to this computer.",
+                            tag="jarvis-session", actions=actions, data=push_data)
     if not sent:
         url = notification_setup_url()
         # Same QR panel as first-ever pairing (phonePairingLayer in index.html/panels.js) — no reason to make the
@@ -978,7 +1068,9 @@ def list_paired_phones() -> str:
     if not devices:
         return "No phones are paired."
     names = ", ".join(d["name"] for d in devices)
-    return f"{len(devices)} phone{'s' if len(devices) != 1 else ''} paired: {names}."
+    connected = session_router.connected_device_names()
+    now = f" Connected right now: {', '.join(connected)}." if connected else " None is connected right now."
+    return f"{len(devices)} phone{'s' if len(devices) != 1 else ''} paired: {names}.{now}"
 
 
 def forget_paired_phones() -> str:
@@ -1030,38 +1122,504 @@ def weather_loop():
         settings_changed.wait(timeout=delay)   # a new city in Settings refreshes the panel right away
 
 
+# ---------- Coding Mode: "write a Python calculator and open it in VS Code" (coder.py is the engine, code_destinations.py the
+# places it can put the result, coding/ the window) ----------
+# Which AI writes the code: Groq's larger model, which the same free key reaches (asked for by the user, 2026-10-13: free, and
+# better at code than the small one Jarvis talks with). It is used for code whatever LLM_BACKEND says, because that line is
+# about who Jarvis talks with. A CODE_MODEL line in .env names another model; with no Groq key at all, the AI on this
+# computer writes the code. Groq's free plan allows 8,000 tokens a minute: a wait for that limit is shown, not hidden.
+DEFAULT_CODE_MODEL = "openai/gpt-oss-120b"
+CODE_MODEL = (os.getenv("CODE_MODEL") or "").strip().strip("\"'") or DEFAULT_CODE_MODEL
+code_state = {"open": False, "job": None, "project": None, "busy": False, "at": 0.0}
+_code_lock = threading.Lock()
+_code_model_refused = False   # the chosen model isn't offered to this key any more: the chat model writes the code instead
+
+
+def code_model_name() -> str:
+    """The model that will really write the code now (shown in the window, never a hoped-for one)."""
+    if not GROQ_KEY:
+        return f"{local_ai_manager.text_model} (on this computer)"
+    return GROQ_MODEL if _code_model_refused else CODE_MODEL
+
+
+def _code_chat(messages: list, max_tokens: int) -> str:
+    """The coding engine's question to the AI: a longer answer than chat ever needs, patient with the rate limit."""
+    global _code_model_refused
+    if not GROQ_KEY:   # no online AI at all: the one on this computer
+        return groq_chat(model=GROQ_MODEL, messages=messages, max_tokens=max_tokens).choices[0].message.content or ""
+    kwargs = {"messages": messages, "max_tokens": max_tokens}
+    for attempt in range(5):
+        model = code_model_name()
+        if "gpt-oss" in model:   # its thinking counts against the answer's length: little for a plan, more for code
+            kwargs["reasoning_effort"] = "low" if max_tokens <= 4000 else "medium"
+        else:
+            kwargs.pop("reasoning_effort", None)
+        try:
+            return groq_client.with_options(timeout=150, max_retries=0).chat.completions.create(   # no hidden retries: waits are done below, in the open
+                model=model, **kwargs).choices[0].message.content or ""
+        except Exception as e:
+            text = str(e)
+            if not _code_model_refused and model != GROQ_MODEL and re.search(r"model.{0,40}(?:not found|does not exist|decommissioned|no longer)|404", text, re.I):
+                print(f"The coding model {model} isn't available to this key ({text[:120]}); using {GROQ_MODEL}.", flush=True)
+                _code_model_refused = True
+                continue
+            if re.search(r"too large|413|max_tokens|maximum", text, re.I) and kwargs["max_tokens"] > 3000:
+                kwargs["max_tokens"] //= 2      # this account's limit is smaller than what was asked for: ask for less
+                continue
+            wait = re.search(r"try again in (?:(\d+)m)?([\d.]+)\s*(ms|s)", text, re.I)
+            if attempt < 4 and re.search(r"rate.?limit|429", text, re.I):
+                seconds = (int(wait.group(1) or 0) * 60 + float(wait.group(2)) * (0.001 if wait.group(3).lower() == "ms" else 1)) if wait else 20
+                if seconds <= 90:
+                    job = code_state["job"]
+                    if job and code_state["busy"]:   # say why nothing is moving
+                        job.step = f"Waiting {int(seconds) + 1} seconds for the AI's free-plan limit"
+                        send_ui_update_once({"type": "coding", "data": job.public()})
+                    time.sleep(seconds + 1)
+                    continue
+            raise
+    raise coder.CodeError("The AI kept refusing that request.")
+
+
+def _code_progress(job) -> None:
+    code_state.update(job=job, at=time.time())
+    send_ui_update_once({"type": "coding", "data": job.public()})
+
+
+def code_engine():
+    return coder.Engine(_code_chat, _code_progress, model=code_model_name())
+
+
+def current_code_project():
+    """The project follow-ups mean: the one just made or chosen, else the last one that still exists on disk."""
+    project = code_state["project"]
+    return project if project and os.path.isdir(project.get("path", "")) else coder.latest_project()
+
+
+def coding_info() -> dict:
+    """What the Coding Mode window needs to draw itself: languages, destinations (and why one can't be used), recent work."""
+    return {"languages": [{"key": l.key, "name": l.name} for l in coder.LANGUAGES.values()],
+            "destinations": code_destinations.describe(), "history": coder.load_history()[:12], "model": code_model_name(),
+            "projectsDir": coder.default_projects_dir(), "busy": code_state["busy"], "drive": code_destinations.drive_status(),
+            "sandbox": sys.platform == "darwin" and os.path.exists("/usr/bin/sandbox-exec"),   # whether tests can be fenced in here
+            "job": code_state["job"].public() if code_state["job"] else None}
+
+
+def _deliver_code(job, destination: str) -> str:
+    """Send a finished project to where it was asked to go; what to say about that (true to what really happened)."""
+    project = {**job.public(), "title": job.name.replace("-", " ").title()}
+    files = {p: c for p, c in coder.read_project(job.path)["files"].items() if not p.endswith(".docx")}
+    result = code_destinations.deliver(destination, project, files)
+    job.delivered = {"destination": destination, **result}
+    job.destination = destination
+    coder.save_project_record(job.public())
+    _code_progress(job)
+    return result["message"]
+
+
+def _run_code_job(job, destination: str, language: str = "", name: str = "", location: str = "", project: dict = None, announce: bool = True) -> str:
+    try:
+        engine = code_engine()
+        if job.action == "change":
+            before = (project or {}).get("tests") or {}
+            engine.change(job, project, evidence=before.get("output", "") if before.get("status") == "failed" else "")
+            if job.phase == "done" and before.get("status") in ("passed", "failed"):
+                # its tests were run before at the user's request: run them again on the changed code, and say the real result
+                job.tests = coder.run_tests(job.path, job.test)
+                coder.save_project_record(job.public())
+        else:
+            engine.create(job, language=language, name=name, location=location)
+        reply = coder.result_sentence(job)
+        if job.phase == "done":
+            code_state["project"] = job.public()
+            if job.action == "change" and job.tests.get("status") in ("passed", "failed", "not_run"):
+                reply += " I ran the tests again. " + _tests_reply(job.tests, job.name)
+            if destination:
+                reply += " " + _deliver_code(job, destination)
+            elif job.action == "change" and job.diffs:
+                reply += " The changes are in the coding window."
+            else:   # nowhere was asked for: it is simply made, and this is where
+                reply += f" It's in {job.path}."
+    except Exception as e:   # the engine reports its own failures; this is a bug in the glue, said plainly
+        traceback.print_exc()
+        job.phase, job.error = "failed", coder.friendly_error(e)
+        reply = job.error
+    finally:
+        code_state["busy"] = False
+        _code_progress(job)
+    if announce:
+        broadcast("ai", reply)
+        speak(reply)
+    return reply
+
+
+def start_code_job(action: str, request: str, language: str = "", destination: str = "", name: str = "", location: str = "", wait: bool = False) -> str:
+    """Begin writing (or changing) code. In the window's own time unless wait: then the result comes back as the answer."""
+    with _code_lock:
+        if code_state["busy"]:
+            return f"I'm still working on {code_state['job'].name or 'the last request'}. One at a time: ask again when it's done."
+        project = current_code_project() if action == "change" else None
+        if action == "change" and not project:
+            return "There's no project to change yet. Tell me what to build first."
+        if destination and destination not in code_destinations.DESTINATIONS:
+            destination = ""
+        if location:
+            location = os.path.abspath(os.path.expanduser(location))
+            if not os.path.isdir(location):
+                return f"I couldn't find the folder {location}. Choose a folder that exists, or leave it empty."
+        job = coder.Job(id=datetime.now().strftime("%Y%m%d-%H%M%S"), request=request.strip(), action=action, destination=destination,
+                        created=time.time(), model=code_model_name())
+        code_state.update(busy=True, job=job, at=time.time())
+    if ws_loop and connected_clients:
+        send_ui_update_once({"type": "coding_open", "data": coding_info()})
+    kwargs = {"language": language, "name": name, "location": location, "project": project}
+    if wait or not (ws_loop and connected_clients):
+        return _run_code_job(job, destination, announce=False, **kwargs)
+    threading.Thread(target=_run_code_job, args=(job, destination), kwargs=kwargs, daemon=True, name="coding").start()
+    what = f"changing {project['name']}" if action == "change" else "writing it"
+    return f"On it: I'm {what} now. You can watch in the coding window; I'll tell you when it's done."
+
+
+def _tests_reply(result: dict, name: str) -> str:
+    if result["status"] == "not_run":
+        return f"I didn't run any tests for {name}: {result['output']}"
+    lines = [ln for ln in result["output"].splitlines() if ln.strip()]
+    tail = lines[-1] if lines else ""
+    where = " (in a sandbox, without network)" if result["sandboxed"] else ""
+    if result["status"] == "passed":
+        return f"The tests of {name} passed{where}: {tail}"
+    return f"The tests of {name} failed{where}. The last line says: {tail} The full output is in the coding window; say \"fix the errors\" and I'll work on them."
+
+
+def run_code_tests(announce: bool = False) -> str:
+    """Run the current project's own tests. Only ever on an explicit request: this is the one place its code is executed."""
+    project = current_code_project()
+    if not project:
+        return "There's no project yet whose tests I could run."
+    job = code_state["job"] if code_state["job"] and code_state["job"].path == project["path"] else coder.Job(
+        id=project["id"], request=project.get("request", ""), **{k: project.get(k, "") for k in ("name", "language", "path", "summary", "run", "test", "needs")},
+        files=project.get("files", []), checks=project.get("checks", []), phase="done")
+    job.tests = {"status": "running", "command": "", "output": ""}
+    _code_progress(job)
+    job.tests = coder.run_tests(project["path"], project.get("test", ""))
+    code_state["project"] = job.public()
+    coder.save_project_record(job.public())
+    _code_progress(job)
+    reply = _tests_reply(job.tests, project["name"])
+    if announce:
+        broadcast("ai", reply)
+        speak(reply)
+    return reply
+
+
+def handle_code_command(text: str):
+    project = current_code_project()
+    recent = bool(project) and (code_state["open"] or time.time() - code_state["at"] < 15 * 60)
+    request = coder.parse_request(text, have_project=bool(project), recent=recent)
+    if request is None:
+        return None
+    action = request["action"]
+    window = bool(ws_loop and connected_clients)
+    if action == "open_mode":
+        if not window:
+            return "Coding Mode is in Jarvis's window, which isn't open. You can still ask me to write code: just say what to build."
+        send_ui_update_once({"type": "coding_open", "data": coding_info()})
+        return "Coding Mode is open. Tell me what to build."
+    if action == "close_mode":
+        send_ui_update_once({"type": "close_coding"})
+        return "Okay, I closed Coding Mode." if window else None
+    if action == "create":
+        if code_state["busy"]:
+            return f"I'm still working on {code_state['job'].name or 'the last request'}. Ask again when it's done."
+        return start_code_job("create", request["request"], request["language"] or "", request["destination"] or "")
+    if action == "deliver":
+        if not project:
+            return "I haven't written any code yet. Tell me what to build, and where to put it."
+        job = coder.Job(id=project["id"], request=project.get("request", ""), phase="done", files=project.get("files", []), checks=project.get("checks", []),
+                        **{k: project.get(k, "") for k in ("name", "language", "path", "summary", "run", "test", "needs")})
+        return _deliver_code(job, request["destination"])
+    if action == "change":
+        return start_code_job("change", request["request"], destination=request.get("destination") or "")
+    if action == "tests":
+        if window:
+            threading.Thread(target=run_code_tests, kwargs={"announce": True}, daemon=True, name="coding-tests").start()
+            return f"Running the tests of {project['name']}."
+        return run_code_tests()
+    if action == "check":
+        results = coder.check_project(project["path"])
+        return f"{project['name']}: {coder.checks_summary(results)}" + "".join(f" {r['file']}: {r['output'].splitlines()[0]}" for r in results if r["status"] == "failed" and r["output"])[:300]
+    if action == "continue":
+        code_state["project"] = project
+        if window:
+            send_ui_update_once({"type": "coding_open", "data": {**coding_info(), "project": project}})
+        return f"The last project is {project['name']}, in {project['path']}. Tell me what to change, or say \"run the tests\"."
+    if action == "explain":
+        try:
+            return code_engine().explain(request["request"], project)
+        except coder.CodeError as e:
+            return str(e)
+        except Exception as e:
+            return coder.friendly_error(e)
+    return None
+
+
+def tool_write_code(request: str = "", language: str = "", destination: str = "", **_ignored) -> str:
+    """The write_code tool: the AI's way in, for a coding request the direct command didn't catch. It waits for the real
+    result (files written, checks run), which is what the AI is given back."""
+    request = (request or "").strip()
+    if len(request.split()) < 2:
+        return "Nothing was written: the request didn't say what to build. Ask the user what they want."
+    language = coder.language_for(language or "") or coder.language_for(request) or ""
+    destination = coder.destination_for("in " + (destination or "")) or (destination if destination in code_destinations.DESTINATIONS else "")
+    return start_code_job("create", request, language, destination, wait=True)
+
+
+def is_code_request(text: str) -> bool:
+    """Asking for code to be written or changed (the only time the write_code tool is offered or allowed)."""
+    n = " ".join((text or "").lower().replace("’", "'").split())
+    if re.match(r"^(?:i|we|my|he|she|they|it)\b", n) and not re.match(r"^i (?:want|need|would like|'d like)\b", n):
+        return False
+    return bool(re.search(r"\b(?:write|build|create|make|code|program|develop|generate)\b.{0,60}\b(?:code|program|script|app|application|website|web ?page|project|"
+                          r"game|api|tool|bot)\b", n)) and not coder._NOT_CODE.search(n)
+
+
+def coding_window_says(data: dict) -> None:
+    """Everything the Coding Mode window asks for. Slow work (the AI, tests, sign-in) runs off the socket's thread."""
+    kind = data.get("type")
+    reply = lambda payload: send_ui_update_once(payload)
+    if kind == "code_window":
+        code_state["open"] = data.get("open") is True
+    elif kind == "code_info":
+        reply({"type": "coding_info", "data": coding_info()})
+    elif kind == "code_start":
+        text = str(data.get("request") or "").strip()[:4000]
+        if len(text.split()) < 2:
+            return reply({"type": "coding_note", "message": "Say what to build, in a sentence or two."})
+        answer = start_code_job("create", text, coder.language_for(text) or "", coder.destination_for(text) or "")
+        if not answer.startswith("On it"):
+            reply({"type": "coding_note", "message": answer})
+    elif kind == "code_change":
+        project = next((p for p in coder.load_history() if p["id"] == data.get("id")), None)
+        if project:
+            code_state["project"] = project
+        answer = start_code_job("change", str(data.get("request") or "").strip()[:4000])
+        if not answer.startswith("On it"):
+            reply({"type": "coding_note", "message": answer})
+    elif kind == "code_pick":
+        project = next((p for p in coder.load_history() if p["id"] == data.get("id")), None)
+        if project and os.path.isdir(project["path"]):
+            code_state.update(project=project, at=time.time())
+            reply({"type": "coding", "data": {**project, "phase": "done", "changed": []}})
+        else:
+            reply({"type": "coding_note", "message": "That project's folder isn't there any more."})
+    elif kind == "code_file":
+        project = current_code_project()
+        job = code_state["job"]
+        path = str(data.get("path") or "")
+        try:
+            with open(coder.safe_path(project["path"], path), encoding="utf-8") as f:
+                content = f.read(coder.MAX_FILE_BYTES)
+            reply({"type": "coding_file", "path": path, "content": content,
+                   "diff": job.diffs.get(path, "") if job and job.path == project["path"] else ""})
+        except (coder.CodeError, OSError, UnicodeDecodeError, TypeError) as e:
+            reply({"type": "coding_file", "path": path, "content": "", "error": f"I couldn't read that file ({type(e).__name__})."})
+    elif kind in ("code_tests", "code_deliver", "code_connect_drive", "code_check"):
+        def work():
+            if kind == "code_tests":
+                run_code_tests()
+            elif kind == "code_check":
+                project = current_code_project()
+                if project and code_state["job"] and code_state["job"].path == project["path"]:
+                    code_state["job"].checks = coder.check_project(project["path"])
+                    _code_progress(code_state["job"])
+            elif kind == "code_deliver":
+                answer = handle_code_command(f"save it in {code_destinations.SPOKEN.get(str(data.get('destination')), 'a folder on this computer')}") \
+                    if str(data.get("destination")) in code_destinations.DESTINATIONS else "I don't know that place."
+                reply({"type": "coding_note", "message": answer or ""})
+            else:
+                try:
+                    code_destinations.drive_credentials(interactive=True)
+                    message = "Google Drive is connected."
+                except code_destinations.DriveUnavailable as e:
+                    message = str(e)
+                reply({"type": "coding_info", "data": coding_info()})
+                reply({"type": "coding_note", "message": message})
+        threading.Thread(target=work, daemon=True, name=kind).start()
+
+
+# ---------- The world clock: "what time is it in Tokyo?" opens it (see worldclock.py for the places and what is said, clock/ for the window) ----------
+clock_state = {"open": False, "places": [], "at": 0.0}   # what the clock window shows (it reports its own changes too)
+pending_clock_choice = None   # "Which Valencia do you mean…?": the request waiting for that answer
+last_place_asked = {"name": "", "place": None, "at": 0.0}   # the last place a time or weather question named, for "what time is it there?"
+
+
+def clock_in_use() -> bool:
+    return bool(clock_state["open"] and ws_loop and connected_clients)
+
+
+def _clock_home() -> dict:
+    """The user's own place for the clock window: named after the weather city, with its coordinates when they are
+    already known (for the daylight strip); never a network wait."""
+    city = os.getenv("WEATHER_CITY", "")
+    try:
+        found = earth._CACHE.get(city.strip().lower()) if city.strip() else None
+    except Exception:
+        found = None
+    if not found or not found.get("timezone"):
+        return worldclock.home_place()   # where the weather city is isn't known yet: "Your time", no Sun claimed
+    home = worldclock.home_place(city, found["timezone"])   # the window uses it only if it matches the computer's own time
+    home.update(lat=found["lat"], lon=found["lon"])
+    return home
+
+
+def show_world_clock(names: list, difference: bool = False, daylight: bool = False, mode: str = "set", known: dict = None) -> str:
+    """Find every place, say the time there and put it on the clock window. A place that can't be told apart or
+    found is asked about or reported instead: the window never shows a guessed time. known: names already settled."""
+    global pending_clock_choice
+    known = dict(known or {})
+    places = []
+    for name in names[:worldclock.MAX_PLACES]:
+        if name in known:
+            places.append(known[name])
+            continue
+        outcome, found = worldclock.resolve(name)
+        if outcome == "home":
+            places.append(_clock_home())
+        elif outcome == "ok":
+            places.append(found)
+            known[name] = found
+        elif outcome == "ambiguous":
+            pending_clock_choice = {"names": names, "name": name, "options": found, "known": known, "difference": difference,
+                                    "daylight": daylight, "mode": mode, "at": time.time()}
+            label = lambda p: f"{p['name']}, {p['country']}" if p.get("country") else p["name"]
+            return f"Which {name.title()} do you mean: {label(found[0])}, or {label(found[1])}?"
+        else:   # more than one time zone, or no such place: say so, show nothing
+            return found
+    pending_clock_choice = None
+    there = [p for p in places if not p.get("home")]
+    if not there:
+        return None
+    text = worldclock.describe(places, difference=difference, daylight=daylight)
+    last_place_asked.update(name=there[0]["name"], place=there[0], at=time.time())
+    if ws_loop and connected_clients:
+        send_ui_update_once({"type": "clock", "data": {**worldclock.window(there, mode), "home": _clock_home()}})
+        shown = there if mode == "set" else [*clock_state["places"], *[p for p in there if p["name"] not in {q["name"] for q in clock_state["places"]}]]
+        clock_state.update(open=True, places=shown[-worldclock.MAX_PLACES:], at=time.time())
+        text += " The world clock is on your screen." if mode == "set" else " I added it to the world clock."
+    return text
+
+
+def handle_clock_choice(text: str):
+    """The answer to "Which Valencia do you mean: Valencia, Spain, or Valencia, Venezuela?"."""
+    global pending_clock_choice
+    pending = pending_clock_choice
+    if not pending or time.time() - pending["at"] > 3 * 60:
+        return None
+    n = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
+    options, chosen = pending["options"], None
+    if re.search(r"\b(?:first|1st|former)\b", n):
+        chosen = options[0]
+    elif re.search(r"\b(?:second|2nd|latter|other one)\b", n):
+        chosen = options[1]
+    else:
+        said, asked = set(n.split()), set(re.findall(r"[a-z]+", pending["name"].lower()))
+        scores = [len((set(re.findall(r"[a-z]+", f"{o['name']} {o['country']}".lower())) - asked) & said) for o in options]
+        if max(scores) > 0 and scores.count(max(scores)) == 1:
+            chosen = options[scores.index(max(scores))]
+    if not chosen:
+        pending_clock_choice = None   # they moved on to something else
+        return None
+    return show_world_clock(pending["names"], pending["difference"], pending["daylight"], pending["mode"],
+                            {**pending["known"], pending["name"]: chosen})
+
+
+def handle_clock_command(text: str):
+    request = worldclock.parse_request(text, clock_open=clock_in_use(), shown=[p["name"] for p in clock_state["places"]])
+    if request is None:
+        return None
+    action = request["action"]
+    if action == "close":
+        if not clock_in_use():
+            return "The world clock isn't open."
+        send_ui_update_once({"type": "close_clock"})
+        clock_state.update(open=False)
+        return "Okay, I closed the clock."
+    if action == "world":
+        places = worldclock.around_the_world()
+        text = worldclock.describe(places[1:4])   # said: three of them; shown: all
+        if ws_loop and connected_clients:
+            send_ui_update_once({"type": "clock", "data": {**worldclock.window(places, "set", focus=-1), "home": _clock_home()}})
+            clock_state.update(open=True, places=places, at=time.time())
+            text += " The rest are on the world clock."
+        return text
+    if action == "there":
+        place = last_place_asked["place"] if time.time() - last_place_asked["at"] < 10 * 60 else None
+        if not place and clock_in_use() and clock_state["places"]:
+            place = clock_state["places"][0]
+        if not place:
+            return None   # nothing here says where "there" is: the AI has the conversation, and the world_clock tool
+        return show_world_clock([place["name"]], daylight=request.get("daylight", False), known={place["name"]: place})
+    if action == "remove":
+        said = {worldclock._key(n) for n in request["places"]} | {worldclock.known_name(n).lower() for n in request["places"]}
+        gone = [p for p in clock_state["places"] if p["name"].lower() in said]
+        if not gone:
+            return f"{request['places'][0].title()} isn't on the world clock."
+        send_ui_update_once({"type": "clock", "data": worldclock.window(gone, "remove")})
+        clock_state["places"] = [p for p in clock_state["places"] if p not in gone]
+        return f"Removed {' and '.join(p['name'] for p in gone)} from the clock."
+    mode = "add" if action == "add" else "set"
+    return show_world_clock(request["places"], request.get("difference", False), request.get("daylight", False), mode)
+
+
+def tool_world_clock(places=None, **_ignored) -> str:
+    """The world_clock tool: the AI's way in, for a time question the direct command didn't catch ("and there?")."""
+    if isinstance(places, str):
+        places = [p for p in re.split(r"\s*(?:,|;|\band\b)\s*", places) if p]
+    names = [str(p).strip() for p in (places or []) if str(p).strip()]
+    if not names:
+        return "No place was named. Ask the user which city they mean."
+    return show_world_clock(names) or "That is the user's own time zone: tell them their local time instead."
+
+
+def add_clock_city(name: str) -> None:
+    """The clock window's own "add a city" field: find it and send it back, or say why not (in the window, unspoken)."""
+    def work():
+        outcome, found = worldclock.resolve(name)
+        if outcome == "ok":
+            send_ui_update_once({"type": "clock", "data": worldclock.window([found], "add")})
+        elif outcome == "ambiguous":
+            send_ui_update_once({"type": "clock_note", "message": f"Which {name.title()}?", "options": worldclock.window(found)["cities"]})
+        elif outcome == "home":
+            send_ui_update_once({"type": "clock_note", "message": "Your own time is always on the clock."})
+        else:
+            send_ui_update_once({"type": "clock_note", "message": found})
+    threading.Thread(target=work, daemon=True, name="clock-add").start()
+
+
+def clock_window_reports(data: dict) -> None:
+    """The window says what it shows now (a city added or removed there, or the window closed)."""
+    cities = [c for c in (data.get("cities") or []) if isinstance(c, dict) and c.get("name") and c.get("tz")][:worldclock.MAX_PLACES]
+    clock_state.update(open=data.get("open") is True, at=time.time(),
+                       places=[{"name": str(c["name"])[:80], "country": str(c.get("country") or "")[:80], "tz": str(c["tz"])[:64],
+                                "lat": c.get("lat"), "lon": c.get("lon")} for c in cities])
+
+
 # ---------- The weather window: "what's the weather?" opens it (see forecast.py for the data, weather/ for the window) ----------
-_WEATHER_ASK = re.compile(
-    r"\b(?:what'?s|what is|how'?s|how is|check|tell me|show me|show|open|give me|get me|bring up|display)\b.*\bweather\b"
-    r"|\bweather\b.*\b(?:like|today|tonight|tomorrow|now|outside|forecast|this week|right now)\b"
-    r"|^(?:the )?(?:weather|forecast|weather forecast|weather report)(?: please)?$"
-    r"|\b(?:what'?s|what is|show me|show|open|check|give me) (?:the |my )?(?:weather )?forecast\b"
-    r"|\bis it (?:raining|snowing|sunny|cloudy|cold|hot|windy)(?: outside| now| right now| today)?$"
-    r"|\b(?:temperature|forecast)\b.*\b(?:outside|today|now)\b"
-    r"|\bdo i need (?:an umbrella|a jacket|a coat)\b")
 _WEATHER_CLOSE = re.compile(r"^(?:(?:please|can you|could you) )*(?:close|hide|dismiss|exit) (?:the |my )?weather"
                             r"(?: (?:window|panel|screen|app|forecast))?$")
-_WEATHER_TALK = re.compile(r"^(?:i|we|my|our|he|she|they|it was|the weather (?:was|has been))\b")
 
 
 def parse_weather_request(text: str):
-    """{"action": "show", "city": "" | "Paris"} / {"action": "close"} for a weather request, else None. Talking
-    about the weather ("I was talking about the weather yesterday") is not a request."""
+    """{"action": "show", "city": "" | "paris", "when": ..., "about": ...} (see forecast.parse_request) or
+    {"action": "close"} for a weather request, else None."""
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower().replace("’", "'")).split())
-    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jervis|jarvis) ", "", n)
-    if _WEATHER_CLOSE.match(n):
+    if _WEATHER_CLOSE.match(re.sub(r"^(?:(?:hey|ok|okay) )?(?:jarvis|jervis) ", "", n)):
         return {"action": "close"}
-    if _WEATHER_TALK.match(n) or not _WEATHER_ASK.search(n):
-        return None
-    city = ""
-    m = re.search(r"\b(?:weather|forecast|temperature|raining|snowing|sunny|cloudy|cold|hot|windy)\b.*?\b(?:in|for|at) "
-                  r"(?P<c>[a-z' ]+?)(?: (?:today|tonight|tomorrow|now|right now|this week|please))*$", n)
-    if m and m.group("c") not in ("the moment", "general", "my area", "my city", "here", "outside"):
-        city = m.group("c").strip()
-    return {"action": "show", "city": city}
+    request = forecast.parse_request(text)
+    return {"action": "show", **request} if request else None
 
 
-def show_weather(city: str = "", refresh: bool = False, speak_reply: bool = True, open_window: bool = True) -> str:
+def show_weather(city: str = "", refresh: bool = False, speak_reply: bool = True, open_window: bool = True,
+                 when: str = "", about: str = "") -> str:
     """Open the weather window (straight away, as a skeleton), fetch, then fill it. Returns what to say.
     open_window=False only updates a window that is already open (its own refresh button)."""
     window = bool(ws_loop and connected_clients)
@@ -1076,19 +1634,24 @@ def show_weather(city: str = "", refresh: bool = False, speak_reply: bool = True
         traceback.print_exc()
         send_ui_update_once({"type": "weather_panel", "error": "Weather data is temporarily unavailable."})
         return f"The weather couldn't be loaded ({type(e).__name__})."
-    send_ui_update_once({"type": "weather_panel", "data": data})
+    send_ui_update_once({"type": "weather_panel", "data": {**data, "asked": forecast.asked_dates(data, when)}})
+    if city and data.get("timezone"):   # "…and what time is it there?"
+        parts = [p.strip() for p in data["place"]["name"].split(",") if p.strip()]
+        last_place_asked.update(name=parts[0], at=time.time(), place={
+            "name": parts[0], "country": parts[-1] if len(parts) > 1 else "", "tz": data["timezone"],
+            "lat": data["place"].get("lat"), "lon": data["place"].get("lon")})
     if not city:
         send_ui_update("weather", weather_card(data))   # keep the small card in step with what was just shown
-    text = forecast.summary(data)
+    text = forecast.day_summary(data, when, about)   # "tomorrow", "will it rain on friday": that day, that question
     if window and speak_reply:
         text += " The full forecast is on your screen."
     return text
 
 
-_CLOCK_TIME = re.compile(r"^(?:hey |ok |okay )?(?:jervis[, ]+)?(?:(?:can you |could you )?(?:please )?tell me )?"
+_CLOCK_TIME = re.compile(r"^(?:hey |ok |okay )?(?:(?:jarvis|jervis)[, ]+)?(?:(?:can you |could you )?(?:please )?tell me )?"
                          r"(?:what(?:'s| is) the (?:current )?time(?: (?:now|right now|please))?|what time is it"
                          r"(?: (?:now|right now|please))?|(?:the )?time(?: please| now)?|current time)\??$", re.I)
-_CLOCK_DATE = re.compile(r"^(?:hey |ok |okay )?(?:jervis[, ]+)?(?:(?:can you |could you )?(?:please )?tell me )?"
+_CLOCK_DATE = re.compile(r"^(?:hey |ok |okay )?(?:(?:jarvis|jervis)[, ]+)?(?:(?:can you |could you )?(?:please )?tell me )?"
                          r"(?:what(?:'s| is) (?:the date|today'?s date|the date today)|what date is (?:it|today)"
                          r"(?: today)?|what day is (?:it|today)(?: today)?|which day is (?:it|today)|"
                          r"what(?:'s| is) today)\??$", re.I)
@@ -1121,7 +1684,7 @@ def handle_weather_command(text: str):
     if request["action"] == "close":
         send_ui_update_once({"type": "close_weather"})
         return "Okay, I closed the weather." if ws_loop and connected_clients else "The weather window isn't open."
-    return show_weather(request["city"])
+    return show_weather(request["city"], when=request["when"], about=request["about"])
 
 
 def refresh_weather_window(city: str = "", refresh: bool = True) -> None:
@@ -1136,19 +1699,53 @@ def tool_get_weather(city: str = "", **_ignored) -> str:
     return show_weather(str(city or "").strip())
 
 
+_spotify_target = threading.local()   # .phone: this thread is playing for the phone's own Jarvis (handle_phone_music)
+
+
 def get_device_id():
+    """The Spotify device to control: the one playing right now, else this computer's Spotify app (a phone or
+    speaker listed first may be asleep, and commands sent to it fail), else whatever is listed. For music asked
+    for on the phone itself (handle_phone_music): the phone's Spotify, and nothing else."""
     if not sp:
         return None
     try:
         devices = sp.devices()["devices"]
+        if getattr(_spotify_target, "phone", False):
+            phones = [d for d in devices if (d.get("type") or "").lower() in ("smartphone", "tablet")
+                      and not d.get("is_restricted")]
+            return (sorted(phones, key=lambda d: not d["is_active"]) or [{"id": None}])[0]["id"]
         if not devices:
             return None
         for d in devices:
             if d["is_active"]:
                 return d["id"]
-        return devices[0]["id"]
+        computers = [d for d in devices if (d.get("type") or "").lower() == "computer" and not d.get("is_restricted")]
+        return (computers or devices)[0]["id"]
     except Exception:
         return None
+
+
+class SpotifyNotReady(Exception):
+    """No Spotify device could be reached, even after opening the app."""
+
+
+def spotify_player_call(call):
+    """Runs call(device_id) against Spotify's player. Spotify answers 404 ("Not found") to a player command sent
+    to a device that is open but not the active one (idle for a while, or just restarted): in that case playback is
+    handed to the device first and the command tried once more, instead of failing with the raw API error."""
+    device_id = ensure_spotify_device()
+    if not device_id:
+        raise SpotifyNotReady()
+    try:
+        return call(device_id)
+    except spotipy.SpotifyException as e:
+        if e.http_status != 404:
+            raise
+        print(f"Spotify player command failed on {device_id} ({e}); activating the device and retrying", flush=True)
+    device_id = get_device_id() or device_id   # the device list may have changed (the app restarted)
+    sp.transfer_playback(device_id=device_id, force_play=False)
+    time.sleep(0.7)   # the transfer takes a moment before the device accepts commands
+    return call(device_id)
 
 
 def ensure_spotify_device(timeout: float = 20.0):
@@ -1156,10 +1753,13 @@ def ensure_spotify_device(timeout: float = 20.0):
     device_id = get_device_id()
     if device_id or not sp:
         return device_id
-    try:
-        open_application("Spotify")
-    except Exception:
-        return None
+    if getattr(_spotify_target, "phone", False):
+        timeout = min(timeout, 15.0)   # the phone is opening its own Spotify right now: wait for it, open nothing here
+    else:
+        try:
+            open_application("Spotify")
+        except Exception:
+            return None
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(1)
@@ -1209,6 +1809,9 @@ def _find_video_yt_dlp(query: str):
     return None
 
 
+NO_VIDEO = ("", "")   # YouTube answered, and has nothing for these words
+
+
 def _find_video_scrape(query: str):
     """Return (video_id, title) from the YouTube results page (no extra tools needed)."""
     try:
@@ -1223,7 +1826,8 @@ def _find_video_scrape(query: str):
         return None
     m = re.search(r'"videoRenderer":\{"videoId":"([A-Za-z0-9_-]{11})"', html)
     if not m:
-        return None
+        # YouTube's own "No results found" page (as opposed to a page this couldn't read)
+        return NO_VIDEO if '"backgroundPromoRenderer"' in html and '"videoId"' not in html else None
     title = re.search(r'"videoId":"%s".*?"title":\{"runs":\[\{"text":"(.*?)"' % m.group(1), html)
     return m.group(1), (title.group(1) if title else query)
 
@@ -1304,13 +1908,13 @@ def parse_service_request(text: str, service: str, allow_open: bool = False):
     service = service or "(?!)"  # no service named: the optional service words can never match
     # "open Stremio and play House": the launch part is done, keep only the request.
     q = re.sub(
-        r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you) )*"
+        r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you) )*"
         rf"(?:open|launch|start)\s+(?:the\s+)?{service}(?:\s+(?:app|application))?\s+(?:and|then)\s+",
         "", q,
     )
     q = re.sub(r"\s+(?:in|on)\s+(?:a\s+|another\s+)?(?:new|another|separate|second)\s+(?:tab|window)\b", "", q)
     verbs = r"play|start|watch|put on|show me|search(?: for)?|find" + ("|open" if allow_open else "")
-    filler = (r"(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?"
+    filler = (r"(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?"
               r"(?:(?:please|can you|could you|would you|i want to|i wanna|i would like to|i'd like to|i need to|"
               r"let's|lets|go ahead and|just) )*")
     m = re.match(
@@ -1367,7 +1971,7 @@ def parse_episode_request(text: str):
     if season is None and episode is None:
         return None
     rest = re.sub(
-        r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
+        r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
         r"(?:(?:play|watch|start|put on|show me|open|find)\s+)?(?:the\s+(?=(?:show|series|tv show)\b))?(?:(?:show|series|tv show)\s+)?", "", rest)
     rest = re.sub(r"^(?:(?:the|a)\s+)?(?:(?:of|from|in)\s+)+|(?:\s+(?:of|from|in|on|the|a))+$", "", rest).strip()
     rest = re.sub(r"^(?:the\s+)?(?:show|series)\s+", "", rest)
@@ -1419,6 +2023,8 @@ def play_youtube_video(query: str, new_tab: bool = False, **kwargs) -> str:
         return "Tell me which YouTube video you want."
 
     found = _find_video_yt_dlp(query) or _find_video_scrape(query)
+    if found == NO_VIDEO:
+        return f"YouTube has no video called {query}. Check the spelling, or tell me who it's by."
     if found:
         video_id, title = found
         try:
@@ -1434,9 +2040,9 @@ def play_youtube_video(query: str, new_tab: bool = False, **kwargs) -> str:
 
 
 # ---------- Trailers: "show me the trailer of this series" ----------
-suggested_titles = {"titles": [], "at": 0.0}  # titles from the last recommendation Jervis gave, in order
-last_played = {"title": None, "at": 0.0}       # the last show or movie Jervis started
-last_trailer = {"title": None, "at": 0.0}      # the last trailer Jervis showed, so "show me it on Netflix" knows what "it" is
+suggested_titles = {"titles": [], "at": 0.0}  # titles from the last recommendation Jarvis gave, in order
+last_played = {"title": None, "at": 0.0}       # the last show or movie Jarvis started
+last_trailer = {"title": None, "at": 0.0}      # the last trailer Jarvis showed, so "show me it on Netflix" knows what "it" is
 _ORDINALS = {"first": 0, "1st": 0, "second": 1, "2nd": 1, "third": 2, "3rd": 2, "fourth": 3, "4th": 3, "last": -1}
 
 
@@ -1476,7 +2082,7 @@ def parse_trailer_request(text: str):
     on_netflix = bool(re.search(r"\b(?:on|in|from|at|through|with)\s+netflix\b", n))
     # "Show me it on Netflix" right after a trailer: the same show's page on Netflix, where its trailer plays
     if on_netflix and not re.search(r"\btrailers?\b", n) and time.time() - last_trailer["at"] < 15 * 60 and last_trailer["title"] \
-            and (follow := re.fullmatch(rf"(?:(?:hey |ok )?(?:jervis|jarvis) )?(?:(?:please|can you|could you) )*(?P<verb>{_TRAILER_VERBS}|put)\s+(?:me\s+)?"
+            and (follow := re.fullmatch(rf"(?:(?:hey |ok )?(?:jarvis|jervis) )?(?:(?:please|can you|could you) )*(?P<verb>{_TRAILER_VERBS}|put)\s+(?:me\s+)?"
                                         r"(?:it|that|this|the (?:trailer|series|show|movie|one))\s+(?:on|in|from|at|through|with)\s+netflix(?: please)?", n)):
         # after a trailer: "play/watch/put it on Netflix" starts the show, "open it" opens its page, "show me it" = its trailer
         verb = follow.group("verb").strip()
@@ -1488,7 +2094,7 @@ def parse_trailer_request(text: str):
     # "show me on Netflix the trailer for X", "X trailer please".
     n = re.sub(r"^(?:(?:no|nope|yes|yeah|yep|okay|ok|well|so|and|but|hmm|uh|um|oh|now|then|hey|alright|right)\s+)+", "", n)
     n = " ".join(re.sub(r"\b(?:on|in|from|at|through|with|via)\s+(?:netflix|youtube)\b", " ", n).split())  # where: see on_netflix
-    n = re.sub(r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|would you|will you|i want to|i wanna|let's|lets) )*", "", n)
+    n = re.sub(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|would you|will you|i want to|i wanna|let's|lets) )*", "", n)
     n = re.sub(rf"^{_TRAILER_VERBS}\s+(?:me\s+)?", "", n)
     n = re.sub(r"^(?:the |a |an )?(?:official |new |latest )*", "", n)
     later = re.search(r"\btrailers?\s+(?:of|for|to|from)\s+(.+)$", n)
@@ -1503,7 +2109,9 @@ def parse_trailer_request(text: str):
     title = re.sub(r"^(?:the )?(?:series|show|movie|film|tv show)\s+(?:called |named )?", "", title) if not _REFERENCE.match(title) else title
     if re.search(r"\b(?:show me|play|watch|trailer|netflix|youtube)\b", title):  # left-over command words: not a title
         title = ""
-    service = "netflix" if on_netflix else "youtube"
+    on_youtube = bool(re.search(r"\b(?:on|in|from|at|through|with|via)\s+youtube\b", " ".join(re.sub(r"[^\w' ]", " ", (text or "").lower()).split())))
+    preferred = (os.getenv("JARVIS_TRAILERS") or "youtube").strip().lower()
+    service = "netflix" if on_netflix or (preferred == "netflix" and not on_youtube) else "youtube"
     if not title or title in {"official", "new"} or _REFERENCE.match(title):
         ordinal = next((_ORDINALS[w] for w in title.split() if w in _ORDINALS), None)
         return {"title": None, "ordinal": ordinal, "service": service, "hint": n}
@@ -1511,7 +2119,7 @@ def parse_trailer_request(text: str):
 
 
 def resolve_trailer_title(ordinal=None):
-    """"this series" means what Jervis just recommended, or else what he just played (whichever is more recent)."""
+    """"this series" means what Jarvis just recommended, or else what he just played (whichever is more recent)."""
     now = time.time()
     fresh_suggestion = suggested_titles["titles"] and now - suggested_titles["at"] < 30 * 60
     fresh_played = last_played["title"] and now - last_played["at"] < 30 * 60
@@ -1574,9 +2182,22 @@ def play_trailer(request: dict, new_tab: bool = False) -> str:
     query = title if (part and part.group(0) in title) else f"{title} {part.group(0) if part else ''}".strip()
     result = play_youtube_video(f"{query} official trailer", new_tab=new_tab)
     remember_played(title)
+    offer = _netflix_offer(title)
     if result.startswith("Playing "):
-        return f"Here's the trailer for {title}: {result[len('Playing '):]}"
-    return result
+        shown = string.capwords(title) if title == title.lower() else title   # "breaking bad" was how it was heard
+        return f"Here's the trailer for {shown}: {result[len('Playing '):]}{offer}"
+    return result + offer
+
+
+def _netflix_offer(title: str) -> str:
+    """After a YouTube trailer: say so when Netflix has the show too, so its own trailer is one sentence away."""
+    try:
+        found = netflix.find_title(re.sub(r"\s*\b(?:season|part|series)\s*\d+\s*$", "", title, flags=re.I).strip() or title)
+    except Exception:
+        return ""
+    if not found or not netflix.resembles(title, found[1]):
+        return ""
+    return f"\n\n{found[1]} is on Netflix too. Say “show it on Netflix” to watch Netflix's trailer there."
 
 
 _VIDEO_VERBS = r"(?:play|start|watch|put on|show me)"
@@ -1596,7 +2217,7 @@ def is_youtube_command(text: str) -> bool:
 def extract_youtube_query(text: str) -> str:
     """Pull the video topic out of phrasings like "Start Pink Floyd the video"."""
     q = " ".join(re.sub(r"[^\w' ]", " ", (text or "").lower()).split())
-    q = re.sub(r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:please |can you |could you )*", "", q)
+    q = re.sub(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:please |can you |could you )*", "", q)
     q = re.sub(r"^(?:change|switch)\s+(?:the\s+|this\s+)?(?:song|video|track|music)?\s*(?:to\s+)?", "", q)
     q = re.sub(rf"^(?:{_VIDEO_VERBS}|youtube)\s+", "", q)
     q = re.sub(r"^(?:youtube\s+)?(?:play\s+)?", "", q)
@@ -1625,7 +2246,7 @@ def youtube_playback_action(text: str):
         return None
     if mentions_youtube:
         return action
-    # A bare "stop the song" means YouTube if Jervis started a video this session
+    # A bare "stop the song" means YouTube if Jarvis started a video this session
     # or a video is playing in Chrome; otherwise it is left for Spotify.
     if is_spotify_mention(normalized):
         return None
@@ -1637,6 +2258,8 @@ def youtube_playback_action(text: str):
 def parse_volume_command(text: str):
     """Return (action, amount) for "volume up", "turn it down", "set volume to 40", "mute", else None."""
     n = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
+    if re.search(r"\b(?:volume|sound)\b", n) and not re.search(r"\d", n):
+        n = " ".join(re.sub(r"[^a-z0-9 ]", " ", functions.normalize(n)).split())   # "to fifty percent" -> "to 50 percent"
     m = re.search(r"\bvolume (?:to |at |on )?(\d{1,3})\b|\bset (?:the )?(?:volume|sound) (?:to )?(\d{1,3})\b", n)
     if m:
         return "set", min(100, int(next(g for g in m.groups() if g)))
@@ -1664,7 +2287,7 @@ def parse_spotify_request(text: str):
     if not re.search(r"\bspotify\b", n, re.I):
         return None
     m = re.match(
-        r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
+        r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
         r"(?:play|put on|start|listen to|open)\s+(.+)$", n, re.I)
     if not m:
         return None
@@ -1674,12 +2297,27 @@ def parse_spotify_request(text: str):
     return (query, seconds) if query and spotify_match.parse(query)["text"] else None
 
 
+_ORDINAL_MINUTE = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3, "fourth": 4, "4th": 4, "fifth": 5,
+                   "5th": 5, "sixth": 6, "6th": 6, "seventh": 7, "7th": 7, "eighth": 8, "8th": 8, "ninth": 9, "9th": 9,
+                   "tenth": 10, "10th": 10}
+_PLAY_FROM = re.compile(r"^(?:(?:hey |ok )?jarvis )?(?:please |can you |could you )*(?:play|start|resume|continue|put|watch|"
+                        r"go back to|take me to)(?: it| this| that| the (?:song|video|track|movie|episode|show))?"
+                        r"(?: (?:from|at|on))? (?P<t>.+)$")
+
+
 def parse_seek_command(text: str):
-    """"Go to minute 5" / "skip to 2:30" -> seconds, else None."""
+    """"Go to minute 5" / "skip to 2:30" / "play from minute 3" / "play the 3 minute" -> seconds, else None."""
     n = " ".join(re.sub(r"[^a-z0-9': ]", " ", (text or "").lower()).split())
-    if re.search(r"\b(play|put on|watch)\b", n) or not re.search(r"\b(go|skip|jump|seek|fast forward|move|scrub|rewind)\b.{0,20}\b(to|at)\b", n):
-        return None
-    return parse_start_time(n)[0]
+    n = re.sub(r"\b(?:the )?(" + "|".join(_ORDINAL_MINUTE) + r") minute\b", lambda m: f"minute {_ORDINAL_MINUTE[m.group(1)]}", n)
+    if re.search(r"\b(go|skip|jump|seek|fast forward|move|scrub|rewind)\b.{0,20}\b(to|at)\b", n) and not re.search(r"\b(play|put on|watch)\b", n):
+        return parse_start_time(n)[0]
+    # "play from minute 3", "play the 3 minute", "start it at 1:20": only a time after the verb, nothing to play by name
+    m = _PLAY_FROM.match(n)
+    if m:
+        seconds, rest = parse_start_time(m.group("t"))
+        if seconds is not None and rest.strip() in ("", "the", "it", "minute", "from", "the song", "the video"):
+            return seconds
+    return None
 
 
 def parse_track_skip(text: str):
@@ -1693,10 +2331,39 @@ def parse_track_skip(text: str):
     if re.search(r"\b(previous|prior|last|back)\b.{0,20}\b(song|track|one|music)\b|\bgo back\b(?!\s+to\b)|"
                  r"\bsong before\b|\bplay (?:the )?(?:previous|last) (?:song|track|one)\b|\bprevious\b", n):
         return "previous"
+    if parse_another_by_artist(text) is not None:
+        return None   # "another song by Radiohead" means a different Radiohead song, not just the next in the queue
     if re.search(r"\bskip\b(?! to\b)|\bnext\b.{0,12}\b(song|track|one|music|video)\b|\b(?:play )?(?:the )?next (?:song|track|one)\b|"
                  r"^next$|\banother (?:song|track)\b|\bdifferent (?:song|track)\b", n):
         return "next"
     return None
+
+
+_SAME_ARTIST = {"them", "theirs", "him", "his", "her", "hers", "this artist", "that artist", "the same artist",
+                "this band", "that band", "the same band", "this singer", "that singer", "the same singer",
+                "this guy", "the artist", "the band", "the singer"}
+_ANOTHER_BY_ARTIST = re.compile(
+    r"\b(?:another|a different|different|some other|other|one more|a new)\s+(?:song|track|tune|one)s?\s+"
+    r"(?:of|by|from)\s+(?P<a>.+)$"
+    r"|\b(?:play|put on)\s+(?:another|a different|some other|one more)\s+(?P<b>.+?)\s+(?:song|track|tune)s?$"
+    r"|\b(?:play|put on)\s+something\s+(?:else|different)\s+(?:of|by|from)\s+(?P<c>.+)$")
+
+
+def parse_another_by_artist(text: str):
+    """"Play another song of Radiohead", "a different track by Adele", "play another Radiohead song",
+    "something else by them" -> the artist ("" when it's the one playing now: "them", "this band"), else None."""
+    n = " ".join(re.sub(r"[^a-z0-9'& ]", " ", (text or "").lower()).split())
+    for _ in range(2):   # "... on spotify please" / "... please on spotify"
+        n = re.sub(r"\s+(?:on|in|from|using)\s+spotify$|\s+please$|\s+for me$|\s+now$", "", n)
+    m = _ANOTHER_BY_ARTIST.search(n)
+    if not m:
+        return None
+    artist = (m.group("a") or m.group("b") or m.group("c") or "").strip()
+    if not artist or artist in ("song", "track", "one") or re.match(
+            r"(?:the|this|that|my|this same)\s+(?:album|playlist|queue|record|ep|list|mix|radio)\b", artist):
+        return None   # "another song from the album" is just the next one
+    artist = re.sub(r"^the\s+band\s+(?=\w)", "", artist)
+    return "" if artist in _SAME_ARTIST else artist
 
 
 def parse_read_document(text: str) -> bool:
@@ -1709,7 +2376,7 @@ def parse_read_document(text: str) -> bool:
 def is_restart_command(text: str) -> bool:
     """"Start the episode from the beginning", "restart the video", "start over", "play it again"."""
     n = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
-    if re.search(r"\b(computer|mac|laptop|pc|jervis|jarvis|app|application|system)\b", n):
+    if re.search(r"\b(computer|mac|laptop|pc|jarvis|jervis|app|application|system)\b", n):
         return False
     return bool(re.search(
         r"\bfrom (?:the )?(?:beginning|start|top)\b|\bstart over\b|\bbegin again\b|\b(?:restart|replay)\b|"
@@ -1742,7 +2409,7 @@ def parse_close_command(text: str):
     m = re.search(r"\bclose\b\s+(.*)$", n)
     if not m:
         return None
-    rest = re.sub(r"\b(please|now|for me|jervis|jarvis|right now|thanks|thank you)\b", " ", m.group(1))
+    rest = re.sub(r"\b(please|now|for me|jarvis|jervis|right now|thanks|thank you)\b", " ", m.group(1))
     rest = re.sub(r"\b(?:on|in|from)\s+(?:google|chrome|google chrome|the browser|browser|my browser)\b", " ", rest)  # "YouTube tab on Google"
     has_tab_word = bool(re.search(rf"\b{_TAB_WORDS}\b", rest))
     plural = bool(re.search(r"\b(tabs|tubes|pages)\b", rest))
@@ -1815,7 +2482,7 @@ def parse_whatsapp_request(text: str):
     if mentioned and re.search(r"\b(?:send|write|text|message|reply|answer|respond|tell)\b.{0,30}\b(?:to|back)\b|\b(?:send|reply)\b", n) \
             and not re.search(r"\b(?:unread|read|check|did|have|any|from|new|missed)\b", n):
         return {"action": "send", "name": ""}
-    if re.fullmatch(r"(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you) )*(?:read|play|tell)(?: me)?(?: them| it| those| these| the messages?| my messages?"
+    if re.fullmatch(r"(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you) )*(?:read|play|tell)(?: me)?(?: them| it| those| these| the messages?| my messages?"
                     r"| the unread(?: messages?)?| my unread(?: messages?)?| what (?:they|it) says?)(?: (?:out loud|aloud|please))?", n) and fresh:
         return {"action": "read_unread", "name": ""}
     name = None
@@ -1841,7 +2508,7 @@ _OTHER_INBOX = re.compile(r"\b(?:e ?mails?|mail|gmail|inbox|sms|imessage|telegra
 
 def _implicit_whatsapp_request(n: str):
     """"There are new messages that I didn't read", "any new messages?", "did Dana text me?": messages meant WhatsApp,
-    the only messaging Jervis can read. Other inboxes are left alone, and reading a person's messages needs a
+    the only messaging Jarvis can read. Other inboxes are left alone, and reading a person's messages needs a
     message-like verb ("write", "text") and a chat that really has that name."""
     if _OTHER_INBOX.search(n) or not whatsapp.enabled() or not whatsapp.database_path():
         return None
@@ -1938,7 +2605,7 @@ _ASK_STEPS = re.compile(
     r"|\bwhy\b.*\b(?:answer|solution)\b")
 _FOLLOWUP_WORDS = set("""what whats what's is are the way to solution solutions answer answers steps step show me give tell explain how did do you i we get got solve
 find work out calculate that it this its why please can could method process working of for roots root zeros zero vertex minimum maximum lowest
-highest intercept intercepts y where does cross touch hit jervis hey and a an function parabola graph equation curve problem one more detail
+highest intercept intercepts y where does cross touch hit jarvis hey and a an function parabola graph equation curve problem one more detail
 details again solved by from came come up with was were so then x point points turning""".split())
 _ASK_ROOTS = re.compile(r"\b(?:roots?|zeros?|solutions?|x\s*intercepts?|solve)\b|\bwhere\s+does\s+it\s+(?:cross|touch|hit)\b")
 _ASK_VERTEX = re.compile(r"\b(?:vertex|minimum|maximum|lowest|highest|turning\s+point|extrema)\b")
@@ -1963,7 +2630,7 @@ def handle_math_followup(text: str):
     asks_yint = bool(_ASK_YINT.search(n))
     if not (asks_steps or asks_roots or asks_vertex or asks_yint):
         return None
-    if not (_REFERS.search(n) or asks_steps or re.search(r"\bwhat\s+(?:is|are)\s+the\b", n)):
+    if not (_REFERS.search(n) or asks_steps or re.search(r"\bwhat(?:'?s|\s+(?:is|are))\s+the\b", n)):
         return None
     if asks_steps or asks_roots:
         worksheet = equations.solve(*(equation if equation else (tree, None)))
@@ -1989,6 +2656,35 @@ def handle_math_followup(text: str):
     return ("It crosses the x-axis at " + ", ".join(f"x equals {graphs._say(r)}" for r in roots[:6]) + ".") if roots else "It never crosses the x-axis in this view."
 
 
+# Jarvis asked "which two places?": an answer like "Israel and USA" within the next couple of messages is them
+pending_earth_places = {"at": 0.0, "left": 0}
+
+
+def _places_talked_about():
+    """"Show me on the globe" right after the distance was asked (and answered in words): the two places from then."""
+    for message in reversed((chat_history or [])[-8:]):
+        if message.get("role") == "user" and isinstance(message.get("content"), str):
+            earlier = earth.parse_request(fix_typos(re.sub(r"^\(said[^)]*\)\s*", "", message["content"])))
+            if earlier and earlier["action"] in ("distance", "compare", "radius"):
+                return earlier
+    return None
+
+
+def handle_earth_places_answer(text: str):
+    """The answer to "which two places?": "Israel and USA", "from Rome to Paris"."""
+    if time.time() - pending_earth_places["at"] > 3 * 60:
+        return None
+    places = re.fullmatch(r"(?:(?:from|between)\s+)?(.+?)\s+(?:and|to|&)\s+(.+?)[.!?]*", " ".join((text or "").split()), re.I)
+    if not places or len(places.group(0).split()) > 10:
+        # something else was said in between ("do you remember…?"): the question stays open for one more message
+        pending_earth_places["left"] = pending_earth_places.get("left", 0) - 1
+        if pending_earth_places["left"] <= 0:
+            pending_earth_places["at"] = 0.0
+        return None
+    pending_earth_places["at"] = 0.0
+    return handle_earth_command(f"what is the distance between {places.group(1)} and {places.group(2)}")
+
+
 def handle_earth_command(text: str):
     """Distance between two places, shown on a 3D globe: geocodes both (a network lookup, like the weather or Classroom
     checks) and works out the great-circle route between them."""
@@ -2005,15 +2701,169 @@ def handle_earth_command(text: str):
         send_ui_update_once({"type": "show_globe", "which": request["which"]})
         return {"prev": "Here is the previous one.", "next": "Here is the next one.", "first": "Here is the first one."}.get(request["which"], "Here it is again.")
     if request["action"] == "ask":
-        return "Which two places? For example: what's the distance between Tokyo and Paris."
-    a = earth.geocode(request["a"])
-    b = earth.geocode(request["b"]) if a else None
-    if not a or not b:
-        return f"I couldn't find {request['a'] if not a else request['b']}."
-    info = earth.build(a, b)
+        earlier = None if request.get("same") else _places_talked_about()
+        if not earlier:
+            pending_earth_places.update(at=time.time(), left=2)
+            if request.get("same"):   # usually the second place misheard
+                return f"I heard {request['same'].title()} twice. Which two places do you mean?"
+            return "Which two places? For example: what's the distance between Tokyo and Paris."
+        request = earlier
+    return answer_earth_request(request)
+
+
+last_globe_route = {"a": None, "b": None, "at": 0.0}   # for "which countries does it fly over?" / "how long is that flight?"
+pending_earth_choice = None   # {"request", "name", "options", "known", "at"}: "Which Valencia do you mean?"
+
+
+def _request_place_names(request: dict) -> list:
+    if request["action"] == "distance":
+        return [request["a"], request["b"]]
+    if request["action"] == "compare":
+        return [name for pair in request["pairs"] for name in pair]
+    if request["action"] == "radius":
+        return [request["a"]]
+    if request["action"] == "sun" and request.get("place"):
+        return [request["place"]]
+    return []
+
+
+def _lookup_place(name: str):
+    """(place, options): options when the name could mean two real places."""
+    try:
+        return earth.resolve(name)
+    except Exception as e:   # a lookup bug must never cost the answer: fall back to the single best match
+        print(f"Place lookup for {name!r} failed: {e!r}", flush=True)
+        return earth.geocode(name), None
+
+
+def answer_earth_request(request: dict, known: dict = None):
+    """Look up every place the request names (asking which one is meant when a name is ambiguous), then answer it
+    and send the globe. known: places already settled, by the name as said."""
+    global globes_drawn, pending_earth_choice
+    known = dict(known or {})
+    if request["action"] == "route_followup":
+        if not last_globe_route["a"] or time.time() - last_globe_route["at"] > 30 * 60:
+            return "Which route? Tell me both places, for example: which countries does a flight from Tel Aviv to London pass over."
+        request = {"action": "distance", "a": last_globe_route["a"]["name"], "b": last_globe_route["b"]["name"],
+                   "wants": request["wants"]}
+        known.update({request["a"]: last_globe_route["a"], request["b"]: last_globe_route["b"]})
+    request = earth.settle_split(request)   # "from tel aviv london or new york": where the first place ends
+    for name in dict.fromkeys(_request_place_names(request)):
+        if name in known:
+            continue
+        place, options = _lookup_place(name)
+        if options:
+            pending_earth_choice = {"request": request, "name": name, "options": options, "known": known, "at": time.time()}
+            return f"Which {name.title()} do you mean: {options[0]['name']}, or {options[1]['name']}?"
+        if not place:
+            return f"I couldn't find {name}. Could you say it another way, maybe with the country?"
+        known[name] = place
+    action = request["action"]
+    if action == "distance":
+        info = earth.build(known[request["a"]], known[request["b"]])
+        text = earth.describe(info, request.get("wants", ""))
+        last_globe_route.update(a=info["a"], b=info["b"], at=time.time())
+    elif action == "compare":
+        info = earth.build_compare([(known[a], known[b]) for a, b in request["pairs"]])
+        text = earth.describe_compare(info, request.get("question"))
+    elif action == "radius":
+        center = known[request["a"]]
+        places = geo.places_near(center["lat"], center["lon"], request["km"], limit=12, exclude_name=center["name"])
+        info = earth.build_radius(center, request["km"], places)
+        text = earth.describe_radius(info)
+    elif action == "sun":
+        info, text = _sun_answer(request["what"], known.get(request.get("place")) if request.get("place") else None)
+    else:
+        return None
     globes_drawn += 1
     send_ui_update_once({"type": "globe", "data": info})
-    return earth.describe(info)
+    return text
+
+
+def handle_earth_choice(text: str):
+    """The answer to "Which Valencia do you mean: Valencia, Spain, or Valencia, Carabobo, Venezuela?"."""
+    global pending_earth_choice
+    pending = pending_earth_choice
+    if not pending or time.time() - pending["at"] > 3 * 60:
+        return None
+    n = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
+    options = pending["options"]
+    chosen = None
+    if re.search(r"\b(?:first|1st|former|the first one)\b", n):
+        chosen = options[0]
+    elif re.search(r"\b(?:second|2nd|latter|other one|the second one)\b", n):
+        chosen = options[1]
+    else:
+        scores = []
+        for option in options:
+            words = set(re.findall(r"[a-z]+", option["name"].lower())) - set(re.findall(r"[a-z]+", pending["name"].lower()))
+            scores.append(len(words & set(n.split())))
+        if max(scores) > 0 and scores.count(max(scores)) == 1:
+            chosen = options[scores.index(max(scores))]
+    if not chosen:
+        if len(n.split()) <= 6:   # a short reply that names neither: ask once more, plainly
+            return f"Sorry, which one: {options[0]['name']}, or {options[1]['name']}?"
+        pending_earth_choice = None
+        return None
+    pending_earth_choice = None
+    return answer_earth_request(pending["request"], {**pending["known"], pending["name"]: chosen})
+
+
+def _local(when, place: dict):
+    """The time there, with its zone's name, when the place's time zone is known; else UTC, said as such."""
+    try:
+        from zoneinfo import ZoneInfo
+        zone = ZoneInfo(place.get("timezone") or "")
+        return when.astimezone(zone), "local time"
+    except Exception:
+        return when.astimezone(timezone.utc), "UTC"
+
+
+def _sun_answer(what: str, place):
+    """Where the Sun really is now (or at that place's sunrise/sunset), and what that means."""
+    now = datetime.now(timezone.utc)
+    sun = {**geo.subsolar_point(now), "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    if what in ("night_view", "where_day"):
+        big = [p for p in geo._places() if p[5] >= 7_000_000]
+        day = sorted({p[0] for p in big if geo.sun_elevation(p[3], p[4], now) > 0})
+        night = sorted({p[0] for p in big if geo.sun_elevation(p[3], p[4], now) <= -6})
+        if what == "night_view":
+            info = earth.build_sun(what, None, sun, "Earth at night, right now")
+            text = ("Here's the night side of Earth right now, with its city lights. "
+                    + (f"It's night in {earth._join(night[:6])}." if night else ""))
+        else:
+            info = earth.build_sun(what, {"name": "", "lat": sun["lat"], "lon": sun["lon"]}, sun, "Day and night, right now")
+            text = (f"Right now the Sun is straight overhead at {abs(sun['lat']):.1f}° {'N' if sun['lat'] >= 0 else 'S'}, "
+                    f"{abs(sun['lon']):.1f}° {'E' if sun['lon'] >= 0 else 'W'}. "
+                    + (f"It's daytime in {earth._join(day[:6])}" if day else "")
+                    + (f", and night in {earth._join(night[:6])}." if night else "."))
+        return info, text
+    name = place["name"].split(",")[0]
+    if what == "is_day":
+        elevation = geo.sun_elevation(place["lat"], place["lon"], now)
+        local, zone = _local(now, place)
+        state = "daytime" if elevation > 0 else "twilight" if elevation > -6 else "night"
+        info = earth.build_sun(what, place, sun, f"{name}, right now")
+        return info, (f"It's {state} in {name} right now: {local.strftime('%-I:%M %p')} {zone}, with the Sun "
+                      f"{abs(elevation):.0f}° {'above' if elevation > 0 else 'below'} the horizon.")
+    local_now, zone = _local(now, place)
+    for offset in (0, 1):
+        day = (local_now + timedelta(days=offset)).date()
+        events = geo.sun_events(place["lat"], place["lon"], day)
+        if "polar" in events:
+            info = earth.build_sun(what, place, sun, f"{name}, right now")
+            return info, (f"There's no {what} in {name} today: it's polar {events['polar']}, so the Sun "
+                          + ("doesn't set." if events["polar"] == "day" else "doesn't rise."))
+        moment = events[what]
+        if moment > now - timedelta(minutes=30) or offset == 1:
+            break
+    local, zone = _local(moment, place)
+    when_word = "today" if local.date() == local_now.date() else "tomorrow"
+    at = {**geo.subsolar_point(moment), "at": moment.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    info = earth.build_sun(what, place, at, f"{what.title()} over {name}")
+    return info, (f"The Sun {'rises' if what == 'sunrise' else 'sets'} in {name} at {local.strftime('%-I:%M %p')} "
+                  f"{zone} {when_word}, {local.strftime('%B %-d')}. Here's the globe at that moment, with the "
+                  f"{'dawn' if what == 'sunrise' else 'dusk'} line passing over it.")
 
 
 planets_shown = 0   # how many planet models the window has been sent this session (kept, to open again)
@@ -2034,9 +2884,11 @@ def handle_planet_command(text: str):
         return {"prev": "Here is the previous one.", "next": "Here is the next one.", "first": "Here is the first one."}.get(request["which"], "Here it is again.")
     if request["action"] == "ask":
         return "Which one? Try Mars, Jupiter, Saturn, or any other planet, the Sun, or the Moon."
-    info = planets.build(request["body"])
+    info = planets.build(request["body"], request.get("fact", ""))
     planets_shown += 1
     send_ui_update_once({"type": "planet", "data": info})
+    if request.get("fact"):   # "how big is jupiter": the answer first, then the rest of what's on screen
+        return planets.answer(request["body"], request["fact"], request.get("from_earth", False)) + "\n\n" + info["text"].split("\n\n", 1)[-1]
     return info["text"]
 
 
@@ -2046,13 +2898,176 @@ _CALENDAR_READ = re.compile(
     r"\bnext events?\b|\bwhat'?s (?:on my calendar|coming up|next)\b|\b(?:the\s+)?(?:next\s+)?events?\b|"
     r"\bhear (?:them|it)\b|\bread (?:them|it)\b")
 _CALENDAR_CREATE = re.compile(
-    r"\b(?:make|create|add|schedule|set up|new)\b.*\b(?:event|meeting|appointment)\b|\bnew event\b|\banother\s+(?:one|event)\b")
+    r"\b(?:make|create|add|schedule|set up|new)\b.*\b(?:event|meeting|appointment)\b|\bnew event\b|\banother\s+(?:one|event)\b|"
+    r"\b(?:make|create|add|schedule|set up)\b(?:\s+(?:a|me))?(?:\s+new)?\s+(?:one|it)\b|\b(?:a\s+)?new one\b|^(?:the\s+)?(?:second|last)(?:\s+one)?$")
 _CALENDAR_READ_DIRECT = re.compile(
     r"\b(?:check|read|hear|see|show me|what'?s on|what is on)\b.*\b(?:calendar|schedule|agenda)\b|"
     r"\bmy (?:next|upcoming) events?\b|\bwhat'?s (?:coming up|next) on my calendar\b")
-_CALENDAR_CREATE_DIRECT = re.compile(r"\b(?:make|create|add|schedule|set up)\b.*\b(?:calendar\s+)?(?:event|meeting|appointment)\b")
+_CALENDAR_CREATE_DIRECT = re.compile(
+    r"\b(?:make|create|add|schedule|set up)\b.*\b(?:calendar\s+)?(?:event|meeting|appointment)\b|"
+    r"\b(?:add|put|save|write)\b.+\b(?:to|in|on|into)\s+(?:my\s+|the\s+)?(?:google\s+|apple\s+)?calendar\b|"
+    r"^(?:please\s+)?(?:can you\s+)?(?:schedule|book)\b.+\b(?:tomorrow|today|tonight|on|at|next|this)\b")
 _CALENDAR_CANCEL = re.compile(r"(?:never ?mind|cancel|forget it|no thanks|nothing|stop)")
 _DURATION_HINT = "How long should it be? Say a length, like '30 minutes' or '2 hours', or say default for one hour."
+
+
+_EVENT_TIME = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?=\s|$|[,.!?])", re.I)
+_EVENT_STOP = (r"(?=\s+(?:to|in|on|at|for|from|tomorrow|today|tonight|next|this|every|until|till|by)\b|\s*[,.!?;:]|$)")
+
+
+def event_title_from(text: str) -> str:
+    """The event's name in "add a dentist appointment tomorrow at 5" (Dentist appointment), "create an event called Team
+    sync on Monday" (Team sync), "Title: Weekly Review Start: 2 PM", or "" when none was said."""
+    t = " ".join((text or "").replace("\u2019", "'").split())
+    named = re.search(r"\b(?:called|named|titled|title\s*[:=-]|title\s+is)\s*[\"“']?(.+?)[\"”']?" + _EVENT_STOP, t, re.I)
+    if named:
+        title = re.sub(r"\s+(?:start|starts|begin|end|ends)\s*:?.*$", "", named.group(1), flags=re.I)
+        return title.strip(" .,:;-\"'")
+    noun = re.search(r"\b(?:make|create|add|schedule|set up|put|book|new)\b(?:\s+(?:me|in))?\s+(?:(?:a|an|the|my)\s+)?(?:new\s+)?(?P<what>.*?)\s*\b"
+                     r"(?P<noun>event|meeting|appointment)s?\b(?P<with>\s+with\s+.+?" + _EVENT_STOP + ")?", t, re.I)
+    if not noun:
+        # "schedule gym tomorrow at 7", "put Dana's birthday in my calendar on the 12th"
+        plain = re.search(r"\b(?:schedule|book|put|add|save|write)\s+(?:a\s+|an\s+|the\s+|my\s+)?(?P<what>.+?)(?:\s+(?:to|in|on|into)\s+"
+                          r"(?:my\s+|the\s+)?(?:google\s+|apple\s+)?calendar\b|" + _EVENT_STOP[3:], t, re.I)
+        what = plain.group("what").strip(" .,") if plain else ""
+        if not what or re.fullmatch(r"(?:it|this|that|something|one|an? event)", what, re.I):
+            return ""
+        return what[0].upper() + what[1:]
+    what = re.sub(r"\b(?:calendar|google calendar)\b", "", noun.group("what"), flags=re.I).strip(" .,")
+    with_whom = (noun.group("with") or "").strip()
+    kind = noun.group("noun").lower()
+    if what:
+        title = f"{what} {kind}" if kind in ("meeting", "appointment") else what
+    elif kind != "event" or with_whom:
+        title = kind
+    else:
+        return ""
+    title = f"{title} {with_whom}".strip()
+    return title[0].upper() + title[1:]
+
+
+def event_duration_from(text: str):
+    """Minutes from "for 2 hours" / "all day", or from a start and an end time ("from 2pm to 3:30pm", "Start: 2 PM End: 3 PM")."""
+    said = calendar_time.parse_duration(text) if re.search(r"\b(?:for|all day|lasting|long)\b", text or "", re.I) else None
+    if said is not None:
+        return said
+    times = [m for m in _EVENT_TIME.finditer(text or "") if m.group(3) or m.group(2)]
+    if len(times) >= 2 and re.search(r"\b(?:to|until|till|end|ends|-)\b|–|-", text or "", re.I):
+        def minutes(m):
+            hour, minute = int(m.group(1)) % 12, int(m.group(2) or 0)
+            return (hour + (12 if (m.group(3) or "").lower().startswith("p") else 0)) * 60 + minute
+        start, end = minutes(times[0]), minutes(times[1])
+        if not times[1].group(3) and times[0].group(3):
+            end += 12 * 60 if times[0].group(3).lower().startswith("p") else 0
+        if end > start:
+            return end - start
+    return None
+
+
+def _event_fields_from(text: str, fields: dict) -> dict:
+    """Whatever the sentence already says about the event, added to what's known (never overwriting it)."""
+    reminder = _REMINDER_PHRASE.search(text or "")
+    rest = _REMINDER_PHRASE.sub(" ", text or "") if reminder else text
+    found = {"title": event_title_from(rest), "date": calendar_time.parse_date(rest),
+             "time": calendar_time.parse_time(rest), "duration": event_duration_from(rest),
+             "reminders": parse_reminders(reminder.group(0)) if reminder else None}
+    return {**{k: v for k, v in found.items() if v or (k == "reminders" and v == [])},
+            **{k: v for k, v in fields.items() if v is not None}}
+
+
+def calendar_backend() -> str:
+    """Which calendar events go into (Settings, General): the Mac's Calendar app or Google Calendar."""
+    chosen = (os.getenv("JARVIS_CALENDAR") or ("apple" if osal.IS_MAC else "google")).strip().lower()
+    return "apple" if chosen == "apple" and osal.IS_MAC else "google"
+
+
+_REMINDER_UNIT = {"minute": 1, "min": 1, "hour": 60, "hr": 60, "day": 24 * 60, "week": 7 * 24 * 60}
+_NO_REMINDER = re.compile(r"^(?:no|nope|nah|none|no thanks|no thank you|no reminders?|without (?:a )?reminders?|"
+                          r"don'?t|skip(?: it)?|never ?mind|not needed|i don'?t need (?:one|it|a reminder))$")
+_REMINDER_PHRASE = re.compile(r"\b(?:with (?:a |an )?reminders?|(?:and )?remind me|(?:and )?(?:a |an )?reminders?|alerts?)\b"
+                              r"(?:\s+(?:of|at|for))?\s*((?:(?:\d+|an?|one|two|three|four|five|six|ten|fifteen|twenty|thirty|"
+                              r"forty five|half an?)\s*(?:minutes?|mins?|hours?|hrs?|days?|weeks?)(?:\s*(?:,|and|&)\s*)?)+)"
+                              r"\s*(?:before|earlier|ahead|in advance)?|\b(?:no|without(?: a| any)?)\s+(?:reminders?|alerts?)\b", re.I)
+
+
+def parse_reminders(text: str):
+    """Minutes before the event for each reminder said ("10 minutes and 1 day before" -> [10, 1440]), [] for "no",
+    or None when the answer isn't about reminders."""
+    n = " ".join(re.sub(r"[^a-z0-9' ]", " ", (text or "").lower()).split())
+    if _NO_REMINDER.match(n):
+        return []
+    if re.fullmatch(r"(?:yes|yeah|yep|sure|ok|okay|please|yes please)(?: please)?", n):
+        return [30]
+    if re.search(r"\b(?:at the (?:same )?time|when it starts|on time)\b", n):
+        found = [0]
+    else:
+        found = []
+    words = {**calendar_time._NUMBER_WORDS, "forty five": 45, "half an": 0.5, "half a": 0.5}
+    amount = r"\d+(?:\.\d+)?|forty five|half an?|" + "|".join(w for w in calendar_time._NUMBER_WORDS if w != "half")
+    for qty, unit in re.findall(rf"\b({amount})\s*(minutes?|mins?|hours?|hrs?|days?|weeks?)\b", n):
+        value = float(qty) if re.fullmatch(r"\d+(?:\.\d+)?", qty) else words[qty]
+        found.append(round(value * next(v for k, v in _REMINDER_UNIT.items() if unit.startswith(k))))
+    return sorted(set(found)) or None
+
+
+def _describe_reminders(minutes: list) -> str:
+    def one(m):
+        for size, name in ((7 * 24 * 60, "week"), (24 * 60, "day"), (60, "hour"), (1, "minute")):
+            if m and m % size == 0:
+                k = m // size
+                return f"{k} {name}{'s' if k != 1 else ''} before"
+        return "when it starts"
+    parts = [one(m) for m in minutes]
+    return "a reminder " + (parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1])
+
+def _next_event_step(pending: dict):
+    """Ask for the first thing still missing, or add the event once it has a name, a date and a time."""
+    global pending_calendar_event
+    fields = pending["fields"]
+    if not fields.get("title"):
+        pending["step"] = "title"
+        return "Sure, what should I call the event?"
+    if not fields.get("date"):
+        pending["step"] = "date"
+        return f"Got it: “{fields['title']}.” What date?"
+    if not fields.get("time") and fields.get("duration") != "all_day":
+        pending["step"] = "time"
+        return "And what time?"
+    if fields.get("reminders") is None:
+        pending["step"] = "reminder"
+        return ("Do you want a reminder? Say how long before, like 10 minutes or 1 day (or a few: "
+                "1 hour and 1 day), or say no.")
+    pending_calendar_event = None
+    return _create_calendar_event(fields, fields.get("duration") or 60)
+
+
+def _create_calendar_event(fields: dict, duration) -> str:
+    hour, minute = fields.get("time") or (0, 0)
+    start = calendar_time.combine(fields["date"], hour, minute)
+    end = start + (timedelta(days=1) if duration == "all_day" else timedelta(minutes=duration))
+    when = calendar_time.format_when(start, end, duration == "all_day")
+    reminders = fields.get("reminders") or []
+    with_reminders = f", with {_describe_reminders(reminders)}" if reminders else ""
+    if calendar_backend() == "apple":
+        try:
+            apple_calendar.create_event(fields["title"], start, end, duration == "all_day", reminders,
+                                        (os.getenv("JARVIS_APPLE_CALENDAR") or "").strip())
+        except apple_calendar.AppleCalendarUnavailable as e:
+            return str(e)
+        return f"Done. I've added “{fields['title']}” to your Calendar for {when}{with_reminders}."
+    if not calendar_api.configured():
+        # No Calendar sign-in set up: Google Calendar's own page, filled in, saved in the browser
+        default_note = " Google's link can't set reminders, so it has your Google Calendar's usual one." if reminders else ""
+        if calendar_api.create_event_in_browser(fields["title"], start, end, duration == "all_day"):
+            return f"Done. I've added “{fields['title']}” to your Google Calendar for {when}.{default_note}"
+        return (f"I've opened “{fields['title']}” in Google Calendar for {when}, all filled in. "
+                "Press Save to add it.")
+    try:
+        created = calendar_api.create_event(fields["title"], start, end, reminders=reminders)
+    except calendar_api.CalendarUnavailable as e:
+        return str(e)
+    when = calendar_time.format_when(created["start"], created["end"], duration == "all_day")
+    return f"Done. I've added “{fields['title']}” to your calendar for {when}{with_reminders}."
 
 
 def handle_calendar_read():
@@ -2060,8 +3075,8 @@ def handle_calendar_read():
     tab to sign in (see calendar_api.py); after that a cached, refreshed token is used silently."""
     speak("One moment, checking your calendar.")
     try:
-        events = calendar_api.list_upcoming(5)
-    except calendar_api.CalendarUnavailable as e:
+        events = apple_calendar.list_upcoming(5) if calendar_backend() == "apple" else calendar_api.list_upcoming(5)
+    except (calendar_api.CalendarUnavailable, apple_calendar.AppleCalendarUnavailable) as e:
         return str(e)
     if not events:
         return "You have no upcoming events on your calendar."
@@ -2093,46 +3108,51 @@ def handle_calendar_event_step(text: str):
     global pending_calendar_event
     pending = pending_calendar_event
     cleaned = " ".join(re.sub(r"[^a-z' ]", " ", text.lower()).split())
+    step = pending["step"]
+    if step == "reminder" and re.fullmatch(r"(?:no thanks|no thank you|nothing|none)", cleaned):
+        pending["fields"]["reminders"] = []   # "no thanks" to a reminder isn't "cancel the event"
+        return _next_event_step(pending)
     if _CALENDAR_CANCEL.fullmatch(cleaned):
         pending_calendar_event = None
         return "Okay, cancelled."
-    step = pending["step"]
     if step == "title":
-        title = text.strip().strip(".!? ")
+        said = _event_fields_from(text, {})
+        title = said.get("title") or re.sub(
+            r"\s*\b(?:(?:on|at|this|next)\s+)?(?:today|tomorrow|tonight|(?:mon|tues|wednes|thurs|fri|satur|sun)day)\b.*$|\s+at\s+\d.*$",
+            "", text.strip(), flags=re.I).strip(".!? ")
         if not title:
             return "Sorry, what should I call the event?"
-        pending["fields"]["title"] = title
-        pending["step"] = "date"
-        return f"Got it: “{title}.” What date?"
+        pending["fields"] = {**said, **pending["fields"], "title": title[0].upper() + title[1:]}
+        return _next_event_step(pending)
     if step == "date":
         date = calendar_time.parse_date(text)
         if not date:
             return "I didn't catch a date. Try something like tomorrow, next Friday, or October 3rd."
         pending["fields"]["date"] = date
-        pending["step"] = "time"
-        return "And what time?"
+        if not pending["fields"].get("time"):
+            pending["fields"]["time"] = calendar_time.parse_time(text)   # "Friday at 3"
+        return _next_event_step(pending)
     if step == "time":
         parsed = calendar_time.parse_time(text)
         if not parsed:
             return "I didn't catch a time. Try something like 3pm or 15:30."
         pending["fields"]["time"] = parsed
+        if pending["fields"].get("duration"):
+            return _next_event_step(pending)
         pending["step"] = "duration"
         return _DURATION_HINT
     if step == "duration":
         duration = calendar_time.parse_duration(text)
         if duration is None:
             return "I didn't catch a length. Try 30 minutes, 2 hours, all day, or say default for one hour."
-        pending_calendar_event = None
-        fields = pending["fields"]
-        hour, minute = fields["time"]
-        start = calendar_time.combine(fields["date"], hour, minute)
-        end = start + (timedelta(days=1) if duration == "all_day" else timedelta(minutes=duration))
-        try:
-            created = calendar_api.create_event(fields["title"], start, end)
-        except calendar_api.CalendarUnavailable as e:
-            return str(e)
-        when = calendar_time.format_when(created["start"], created["end"], duration == "all_day")
-        return f"Done. I've added “{fields['title']}” to your calendar for {when}."
+        pending["fields"]["duration"] = duration
+        return _next_event_step(pending)
+    if step == "reminder":
+        reminders = parse_reminders(text)
+        if reminders is None:
+            return "I didn't catch that. Say how long before, like 10 minutes or 1 day, or say no reminder."
+        pending["fields"]["reminders"] = reminders
+        return _next_event_step(pending)
     return None
 
 
@@ -2141,8 +3161,9 @@ def handle_calendar_command(text: str):
     global pending_calendar_event
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower()).split())
     if _CALENDAR_CREATE_DIRECT.search(n):
-        pending_calendar_event = {"step": "title", "fields": {}, "at": time.time()}
-        return "Sure, what should I call the event?"
+        # "add a dentist appointment tomorrow at 5pm": everything said is used; only what's missing is asked for
+        pending_calendar_event = {"step": "title", "fields": _event_fields_from(text, {}), "at": time.time()}
+        return _next_event_step(pending_calendar_event)
     if _CALENDAR_READ_DIRECT.search(n):
         return handle_calendar_read()
     return None
@@ -2152,12 +3173,19 @@ _OPEN_IMAGE_RE = re.compile(r"\b(?:open|show(?:\s+me)?)\s+(?:this|that|the)\s+(?
 _SAVE_IMAGE_RE = re.compile(r"\bsave\s+(?:this|that|the)\s+(?:generated\s+|edited\s+)?(?:image|picture|photo)\b")
 
 
+# "what is it", "whats is it", "wha t is it", "what's this?": right after a picture was shared, it's about the picture
+_WHAT_IS_IT = re.compile(r"(?:so|and|ok|okay|jarvis|hey)*what(?:s|is|sis|are)?(?:it|this|that|these|those|init|inthis|inthat|onit|"
+                         r"(?:in|on)?(?:the|this|that)(?:image|picture|photo|pic))(?:please)?")
+
+
 def handle_image_command(text: str):
     """The two deterministic, non-AI image actions: opening or saving the most recent picture in this conversation.
     Understanding, generating and editing images go through the AI's tools instead (see TOOLS / TOOL_FUNCTIONS)."""
     if not images.has_pending_context():
         return None
     n = " ".join((text or "").lower().split())
+    if images.just_received_image() and _WHAT_IS_IT.fullmatch(re.sub(r"[^a-z]", "", n)):
+        return tool_analyze_image("What is in this image? Describe it briefly.")   # looked at, not guessed about
     if _OPEN_IMAGE_RE.search(n):
         try:
             osal.open_path(images.last_image(1)[0]["path"])
@@ -2172,16 +3200,54 @@ def handle_image_command(text: str):
     return None
 
 
+_MAKE_IMAGE = re.compile(
+    r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis)[, ]+)?(?:(?:please|can you|could you|would you|i want you to|i'd like you to|"
+    r"go ahead and)\s+)*(?:generate|create|make|draw|paint|design|render)\s+(?:me\s+|for me\s+)?(?:a\s+|an\s+|another\s+|one\s+)?"
+    r"(?:new\s+)?(?:(?:realistic|cartoon|anime|cute|cool|funny|beautiful|\w+[- ]style)\s+)?"
+    r"(?:image|picture|photo|pic|drawing|painting|illustration|artwork|wallpaper|poster|logo)s?\s*(?:of\s+|showing\s+|that shows\s+|"
+    r"with\s+|where\s+|:\s*|-\s*|about\s+)(?P<what>.+?)[.!]*$", re.I)
+_DRAW_THING = re.compile(r"^(?:(?:please|can you|could you)\s+)*(?:draw|paint)\s+(?:me\s+)?(?:a|an|some)\s+(?P<what>.+?)[.!]*$", re.I)
+
+
+def handle_image_generation(text: str):
+    """"Generate an image of a dog in space", "make a new image: …", "draw me a dragon": straight to the picture,
+    with no AI in between to decide whether to (it used to answer with the tool's name instead of a picture)."""
+    m = _MAKE_IMAGE.match(" ".join((text or "").split())) or _DRAW_THING.match(" ".join((text or "").split()))
+    if not m or graphs.parse_request(text):
+        return None
+    what = m.group("what").strip()
+    if m.re is _DRAW_THING:
+        what = re.match(r"(?i)^.*?(?:draw|paint)\s+(?:me\s+)?(a|an|some)\s", text.strip()).group(1).lower() + " " + what
+    if len(what) < 2:
+        return None
+    speak("Creating it now.")
+    send_status("generating")
+    try:
+        result = images.generate(what)
+    except images.ImageError as e:
+        return f"I couldn't make that picture: {e}"
+    broadcast("ai", "", image=images.display_data_url(result["path"]), image_kind="generated")
+    note = f" {result['note']}" if result.get("note") else ""
+    return f"Here's your picture of {what}.{note}"
+
+
+pending_graph_ask = {"at": 0.0}   # Jarvis asked for the equation: for a few minutes a formula on its own is the answer
+last_pair = {"info": None, "at": 0.0}   # the two functions drawn together last, for "where do they meet?"
+
+
 def handle_graph_command(text: str):
     global graphs_drawn
-    request = graphs.parse_request(text)
+    request = graphs.parse_request(text, expecting=time.time() - pending_graph_ask["at"] < 3 * 60)
     if request is None:
+        if last_pair["info"] and time.time() - last_pair["at"] < 30 * 60:
+            return graphs.pair_followup(text, last_pair["info"])   # "which one is higher?", "what's the area between them?"
         return None
     if request["action"] == "last":
         if last_function["tree"] is not None and time.time() - last_function["at"] < 60 * 60:
             request = graphs.request_from_tree(last_function["tree"])
         elif request.get("explicit"):
-            return "Tell me the equation, for example: graph y equals x squared minus 4x plus 3. Or give me a, b and c."
+            pending_graph_ask["at"] = time.time()
+            return graphs.ASK_FOR_EQUATION
         else:
             return None
     if request.get("ast") is not None:
@@ -2195,27 +3261,49 @@ def handle_graph_command(text: str):
         send_ui_update_once({"type": "show_graph", "which": request["which"]})
         return {"prev": "Here is the previous graph.", "next": "Here is the next graph.", "first": "Here is the first graph."}.get(request["which"], "Here is the graph again.")
     if request["action"] == "ask":
-        return "Tell me the equation, for example: graph y equals x squared minus 4x plus 3. Or give me a, b and c."
+        pending_graph_ask["at"] = time.time()
+        return graphs.ASK_FOR_EQUATION
     if request["action"] == "unsupported":
         return "I can graph any function of x, like y equals something with x. Give me one of those."
     if request["action"] == "unclear":
         return "I couldn't read that as a function of x. Try something like: graph sine of x, or graph x cubed minus 3x."
-    if request["action"] == "function":
-        info = graphs.build_function(request["ast"])
-        send_ui_update_once({"type": "graph", "data": info})
+    pending_graph_ask["at"] = 0.0
+    if request["action"] == "several":
+        remember_function(request["requests"][-1]["ast"])
+        if len(request["requests"]) < 2:   # only one of them could be read: that one, and a word about the other
+            info, _ = graphs.build(request["requests"][0])
+            send_ui_update_once({"type": "graph", "data": info})
+            graphs_drawn += 1
+            return graphs.describe_several([info], request["unread"], request.get("unreadText", ""))
+        # "graph y = x^2 and g = x + 1": both on the same axes, everything about each, and how they relate
+        pair = graphs.build_pair(request["requests"], request.get("names"))
+        last_pair.update(info=pair, at=time.time())
+        send_ui_update_once({"type": "graph", "data": pair})
         graphs_drawn += 1
-        return graphs.describe_function(info)
-    info = graphs.facts(request["a"], request["b"], request["c"])
+        return graphs.describe_pair(pair, request["unread"])
+    info, described = graphs.build(request)
     send_ui_update_once({"type": "graph", "data": info})
     graphs_drawn += 1
-    return graphs.describe(info)
+    return _with_solution(request, described)
+
+
+def _with_solution(request: dict, graph_text: str) -> str:
+    """"What is 2x + 6 = 0, draw the graph": the worked answer first, then what the graph shows."""
+    if not request.get("solve"):
+        return graph_text
+    try:
+        equation = equations.parse_request(f"solve {request['solve']}")
+        worksheet = equations.solve(*equation) if equation else None
+    except Exception:
+        worksheet = None
+    return f"{worksheet}\n\n---\n\nI drew its graph too. {graph_text}" if worksheet else graph_text
 
 
 _SERVICE_WORDS = {"netflix": "netflix", "stremio": "stremio", "youtube": "youtube", "spotify": "spotify"}
 _BROWSERS = {"chrome", "google chrome", "browser", "the browser", "my browser", "edge", "microsoft edge", "firefox",
              "brave", "the internet", "internet"}
 _COMPOUND = re.compile(
-    r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
+    r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
     r"(?:open|launch|start)\s+(?:up\s+)?(?:the\s+)?(.+?)(?:\s+(?:app|application))?\s+(?:and\s+then|and|then)\s+"
     r"((?:play|watch|put on|write|type|draft|compose|search|find|set|remind|pause|stop|resume|go|skip|jump|turn|make|create|show|listen|"
     r"build|construct|model|design|place|sculpt|add|put)\b.*)$")
@@ -2233,8 +3321,8 @@ def split_open_and_do(text: str):
 
 
 def handle_compound_command(text: str):
-    if documents.detect_request(text) or documents.is_transfer_request(text):
-        return None   # "open Notepad and write a story": the document handlers write it, not just open the app
+    if documents.detect_request(text) or documents.is_transfer_request(text) or documents.is_blank_request(text):
+        return None   # "open Notepad and write a story" / "open Google Drive and create a new file": the document handlers
     parts = split_open_and_do(text)
     if not parts:
         return None
@@ -2279,7 +3367,8 @@ _TASK_SPLIT = re.compile(
 def split_tasks(text: str) -> list:
     """The separate things asked for in one message (each starts with an action or a question), or the whole text as one."""
     parts = [p.strip(" ,.;") for p in _TASK_SPLIT.split((text or "").strip())]
-    return [p for p in parts if p] or [text]
+    parts = [p for p in parts if p and not re.fullmatch(r"(?:hey |ok |okay )?(?:jarvis|jervis)", p, re.I)]   # "Jarvis, …" is not a task
+    return parts or [text]
 
 
 _OPEN_BLENDER = re.compile(r"^(?:please |now |then |first )*(?:open|launch|start|run)\s+(?:up\s+)?blender(?:\s+\d[\d.]*)?"
@@ -2308,7 +3397,7 @@ def blender_sequence(text: str, parts: list):
 
 def handle_multi_task(text: str):
     """Do each task in order and answer them together. Returns None unless the message really holds several tasks and at least
-    one of them is a command Jervis can do himself (otherwise the AI answers the whole message at once)."""
+    one of them is a command Jarvis can do himself (otherwise the AI answers the whole message at once)."""
     global _multi_active
     if _multi_active or pending_confirmation or pending_dictation:
         return None
@@ -2317,6 +3406,13 @@ def handle_multi_task(text: str):
         if not re.search(r"\bblender\b", goal, re.I):
             return None   # "take control of my computer and open Notepad": the "and" joins the request to its goal
         text = goal   # "take control, open Blender, then make the cube bigger": each part on its own, in order
+    graph = graphs.parse_request(text)
+    if graph and graph.get("action") in ("graph", "function"):
+        return None   # "y = x^2 - 4, plot it": the formula and the order to draw it are one task
+    if documents.detect_request(text):
+        return None   # "create a file on Google Drive and write a short story": one document, written
+    if _CALENDAR_CREATE_DIRECT.search(" ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower()).split())):
+        return None   # "make a meeting … and remind me 15 minutes before": the reminder belongs to the event
     parts = [p for p in split_tasks(text) if not _CONTROL_BARE.match(p)]   # "take on my computer, then …"
     sequence = blender_sequence(text, parts)
     if sequence:
@@ -2336,12 +3432,12 @@ def handle_multi_task(text: str):
             results.append(reply)
         if not handled:
             return None
-        for i, part in enumerate(parts):          # the parts Jervis can't do himself go to the AI, one by one
+        for i, part in enumerate(parts):          # the parts Jarvis can't do himself go to the AI, one by one
             if results[i]:
                 continue
             asked = (chat_history or []) + [{"role": "user", "content": part}]
             try:
-                results[i] = tidy_math(ask_jervis(asked, part))
+                results[i] = tidy_math(ask_jarvis(asked, part))
             except Exception:
                 traceback.print_exc()
                 results[i] = f"I couldn't do this part: {part}"
@@ -2368,15 +3464,15 @@ class _SettingUp:
     def resume(self): pass
 
 
-# ---------- Computer control: Jervis using the mouse and keyboard (see computer_use.py) ----------
+# ---------- Computer control: Jarvis using the mouse and keyboard (see computer_use.py) ----------
 computer_task = None            # the ComputerTask (or ScriptedTask/AgentTask) currently mid-run, if any
 agent_memory_store = agent_memory.Memory()   # requests the agent fully verified before: examples for similar ones
 control_session = None          # the persistent computer_use.ControlSession, once "take control" has been granted
 _control_questions = {}         # question id -> (threading.Event, {"answer": bool | None})
 pending_control_question = None  # {"id", "at"}: the next "yes"/"no" said answers it
 
-# The wake name as speech recognition actually hears it: "Jervis", "Jarvis", or a mangled "Jargvie," before a comma.
-_WAKE_NAME = r"(?:(?:hey |ok |okay )?(?:(?:jervis|jarvis)[, ]+|j[a-z]{3,8}, ?))?"
+# The wake name as speech recognition actually hears it: "Jarvis", "Jervis", or a mangled "Jargvie," before a comma.
+_WAKE_NAME = r"(?:(?:hey |ok |okay )?(?:(?:jarvis|jervis)[, ]+|j[a-z]{3,8}, ?))?"
 _TAKE_CONTROL = (r"(?:use|control|take control(?: (?:of|over|on))?|(?:stay|be|keep|remain) in control(?: (?:of|over|on))?"
                  r"|take (?:over|on)(?: all(?: of)?)?)")
 _CONTROL_EXPLICIT = re.compile(
@@ -2393,7 +3489,7 @@ _CONTROL_BARE = re.compile(
 # that can't be ordinary conversation: "tap water", "type 2 diabetes in children", "check the box office" don't match.
 _UI_NOUN = r"(?:box|field|bar|search|input|form|chat|message|document|window|tab|terminal|editor|cell|text ?box)"
 _CONTROL_STEP = re.compile(
-    r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis)[, ]+)?(?:please |can you |could you |would you |go ahead and )*"
+    r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis)[, ]+)?(?:please |can you |could you |would you |go ahead and )*"
     r"(?P<goal>(?:(?:in|on) (?:the )?[\w .'-]{2,40}?,? )?(?:(?:double[- ]?|right[- ]?)?click (?:on )?|tap on )\S.*"
     r"|scroll (?:up|down|to the (?:top|bottom|end))\b.*"
     r"|press (?:the )?(?:[\w-]+ )?(?:button|key|enter|return|escape|esc|tab|space ?bar|backspace)\b.*"
@@ -2443,7 +3539,7 @@ _NO = re.compile(r"(?:no|nope|don't|do not|don't do it|cancel|stop|not now|never
 
 
 def parse_computer_task(text: str):
-    """The goal, if this asks Jervis to use the computer (and no other command handled it already)."""
+    """The goal, if this asks Jarvis to use the computer (and no other command handled it already)."""
     n = " ".join(re.sub(r"[^\w'+ ,.-]", " ", (text or "").replace("\u2019", "'")).split())   # keeps "TextEdit" as said
     match = _CONTROL_EXPLICIT.match(n) or _CONTROL_STEP.match(n)
     if not match:
@@ -2611,7 +3707,7 @@ def scripted_steps_for(goal: str):
 
         def scroll_step():
             env = computer_environment()
-            env.observe()                     # finds the window being worked in (never Jervis's own)
+            env.observe()                     # finds the window being worked in (never Jarvis's own)
             problem = env.scroll(notches)
             return problem or f"Scrolled {word}."
         return [(f"Scrolling {word}", scroll_step)]
@@ -2673,7 +3769,7 @@ def start_computer_task(goal: str, scripted=None, after=None, persistent: bool =
     exactly as one-shot as it is today. Once a session is already open, permission is skipped regardless of this
     flag — whatever is already granted covers anything said next."""
     global computer_task, control_session
-    mode = (os.getenv("JERVIS_COMPUTER_CONTROL") or "ask").strip().lower()
+    mode = (os.getenv("JARVIS_COMPUTER_CONTROL") or "ask").strip().lower()
     # Off means no mouse and keyboard. Building in Blender through its scripting bridge uses neither, so it stays on.
     if mode == "off" and not (blender and not scripted and goal.strip()):
         return "Using the mouse and keyboard is turned off. You can allow it in Settings, under Computer control."
@@ -2861,10 +3957,10 @@ def start_computer_task(goal: str, scripted=None, after=None, persistent: bool =
 
 
 def handle_control_voice(text: str):
-    """While Jervis is using the computer (or asking about it): stop, pause, continue, and yes/no answers."""
+    """While Jarvis is using the computer (or asking about it): stop, pause, continue, and yes/no answers."""
     global pending_control_question
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower().replace("\u2019", "'")).split())
-    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jervis|jarvis) ", "", n)   # "Hey Jervis, stop"
+    n = re.sub(r"^(?:(?:hey|ok|okay) )?(?:jarvis|jervis) ", "", n)   # "Hey Jarvis, stop"
     if pending_control_question and time.time() - pending_control_question["at"] < 120:
         if _YES.fullmatch(n) and answer_control_question(pending_control_question["id"], True):
             pending_control_question = None
@@ -2907,7 +4003,7 @@ def handle_direct_command(text: str):
     control = handle_control_voice(text)
     if control:
         return control
-    if is_phone_pair_command(text):
+    if is_phone_pair_command(fix_typos(text)):   # "coonnect my phone"
         return start_phone_pairing()
     if re.search(r"\bdisconnect\s+(?:the\s+|my\s+)?phone\b|\bend\s+(?:the\s+|my\s+)?phone\s+(?:session|connection)\b",
                 text, re.I):
@@ -2923,9 +4019,15 @@ def handle_direct_command(text: str):
     game_reply = handle_minecraft_command(text)
     if game_reply:
         return game_reply
+    code_reply = handle_code_command(text)   # "write a Python calculator and open it in VS Code": one task
+    if code_reply:
+        return code_reply
     spotify = handle_spotify_search(text)   # before splitting "take control and search … in Spotify" into parts
     if spotify:
         return spotify
+    music_request = music.parse_music_request(text)   # "play my Workout playlist", "… album … on Apple Music"
+    if music_request:
+        return play_music(**vars(music_request))
     multi = handle_multi_task(text)
     if multi:
         return multi
@@ -2938,8 +4040,8 @@ def handle_direct_command(text: str):
     if re.search(r"\b(quit|close|exit)\s+(my\s+)?spotify\b", normalized):
         return quit_application("Spotify")
     if alerts_open and re.fullmatch(
-            r"(?:jervis )?(?:ok|okay|stop|dismiss|thanks|thank you|got it|i got it|silence|quiet|enough|alright)"
-            r"(?: (?:it|that|the alarm|the timer|the alert|the sound))?", " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())):
+            r"(?:jarvis )?(?:ok|okay|stop|dismiss|thanks|thank you|got it|i got it|silence|quiet|enough|alright|cancel)"
+            r"(?: (?:it|that|(?:the )?(?:alarm|timer|alert|sound)))?", " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())):
         send_ui_update_once({"type": "dismiss_alert"})
         return "Okay."
     classroom_reply = handle_classroom_command(text)
@@ -2948,7 +4050,15 @@ def handle_direct_command(text: str):
     followup = handle_math_followup(text)
     if followup:
         return followup
-    earth_reply = handle_earth_command(text)
+    sum_reply = arithmetic.answer(text)   # "what's 12 times 12": exact and immediate, never a guess from the AI
+    if sum_reply:
+        return sum_reply
+    clock_reply = handle_clock_choice(text) or handle_clock_command(text)   # "what time is it in Tokyo?"
+    if clock_reply:
+        return clock_reply
+    if (planets.parse_request(text) or {}).get("fact"):   # "how far is mars from earth" is about the planets, not two towns
+        return handle_planet_command(text)
+    earth_reply = handle_earth_choice(text) or handle_earth_command(text) or handle_earth_places_answer(text)
     if earth_reply:
         return earth_reply
     planet_reply = handle_planet_command(text)
@@ -2963,7 +4073,7 @@ def handle_direct_command(text: str):
     graph_reply = handle_graph_command(text)
     if graph_reply:
         return graph_reply
-    image_reply = handle_image_command(text)
+    image_reply = handle_image_command(text) or handle_image_generation(text)
     if image_reply:
         return image_reply
     equation = equations.parse_request(text)
@@ -2982,9 +4092,11 @@ def handle_direct_command(text: str):
         if time.time() - pending["at"] < 90:
             if re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|stop)", " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())):
                 return "Okay, cancelled."
+            if documents.asks_to_write(text):   # "write a short story": an instruction, not the words to put in
+                return write_document(text, pending["app"], into_open=True)
             return write_document(
                 "Put exactly what the user dictated into the document, formatted neatly (a clean bulleted list if it is a "
-                f"list of items). Do not add anything they did not say. Dictation: {text}", pending["app"])
+                f"list of items). Do not add anything they did not say. Dictation: {text}", pending["app"], into_open=True)
     global pending_spotify_choice
     if pending_spotify_choice:
         pending, pending_spotify_choice = pending_spotify_choice, None
@@ -3044,7 +4156,7 @@ def handle_direct_command(text: str):
     global pending_calendar_choice
     if pending_calendar_choice:
         pending, pending_calendar_choice = pending_calendar_choice, None
-        if time.time() - pending["at"] < 45:
+        if time.time() - pending["at"] < 3 * 60 and not is_new_command(text, "calendar"):
             return handle_calendar_choice(text)
     global pending_calendar_event
     if pending_calendar_event:
@@ -3055,7 +4167,7 @@ def handle_direct_command(text: str):
     calendar_reply = handle_calendar_command(text)   # "check my calendar" / "create a calendar event" out of the blue
     if calendar_reply:
         return calendar_reply
-    if re.fullmatch(r"(?:jervis )?(?:open|show|bring up) (?:the |your |my )?(?:jervis )?(?:window|interface|screen|ui)",
+    if re.fullmatch(r"(?:jarvis )?(?:open|show|bring up) (?:the |your |my )?(?:jarvis )?(?:window|interface|screen|ui)",
                     " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split())):
         launch_ui()
         return "Opening my window." if ui_failures < 2 else "My window can't start on this computer. The console explains why."
@@ -3101,9 +4213,16 @@ def handle_direct_command(text: str):
     doc_app = documents.detect_request(text)
     if doc_app:
         return write_document(text, doc_app)
+    if documents.asks_to_write(text) and re.search(r"\b(?:in|into|on|to)\s+(?:the|that|this|my)\s+(?:file|document|doc|page)\b|"
+                                                   r"\b(?:file|document|doc) (?:that )?you (?:just )?(?:opened|made|created)\b", text, re.I) \
+            and last_document and time.time() - last_document.get("at", 0) < 60 * 60:
+        return write_document(text, last_document["app"], into_open=True)   # "write a short story in the file you opened"
     volume = parse_volume_command(text)
     if volume:
         return change_volume(*volume)
+    playing_reply = what_is_playing(text)
+    if playing_reply:
+        return playing_reply
     seek_to = parse_seek_command(text)
     if seek_to is not None:
         if stremio_active and not (youtube_active or netflix_active):
@@ -3116,6 +4235,9 @@ def handle_direct_command(text: str):
         return ReadAloud(f"{doc['title']}\n\n{doc['body']}".strip())
     if current_document() and documents.is_edit_request(text):
         return edit_document(text)
+    another_by = parse_another_by_artist(text)
+    if another_by is not None and not (youtube_active and not re.search(r"\bspotify\b", text.lower())):
+        return play_another_by_artist(another_by)
     direction = parse_track_skip(text)
     if direction:
         if (netflix_active or stremio_active) and not youtube_active and not re.search(r"\b(song|track|music|spotify)\b", text.lower()):
@@ -3185,12 +4307,15 @@ def handle_direct_command(text: str):
         return "Which app should I open?"
     if app_name:
         remember_media_app(app_name)
-        # Blender always opens with Jervis's scripting bridge running, so a later "create a chair" (in this
+        # Blender always opens with Jarvis's scripting bridge running, so a later "create a chair" (in this
         # session or a future one) never has to restart it and ask first — see blender_control.ensure_bridge.
         blender_status, blender_value = resolve_app(app_name)
         if blender_status == "ok" and "blender" in blender_value.lower():
             open_blender_in_background()
             opened = f"Opening {blender_value}."
+        elif app_name.strip().lower() in ("calendar", "my calendar", "the calendar") and calendar_backend() == "apple":
+            subprocess.run(["open", "-a", "Calendar"], capture_output=True, timeout=15)   # the Mac's Calendar app
+            opened = "Opened Calendar."
         else:
             opened = open_application(app_name)
         print(f"Open app: {app_name!r} -> {opened}", flush=True)
@@ -3231,7 +4356,7 @@ def handle_direct_command(text: str):
 
 
 _ACKNOWLEDGEMENT = re.compile(r"(?:(?:ok(?:ay)?|thanks?|thank you(?: so much)?|cool|great|nice|got it|alright|"
-                              r"all right|good|perfect|jervis)[ ,.!]*)+", re.I)
+                              r"all right|good|perfect|jarvis)[ ,.!]*)+", re.I)
 _BLENDER_THING = re.compile(r"\b(?:blender|cube|sphere|cylinder|cone|torus|donut|monkey|suzanne|mesh|object|"
                             r"vertex|vertices|modifier|material)\b", re.I)
 blender_session = None     # tracks Blender objects for commands run without a "take control" session
@@ -3466,7 +4591,7 @@ pending_app_choice = None  # {"options": [names], "at"}
 
 
 def handle_app_followup(text: str):
-    """The answer to Jervis's own "which app?" questions, or None (then the sentence is handled as usual)."""
+    """The answer to Jarvis's own "which app?" questions, or None (then the sentence is handled as usual)."""
     global pending_open_app, pending_app_choice
     cleaned = " ".join(re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split())
     cancel = re.fullmatch(r"(?:never ?mind|cancel|forget it|no|nothing|none|stop|neither)(?: of them)?", cleaned)
@@ -3547,7 +4672,7 @@ def _playing_reply(chosen: dict, start_seconds=None, where_ok=False, request: st
 
 
 def play_song_locally(request: str, start_seconds=None) -> str:
-    """No Spotify keys: Jervis reads the Spotify app's own search results, picks the one meant (spotify_match),
+    """No Spotify keys: Jarvis reads the Spotify app's own search results, picks the one meant (spotify_match),
     presses its own Play button and checks it really plays (spotify_local.play_request)."""
     global youtube_active, netflix_active, stremio_active, spotify_active
     try:
@@ -3674,6 +4799,349 @@ def seek_music(seconds: int) -> str:
         return f"Could not jump: {e}"
 
 
+# ---------- playlists, albums, artists, liked songs — on Spotify, Apple Music, YouTube and more (see music.py) ----------
+# Reading the user's OWN playlists and liked songs needs a permission the playback connection (sp) doesn't have.
+# It's a separate sign-in, asked for once, only the first time it's actually needed — so the playback that already
+# works never gets interrupted by a new approval screen.
+SPOTIFY_LIBRARY_SCOPE = ("user-modify-playback-state user-read-playback-state playlist-read-private "
+                         "playlist-read-collaborative user-library-read")
+_spotify_library = {"auth": None, "client": None, "asking": False}
+
+
+def spotify_library():
+    """A Spotify connection that can also see the user's playlists and liked songs, or None until they've
+    approved that (ask_spotify_library_permission)."""
+    lib = _spotify_library
+    if not sp:
+        return None
+    if lib["client"]:
+        return lib["client"]
+    try:
+        if lib["auth"] is None:
+            lib["auth"] = SpotifyOAuth(
+                client_id=os.getenv("SPOTIFY_CLIENT_ID"), client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
+                redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8888/callback"),
+                scope=SPOTIFY_LIBRARY_SCOPE, open_browser=True,
+                cache_handler=spotipy.cache_handler.CacheFileHandler(cache_path=paths.data(".cache-spotify-library")))
+        if not lib["auth"].validate_token(lib["auth"].cache_handler.get_cached_token()):
+            return None
+        lib["client"] = spotipy.Spotify(auth_manager=lib["auth"])
+        return lib["client"]
+    except Exception as e:
+        print(f"Spotify library connection: {e!r}", flush=True)
+        return None
+
+
+def ask_spotify_library_permission() -> None:
+    """Opens Spotify's approval page in the browser, once, in the background: Jarvis keeps working meanwhile, and
+    the next request can use the user's playlists. (Asked again only if the last page went unanswered for a while.)"""
+    lib = _spotify_library
+    if lib["auth"] is None or (lib["asking"] and time.time() - lib.get("asked_at", 0) < 600):
+        return
+    lib["asking"], lib["asked_at"] = True, time.time()
+
+    def run():
+        try:
+            lib["auth"].get_access_token(as_dict=False)   # opens the browser and waits for the approval locally
+        except Exception as e:
+            print(f"Spotify permission wasn't given: {e!r}", flush=True)
+        finally:
+            lib["asking"] = False
+    threading.Thread(target=run, daemon=True, name="spotify-permission").start()
+
+
+_NEEDS_SPOTIFY_PERMISSION = ("To find your own playlists and liked songs I need Spotify's permission to see your "
+                             "library. The approval page is open in your browser: approve it once, then ask me again.")
+
+
+def _spotify_playlists(client) -> list:
+    playlists, offset = [], 0
+    while offset < 500:
+        page = client.current_user_playlists(limit=50, offset=offset)
+        items = [p for p in (page or {}).get("items") or [] if p]
+        playlists += items
+        if not (page or {}).get("next") or not items:
+            break
+        offset += 50
+    return playlists
+
+
+def _spotify_play_context(uri: str = "", uris: list = None, shuffle: bool = False) -> None:
+    if shuffle:
+        try:
+            spotify_player_call(lambda device_id: sp.shuffle(True, device_id=device_id))
+        except Exception:
+            pass   # a device that can't shuffle still plays
+    if uris:
+        spotify_player_call(lambda device_id: sp.start_playback(device_id=device_id, uris=uris))
+    else:
+        spotify_player_call(lambda device_id: sp.start_playback(device_id=device_id, context_uri=uri))
+    _mark_spotify_playing()
+
+
+def play_spotify_collection(req) -> str:
+    """A playlist, album, artist or the liked songs, on Spotify — the user's own first."""
+    shuffled = ", shuffled" if req.shuffle else ""
+    if not sp:
+        # No Spotify keys: the Spotify app's own search, which ranks the user's library first ("Liked Songs" too).
+        wanted = ("Liked Songs" if req.kind == "liked" else f"{req.query} {req.kind}" if req.kind in ("playlist", "album")
+                  else req.query)   # "X playlist": spotify_match then looks for a playlist, not songs called X
+        return play_song_locally(wanted)
+    try:
+        library = spotify_library()
+        if req.kind == "liked":
+            if library:
+                own = best_match_playlist(library, req.names) if req.alt and req.alt.lower() != "my liked songs" else None
+                if own:   # a playlist that's really called that ("My Favorite Songs") beats the liked songs
+                    _spotify_play_context(own["uri"], shuffle=req.shuffle)
+                    return f"Playing your playlist {own['name']} on Spotify{shuffled}."
+                saved = [i["track"]["uri"] for i in (library.current_user_saved_tracks(limit=50) or {}).get("items") or []
+                         if i.get("track") and i["track"].get("uri")]
+                if not saved:
+                    return "You don't have any liked songs on Spotify yet."
+                _spotify_play_context(uris=saved, shuffle=req.shuffle)
+                return f"Playing your liked songs on Spotify{shuffled}."
+            ask_spotify_library_permission()
+            return _NEEDS_SPOTIFY_PERMISSION
+        if req.kind == "playlist":
+            mix = music.spotify_mix(req.alt or req.query) or music.spotify_mix(req.query)
+            if mix and music.NAMED_PLAYLISTS.match(req.query.lower()) and spotify_local.installed():
+                # Spotify's personal mixes (Discover Weekly…) aren't reachable through its API any more; its app finds them.
+                return play_song_locally(mix)
+            if not library:
+                # Never a guess from public search before Jarvis can see the user's own: search for "My Favorite
+                # Songs" finds strangers' playlists with that exact name.
+                if mix and spotify_local.installed():
+                    return play_song_locally(mix)
+                ask_spotify_library_permission()
+                return _NEEDS_SPOTIFY_PERMISSION
+            playlists = _spotify_playlists(library)
+            own = best_match_playlist(library, req.names, playlists)
+            if own:
+                _spotify_play_context(own["uri"], shuffle=req.shuffle)
+                return f"Playing your playlist {own['name']} on Spotify{shuffled}."
+            if mix:   # "the repeat playlist": the user's On Repeat, not a stranger's playlist called "repeat"
+                if spotify_local.installed():
+                    return play_song_locally(mix)
+                return f"Spotify only lets its own app play {mix}: open the Spotify app on this computer and ask me again."
+            # "a lofi playlist": anyone's will do. "the Lofi Beats playlist": only Spotify's own one by that name.
+            found = [p for p in (sp.search(q=req.query, type="playlist", limit=10).get("playlists") or {}).get("items") or [] if p]
+            if not req.public:
+                found = [p for p in found if (p.get("owner") or {}).get("id") == "spotify"
+                         or (p.get("owner") or {}).get("display_name") == "Spotify"]
+            public = music.best_match(req.query, found, lambda p: p.get("name", ""), threshold=0.6 if req.public else 0.85)
+            if req.public and not public and found:
+                public = found[0]
+            if public:
+                _spotify_play_context(public["uri"], shuffle=req.shuffle)
+                owner = (public.get("owner") or {}).get("display_name") or "Spotify"
+                return f"Playing the playlist {public['name']} by {owner} on Spotify{shuffled}."
+            if req.public:
+                return f"I couldn't find a {req.query} playlist on Spotify."
+            # One particular playlist ("the repeat playlist", "My Favorite Songs") that isn't the user's: say so,
+            # with the closest names they do have, rather than playing a stranger's playlist that happens to match.
+            print(f"Spotify playlist not found: {req.names} among {len(playlists)} of the user's playlists", flush=True)
+            close = sorted(playlists, key=lambda p: -max(music.name_score(n, p.get("name", "")) for n in req.names))
+            close = [p["name"].strip() for p in close[:2]
+                     if max(music.name_score(n, p.get("name", "")) for n in req.names) >= 0.35]
+            hint = f" Did you mean {' or '.join(close)}?" if close else ""
+            return (f"I couldn't find a playlist called {req.query} in your Spotify.{hint} "
+                    f"To play someone else's, say \"play a {req.query} playlist\".")
+        if req.kind == "album":
+            q = f"album:{req.query} artist:{req.by}" if req.by else req.query
+            found = (sp.search(q=q, type="album", limit=10).get("albums") or {}).get("items") or []
+            album = music.best_match(req.query, [a for a in found if a], lambda a: a.get("name", ""), threshold=0.6) \
+                or (found[0] if found and req.by else None)
+            if not album:
+                return f"I couldn't find the album {req.query} on Spotify."
+            _spotify_play_context(album["uri"], shuffle=req.shuffle)
+            artist = (album.get("artists") or [{}])[0].get("name", "")
+            return f"Playing the album {album['name']}{f' by {artist}' if artist else ''} on Spotify{shuffled}."
+        if req.kind == "artist":
+            found = (sp.search(q=req.query, type="artist", limit=5).get("artists") or {}).get("items") or []
+            artist = music.best_match(req.query, [a for a in found if a], lambda a: a.get("name", ""), threshold=0.6)
+            if not artist:
+                return f"I couldn't find {req.query} on Spotify."
+            _spotify_play_context(artist["uri"], shuffle=req.shuffle)
+            return f"Playing {artist['name']} on Spotify{shuffled}."
+        return play_song(f"{req.query} {req.by}".strip())
+    except SpotifyNotReady:
+        return "Spotify needs to be open on a device first. Open Spotify, then ask me again."
+    except Exception as e:
+        print(f"Spotify couldn't play {req.kind} {req.query!r}: {e!r}", flush=True)
+        return "Spotify didn't respond to that. Make sure Spotify is open, then ask me again."
+
+
+def best_match_playlist(client, names: list, playlists: list = None):
+    """The user's playlist that best matches any of the ways its name was said."""
+    playlists = _spotify_playlists(client) if playlists is None else playlists
+    for name in names:
+        found = music.best_match(name, playlists, lambda p: p.get("name", ""))
+        if found:
+            return found
+    return None
+
+
+def _open_music_url(url: str, host: str) -> None:
+    from youtube_browser import open_site
+    open_site(url, host)
+
+
+def play_youtube_collection(req, music_app: bool) -> str:
+    """A playlist (or an album / artist, as a playlist) on YouTube or YouTube Music: found by search and started."""
+    global youtube_active, netflix_active, stremio_active, spotify_active
+    where = "YouTube Music" if music_app else "YouTube"
+    host = "music.youtube.com" if music_app else "youtube.com"
+    if req.kind == "liked":
+        url = "https://music.youtube.com/playlist?list=LM" if music_app else "https://www.youtube.com/playlist?list=LL"
+        open_youtube(url, host=host, context="music")
+        youtube_active, netflix_active, stremio_active, spotify_active = not music_app, False, False, False
+        return f"Opened your liked {'songs' if music_app else 'videos'} on {where}. Press Play all to start them."
+    if req.kind == "song":
+        found = _find_video_yt_dlp(f"{req.query} {req.by}".strip()) or _find_video_scrape(f"{req.query} {req.by}".strip())
+        if not found:
+            return f"I couldn't find {req.query} on {where}."
+        open_youtube(f"https://music.youtube.com/watch?v={found[0]}" if music_app else f"https://www.youtube.com/watch?v={found[0]}",
+                     host=host, context="music")
+        youtube_active, netflix_active, stremio_active, spotify_active = not music_app, False, False, False
+        return f"Playing {found[1]} on {where}."
+    search = " ".join(filter(None, [req.query, req.by, {"album": "full album", "artist": "best songs"}.get(req.kind, "")]))
+    try:
+        playlists = music.youtube_playlists(search)
+    except Exception as e:
+        print(f"YouTube playlist search failed: {e!r}", flush=True)
+        playlists = []
+    if not playlists:
+        open_youtube("https://www.youtube.com/results?search_query=" + urllib.parse.quote(search), host=host, context="music")
+        return f"I couldn't find a playlist for {req.query} on {where}, so I opened the search."
+    title, playlist_id, first_video = music.best_match(req.query, playlists, lambda p: p[0], threshold=0.75) or playlists[0]
+    open_youtube(music.youtube_playlist_url(playlist_id, first_video, music_app), host=host, context="music")
+    youtube_active, netflix_active, stremio_active, spotify_active = not music_app, False, False, False
+    return f"Playing the playlist {title} on {where}."
+
+
+def play_music(query: str = "", kind: str = "any", service: str = "", shuffle: bool = False, mine: bool = False,
+               by: str = "", alt: str = "", public: bool = False, **kwargs) -> str:
+    """Play what the user asked for by name — a playlist, album, artist, song or their liked songs — on the service
+    they named, or the one they use (Spotify when it's set up, else Apple Music on a Mac, else YouTube)."""
+    req = music.MusicRequest(query=(query or "").strip(), kind=kind if kind in ("playlist", "album", "artist", "song", "liked", "any") else "any",
+                             service=service if service in music.SERVICES else "", shuffle=bool(shuffle), mine=bool(mine),
+                             by=(by or "").strip(), alt=(alt or "").strip(), public=bool(public) and not mine)
+    if not req.query and req.kind != "liked":
+        return "What should I play?"
+    target = req.service or ("spotify" if spotify_available() else "apple_music" if osal.IS_MAC else "youtube")
+    if target == "spotify":
+        if req.kind in ("any", "song") and not req.shuffle and not getattr(_spotify_target, "phone", False):
+            # one song on this computer: spotify_match picks it exactly (play_song); the phone's own path is below
+            return play_song(f"{req.query} by {req.by}" if req.by else req.query)
+        if req.kind == "any":
+            req.kind = "song"
+        return play_spotify_collection(req)
+    if target == "apple_music":
+        return music.play_apple_music(req, _open_music_url)
+    if target in ("youtube", "youtube_music"):
+        return play_youtube_collection(req, target == "youtube_music")
+    return music.open_service_search(req, _open_music_url)
+
+
+_recent_artist_picks = collections.deque(maxlen=10)   # tracks "another song by X" chose lately, so it doesn't repeat
+
+
+def _artist_now_playing() -> str:
+    try:
+        if sp:
+            item = (sp.current_playback() or {}).get("item") or {}
+            return ((item.get("artists") or [{}])[0].get("name") or "").strip()
+        playing = spotify_local.now_playing()[1]
+        return playing.rpartition(" by ")[2].strip() if " by " in playing else ""
+    except Exception:
+        return ""
+
+
+def play_another_by_artist(artist: str) -> str:
+    """A different song by `artist` (or, when empty, by whoever is playing now) than the one playing."""
+    global youtube_active, netflix_active, stremio_active, spotify_active
+    artist = artist or _artist_now_playing()
+    if not artist:
+        return "Which artist would you like another song by?"
+    if not sp:
+        # The Spotify app on its own: playing the artist plays their top songs; if that's the one already on,
+        # move on to the next of them.
+        try:
+            before = spotify_local.now_playing()[1]
+            playing = spotify_local.play(spotify_local.clean_query(artist))
+            if playing and before and playing == before:
+                playing = spotify_local.skip("next") or playing
+        except spotify_local.SpotifyLocalError as e:
+            return str(e)
+        except Exception as e:
+            print(f"Spotify (app) failed: {e!r}", flush=True)
+            return "Something went wrong while starting Spotify. Try again, or press play in Spotify."
+        youtube_active = netflix_active = stremio_active = False
+        spotify_active = True
+        return f"Playing {playing} on Spotify." if playing else f"Playing {artist} on Spotify."
+    try:
+        found = (sp.search(q=artist, type="artist", limit=1).get("artists") or {}).get("items") or []
+        if not found:
+            return f"I couldn't find {artist} on Spotify."
+        artist_info = found[0]
+        tracks = []
+        try:
+            tracks = sp.artist_top_tracks(artist_info["id"]).get("tracks") or []
+        except Exception:
+            pass   # not every Spotify app may call this; a search for the artist's songs works too
+        if len(tracks) < 5:
+            more = sp.search(q=f'artist:"{artist_info["name"]}"', type="track", limit=20)
+            seen = {t["id"] for t in tracks}
+            tracks += [t for t in (more.get("tracks") or {}).get("items") or [] if t["id"] not in seen
+                       and any(a.get("id") == artist_info["id"] for a in t.get("artists") or [])]
+        current_id = ((sp.current_playback() or {}).get("item") or {}).get("id")
+        choices = ([t for t in tracks if t["id"] != current_id and t["id"] not in _recent_artist_picks]
+                   or [t for t in tracks if t["id"] != current_id] or tracks)
+        if not choices:
+            return f"I couldn't find songs by {artist_info['name']} on Spotify."
+        pick = random.choice(choices)
+        _recent_artist_picks.append(pick["id"])
+        spotify_player_call(lambda device_id: sp.start_playback(
+            device_id=device_id, context_uri=pick["album"]["uri"], offset={"uri": pick["uri"]}))
+    except SpotifyNotReady:
+        return "Spotify needs to be open on a device first."
+    except Exception as e:
+        print(f"Playing another song by {artist} failed: {e!r}", flush=True)
+        return "Spotify didn't respond to that. Make sure Spotify is open, then ask me again."
+    youtube_active = netflix_active = stremio_active = False
+    spotify_active = True
+    return f"Playing {pick['name']} by {artist_info['name']}."
+
+
+_WHAT_PLAYING = re.compile(
+    r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:what(?:'?s| is) (?:this |that |the )?(?:song|track|music)(?: is (?:this|that|playing))?"
+    r"(?: called| playing| on)?|what (?:song|track|music) is (?:this|that|playing|on)|what(?:'?s| is) (?:playing|on spotify)|"
+    r"who (?:sings|is singing|sang|plays|made) (?:this|that)(?: song| track)?|what am i listening to|"
+    r"(?:what(?:'?s| is) )?the name of (?:this|that|the) (?:song|track))(?: right now| now| on spotify| please)*$")
+
+
+def what_is_playing(text: str):
+    """"What song is this?" -> the song Spotify is playing, by name. None for anything else."""
+    n = " ".join(re.sub(r"[^a-z0-9' ]", " ", (text or "").lower().replace("\u2019", "'")).split())
+    if not _WHAT_PLAYING.match(n):
+        return None
+    try:
+        if sp:
+            state = sp.current_playback() or {}
+            item = state.get("item") or {}
+            artist = (item.get("artists") or [{}])[0].get("name", "")
+            playing, name = bool(state.get("is_playing")), item.get("name", "") + (f" by {artist}" if artist and item.get("name") else "")
+        else:
+            playing, name = spotify_local.now_playing()
+    except Exception as e:
+        print(f"Asking Spotify what is playing failed: {e!r}", flush=True)
+        return "I couldn't ask Spotify what's playing right now."
+    if not name:
+        return "Nothing is playing on Spotify right now."
+    return f"This is {name}." if playing else f"Spotify is paused on {name}."
+
+
 def skip_track(direction: str) -> str:
     """Spotify: jump to the next or previous song and say what is playing now."""
     if not sp:
@@ -3685,29 +5153,29 @@ def skip_track(direction: str) -> str:
             return f"Now playing {now}."
         return "Skipped to the next song." if direction == "next" else "Went back to the previous song."
     try:
-        device_id = get_device_id()
-        if not device_id:
-            return "No active Spotify device found. Play something on Spotify first."
         if direction == "next":
-            sp.next_track(device_id=device_id)
+            spotify_player_call(lambda device_id: sp.next_track(device_id=device_id))
         else:
             # Spotify's "previous" only restarts the song when it is more than a few seconds in.
             state = sp.current_playback() or {}
-            sp.previous_track(device_id=device_id)
+            spotify_player_call(lambda device_id: sp.previous_track(device_id=device_id))
             if (state.get("progress_ms") or 0) > 3000:
                 time.sleep(0.4)
-                sp.previous_track(device_id=device_id)
+                spotify_player_call(lambda device_id: sp.previous_track(device_id=device_id))
         time.sleep(0.8)  # let Spotify switch before asking what is playing
         item = (sp.current_playback() or {}).get("item") or {}
         if item.get("name"):
             artist = (item.get("artists") or [{}])[0].get("name", "")
             return f"Now playing {item['name']}" + (f" by {artist}." if artist else ".")
         return "Skipped to the next song." if direction == "next" else "Went back to the previous song."
+    except SpotifyNotReady:
+        return "Spotify isn't open on any device. Open Spotify, then ask me again."
     except Exception as e:
-        return f"I couldn't change the song: {e}"
+        print(f"Changing the Spotify track failed: {e!r}", flush=True)
+        return "Spotify isn't playing anything I can skip right now. Ask me to play a song first."
 
 
-spotify_active = False  # True once Jervis started a song on Spotify; "stop" / "pause" / "resume" then go there directly
+spotify_active = False  # True once Jarvis started a song on Spotify; "stop" / "pause" / "resume" then go there directly
 
 
 def resume_music() -> str:
@@ -3830,7 +5298,7 @@ def _dispatch_phone_command(command_type: str, payload: dict) -> str:
     PHONE_COMMANDS — handle_phone_client refuses anything else before this is even reached."""
     entry = PHONE_COMMANDS.get(command_type)
     if not entry:
-        raise ValueError(f"“{command_type}” isn't something a phone can ask Jervis to do.")
+        raise ValueError(f"“{command_type}” isn't something a phone can ask Jarvis to do.")
     func, key = entry
     if key is None:
         return str(func())
@@ -3859,16 +5327,16 @@ def _transcribe_phone_audio(pcm16_bytes: bytes, sample_rate: int) -> str:
     return transcribe(sr.AudioData(pcm16_bytes, sample_rate, 2))
 
 
-def _deliver_phone_voice_text(text: str, session_id: str) -> None:
+def _deliver_phone_voice_text(text: str, session_id: str, request_id: str = "") -> None:
     """session_router's callback for a finished transcription: queued like any typed/spoken command (see
     PhoneVoiceInput) so it goes through the exact same main-loop pipeline — must return immediately, not block
     whichever asyncio loop is currently running the transport (relay_client.py, or handle_phone_client below)."""
-    typed_inputs.put(PhoneVoiceInput(text, session_id))
+    typed_inputs.put(PhoneVoiceInput(text, session_id, request_id))
 
 
 def _vapid_key_b64() -> str:
     """relay_client's answer to the relay's get_page_context — see relay/server.py's docstring on why the relay
-    asks for this live instead of any key being baked into it: every Jervis install generates its own (push.py)."""
+    asks for this live instead of any key being baked into it: every Jarvis install generates its own (push.py)."""
     return push.public_key_b64() if push.available() else ""
 
 
@@ -3881,9 +5349,156 @@ def _local_address() -> str:
 
 # Shared between the local LAN phone server (handle_phone_client, right below) and relay_client.py: a "connect my
 # phone" session behaves identically either way — see phone_session.py for why that's one router, not two.
+PHONE_AI_MODEL = os.getenv("JARVIS_PHONE_AI_MODEL") or "openai/gpt-oss-120b"   # the phone agent picks tools AND devices
+
+
+def _phone_ai_config() -> dict:
+    """What the phone app's own Jarvis agent needs (see mobile/src/core/agent.ts): the same Groq account this
+    computer uses, so Phone Mode keeps working with the computer off. Sent only over an encrypted session."""
+    if not GROQ_KEY:
+        return {"error": "This computer has no Groq API key (Settings, AI)."}
+    return {"provider": "groq", "apiKey": GROQ_KEY, "model": PHONE_AI_MODEL, "fallbackModel": GROQ_MODEL,
+            "transcribeModel": "whisper-large-v3-turbo",
+            "userName": os.getenv("JARVIS_USER_NAME", ""),
+            # for the phone's own weather, pictures and music: the same city, vision model, and whether this
+            # computer can play on the phone's Spotify for it (handle_phone_music)
+            "weatherCity": os.getenv("WEATHER_CITY", ""), "visionModel": images._groq_vision_model(),
+            "spotify": bool(sp)}
+
+
+_PLAIN_PLAY = re.compile(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis)[, ]+)?(?:(?:please|can you|could you|i want to|i wanna|let's|lets) )*"
+                         r"(?:play|put on|listen to)\s+(?!it\b|this\b|that\b|them\b)(.+?)(?:\s+please)?[.!?]*$", re.I)
+
+
+def handle_phone_music(text: str, wait: bool = False) -> dict:
+    """Music asked for on the phone ("On this phone"), played on the phone: Jarvis there has no way into the user's
+    Spotify account, so it asks here, and this starts it on the phone's own Spotify (Spotify Connect) with the same
+    handling as on the computer: a song, the user's playlists and mixes, an album or artist, liked songs, pause,
+    resume, next, previous, jump to a time. Only that: no other command runs, and nothing plays, opens or changes
+    on this computer. {"ok": True, "reply"} or {"ok": False, "reason"} for the phone to do what it can by itself.
+    wait: the phone is opening its Spotify app right now; give it a moment to show up."""
+    global youtube_active, netflix_active, stremio_active, spotify_active
+    if not sp:
+        return {"ok": False, "reason": "no_spotify"}
+    text = fix_typos(text)
+    n = " ".join(re.sub(r"[^a-z0-9' ]", " ", text.lower()).split())
+    was_playing = (youtube_active, netflix_active, stremio_active, spotify_active)
+    _spotify_target.phone = True
+    try:
+        request = music.parse_music_request(text)
+        if request and request.service not in ("", "spotify"):
+            return {"ok": False, "reason": "other_service"}
+        if not get_device_id() and not (wait and ensure_spotify_device()):
+            return {"ok": False, "reason": "no_device"}
+        if request:
+            return {"ok": True, "reply": play_music(**vars(request))}
+        volume = parse_volume_command(text)
+        if volume:
+            return {"ok": True, "reply": _phone_spotify_volume(*volume)}
+        seek_to = parse_seek_command(text)
+        if seek_to is not None:
+            return {"ok": True, "reply": seek_music(seek_to)}
+        another_by = parse_another_by_artist(text)
+        if another_by is not None:
+            return {"ok": True, "reply": play_another_by_artist(another_by)}
+        direction = parse_track_skip(text)
+        if direction:
+            return {"ok": True, "reply": skip_track(direction)}
+        if is_restart_command(text):
+            seek_music(0)
+            return {"ok": True, "reply": "Starting the song over."}
+        if len(n.split()) <= 7 and re.search(r"\b(?:pause|stop|halt|silence|hold on|be quiet)\b", n):
+            return {"ok": True, "reply": pause_music()}
+        if len(n.split()) <= 7 and re.search(r"\b(?:resume|unpause|continue|keep playing)\b", n):
+            return {"ok": True, "reply": resume_music()}
+        song = parse_spotify_request(text)
+        if not song and (plain := _PLAIN_PLAY.match(" ".join(text.split()))):
+            seconds, title = timeparse.strip_start_time(plain.group(1))
+            song = (title or plain.group(1), seconds)
+        if song:
+            return {"ok": True, "reply": play_song(song[0], start_seconds=song[1])}
+        return {"ok": False, "reason": "not_music"}
+    except SpotifyNotReady:
+        return {"ok": False, "reason": "no_device"}
+    except Exception as e:
+        print(f"Spotify on the phone failed: {e!r}", flush=True)
+        return {"ok": False, "reason": "error"}
+    finally:
+        _spotify_target.phone = False
+        # what is playing on the phone says nothing about this computer: "pause" said here keeps meaning what it did
+        youtube_active, netflix_active, stremio_active, spotify_active = was_playing
+
+
+def _phone_spotify_volume(action: str, amount) -> str:
+    """Spotify's own volume on the phone. iPhones don't let Spotify be turned up or down from outside."""
+    device = next((d for d in sp.devices()["devices"] if d["id"] == get_device_id()), None)
+    if not device:
+        return "No active Spotify device found."
+    if not device.get("supports_volume"):
+        return "Spotify doesn't let me change the volume on this phone. Use its volume buttons."
+    now = int(device.get("volume_percent") or 0)
+    level = {"set": amount, "mute": 0, "unmute": max(now, 40), "up": now + (amount or 10), "down": now - (amount or 10)}[action]
+    level = max(0, min(100, int(level)))
+    sp.volume(level, device_id=device["id"])
+    return f"Spotify volume is at {level} percent."
+
+
+def find_netflix_for_phone(title: str, season=None, episode=None, trailer: bool = False) -> dict:
+    """Where a show or film is on Netflix, for Jarvis on the phone to open in the phone's Netflix app."""
+    found = netflix.find_title(title) if title else None
+    if not found:
+        return {"ok": False, "reason": "not_found"}
+    title_id, name = found
+    if trailer:
+        return {"ok": True, "url": netflix.title_url(title_id), "name": name}
+    if season or episode:
+        found_episode = netflix.find_episode(title_id, season, episode)
+        if found_episode:
+            return {"ok": True, "url": netflix.watch_url(found_episode[0]), "name": name, "episode": found_episode[1]}
+        return {"ok": False, "reason": "no_episode", "name": name}
+    return {"ok": True, "url": netflix.watch_url(title_id), "name": name}
+
+
+def _on_phone_assist(message: dict) -> dict:
+    """session_router's callback for the phone's own Jarvis asking for what only this computer has."""
+    kind = str(message.get("kind") or "")
+    if kind == "music":
+        return handle_phone_music(str(message.get("text") or "")[:300], wait=message.get("wait") is True)
+    if kind == "netflix":
+        number = lambda v: int(v) if str(v or "").isdigit() and 0 < int(v) < 1000 else None
+        return find_netflix_for_phone(str(message.get("title") or "").strip()[:120], number(message.get("season")),
+                                      number(message.get("episode")), message.get("trailer") is True)
+    return {"ok": False, "reason": "unknown"}
+
+
+def _on_phone_turn(user: str, reply: str, device_name: str) -> None:
+    """A request the phone app handled on the phone itself (Phone Mode): shown in this window and kept in the AI's
+    own conversation, so "one Jarvis" remembers it ("open them on my computer" right after works)."""
+    if user:
+        broadcast("user", user, to_phone=False)
+    if reply:
+        broadcast("ai", reply, to_phone=False)
+    if chat_history is not None:
+        where = f" on {device_name}" if device_name else " on the phone"
+        if user:
+            chat_history.append({"role": "user", "content": f"(said{where}, handled there) {user}"})
+        if reply:
+            chat_history.append({"role": "assistant", "content": reply})
+
+
+def _on_phone_presence(names: list) -> None:
+    """session_router's callback whenever which phones are attached changes: the window's phone indicator (see
+    panels.js) shows it, and a window that connects later still sees the current state (send_ui_update)."""
+    send_ui_update("phone_connection", {"connected": bool(names), "devices": names})
+
+
 session_router = phone_session.PhoneSessionRouter(phone_server, _transcribe_phone_audio, _deliver_phone_voice_text,
                                                    on_push_subscribe=_on_push_subscribe,
-                                                   on_push_unsubscribe=push_store.remove)
+                                                   on_push_unsubscribe=push_store.remove,
+                                                   get_history=phone_history, on_presence=_on_phone_presence,
+                                                   get_vapid_key=_vapid_key_b64, get_ai_config=_phone_ai_config,
+                                                   on_phone_turn=_on_phone_turn, on_secure_pair=_on_secure_pair,
+                                                   on_assist=_on_phone_assist)
 relay = relay_client.RelayClient(RELAY_URL, session_router,
                                  is_enabled=lambda: bool(RELAY_URL) and phone_control_mode() != "off",
                                  get_vapid_key=_vapid_key_b64, get_local_address=_local_address)
@@ -3895,7 +5510,7 @@ def reply_to_phone_if_needed(typed, message: str) -> None:
     gets the answer, over whichever transport (LAN or relay) it's actually attached on — session_router already
     knows which."""
     if isinstance(typed, PhoneVoiceInput):
-        session_router.deliver_reply(typed.session_id, message)
+        session_router.deliver_reply(typed.session_id, message, getattr(typed, "request_id", ""))
 
 
 TOOL_FUNCTIONS = {
@@ -3903,6 +5518,7 @@ TOOL_FUNCTIONS = {
     "google_search": google_search,
     "play_youtube_video": play_youtube_video,
     "play_song": play_song,
+    "play_music": play_music,
     "pause_music": pause_music,
     "analyze_image": tool_analyze_image,
     "extract_image_text": tool_extract_image_text,
@@ -3911,6 +5527,10 @@ TOOL_FUNCTIONS = {
     "edit_image": tool_edit_image,
     "use_computer": tool_use_computer,
     "get_weather": tool_get_weather,
+    "world_clock": tool_world_clock,
+    "write_code": tool_write_code,
+    "show_distance": lambda place_a="", place_b="", **kw: handle_earth_command(
+        f"what is the distance between {place_a} and {place_b}") or "I couldn't show that distance.",
 }
 
 TOOLS = [
@@ -3973,6 +5593,28 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "play_music",
+            "description": "Play a playlist, album, artist, or the user's liked songs, or play on a service other "
+                           "than Spotify (Apple Music, YouTube, YouTube Music, SoundCloud, Deezer, Tidal, Amazon Music).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The name, exactly as the user said it."},
+                    "kind": {"type": "string", "enum": ["playlist", "album", "artist", "song", "liked", "any"]},
+                    "service": {"type": "string", "enum": list(music.SERVICES)},
+                    "shuffle": {"type": "boolean"},
+                    "mine": {"type": "boolean", "description": "The user said it's theirs (\"my … playlist\")."},
+                    "by": {"type": "string", "description": "The artist, for an album or song."},
+                    "public": {"type": "boolean", "description": "Any playlist of that kind will do (\"a lofi "
+                                                                   "playlist\"), not one particular playlist."},
+                },
+                "required": ["query", "kind"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "pause_music",
             "description": "Pause Spotify music playback.",
             "parameters": {"type": "object", "properties": {}},
@@ -3985,7 +5627,7 @@ TOOLS = [
             "description": (
                 "Look at the most recently attached, generated or edited image and answer a question about it, or "
                 "describe it if no question is given. ONLY call when the user is clearly asking about an image that "
-                "is part of this conversation (an attached photo, screenshot, diagram, chart, or a picture Jervis "
+                "is part of this conversation (an attached photo, screenshot, diagram, chart, or a picture Jarvis "
                 "just made or edited) — including a vague follow-up like 'what's wrong with it' right after an "
                 "image was shared. You cannot see images yourself; this is the only way to know what is in one."
             ),
@@ -4071,9 +5713,51 @@ TOOLS = [
                 "city": {"type": "string", "description": "Only if the user named a place; otherwise leave empty."}}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_code",
+            "description": "Write real code as files on the user's computer: a program, script, website, API or whole project, in any "
+                           "programming language. Call it when the user asks for code to be written or built as files (not for a short "
+                           "snippet they only want explained in the chat). It writes the files, checks their syntax and reports exactly "
+                           "what happened; it does not run the code. Repeat its result faithfully.",
+            "parameters": {"type": "object", "properties": {
+                "request": {"type": "string", "description": "What to build, in the user's own words, with every detail they gave."},
+                "language": {"type": "string", "description": "The programming language, if the user named one."},
+                "destination": {"type": "string", "enum": ["vscode", "local", "word", "notes", "gdrive", "zip"],
+                                "description": "Only if the user asked for a place: VS Code, a local folder, a Word document, Apple Notes, Google Drive or a zip. Leave it out otherwise."}},
+                "required": ["request"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "world_clock",
+            "description": "Get the current local time in one or more places (cities, countries, states) and show them on "
+                           "Jarvis's world clock window. Call it whenever the user asks what time it is somewhere else, or "
+                           "for the time difference between places. The result is the real time: repeat it, never work it out yourself.",
+            "parameters": {"type": "object", "properties": {
+                "places": {"type": "array", "items": {"type": "string"},
+                           "description": "Each place as a name, e.g. [\"Tokyo\"] or [\"Tel Aviv\", \"Los Angeles\"]. "
+                                          "For 'there', use the place the conversation was just about."}},
+                "required": ["places"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "show_distance",
+            "description": "Work out the distance between two places and show the route on Jarvis's 3D globe. Call it "
+                           "whenever the user asks how far apart two places are (cities, countries, landmarks).",
+            "parameters": {"type": "object", "properties": {
+                "place_a": {"type": "string", "description": "The first place, as the user said it."},
+                "place_b": {"type": "string", "description": "The second place, as the user said it."}},
+                "required": ["place_a", "place_b"]},
+        },
+    },
 ]
 
-SYSTEM_PROMPT = """You are Jervis, an AI desktop assistant.
+SYSTEM_PROMPT = """You are Jarvis, an AI desktop assistant.
 - NEVER execute tools unless the user explicitly commands an action (e.g., 'open application', 'play music').
 - If the user asks general questions or makes conversational statements like 'can you hear me' or 'hello', DO NOT call tools. Respond naturally in 1-2 sentences.
 - A statement that only mentions an app, website or topic in passing (e.g. "I installed Chrome yesterday") is not a request: reply to what the user actually said, and never bring up, offer, or describe an unrelated action, setting, or example from your own instructions.
@@ -4082,7 +5766,10 @@ SYSTEM_PROMPT = """You are Jervis, an AI desktop assistant.
 - You cannot see the user's messages, emails or files. Never claim that they have, or don't have, any unread messages or new mail: say you can't check that. You cannot see their Google Calendar either (a separate feature checks it before you're ever asked) — if a calendar question reaches you, tell the user to say "check my calendar" or "open my calendar" instead of guessing what is on it.
 - Images: the user can attach photos, screenshots or other pictures, and you can create or edit images too. You cannot see an image yourself — only the image tools can. Use analyze_image to describe an attached image or answer a question about it, including a vague follow-up like "what's wrong with it" right after an image was shared (a system message will tell you when one is pending). Use extract_image_text to read text out of an image. Use compare_images once two or more images have been shared. Use generate_image only when explicitly asked to create/draw/make a picture of something, and edit_image only when explicitly asked to change an existing image (remove/add/replace something, change the background or style, etc). Never claim an image was generated, edited or analyzed unless a tool result actually confirmed it. If an image tool result explains what's missing or how to fix it (a setup step, an environment variable, a URL), repeat that specific detail back to the user instead of a vague "I can't do that" — they need to know exactly what to do next.
 - use_computer lets you work in an app on the user's screen with the mouse and keyboard. Call it only when the user explicitly asks you to do something on screen (for example "scroll down" or "fill in this form"). The user is asked for permission and can stop you at any time; say in one short sentence what you're starting, never that it's finished.
+- show_distance shows how far apart two places are on a 3D globe: call it for every question about the distance between two places, instead of answering from memory.
 - get_weather answers a direct weather question with the city set in Settings. Call it only when the user is actually asking about the weather.
+- write_code writes real code files on the user's computer and checks them. Call it when the user asks for a program, script, website or project to be built. Say only what its result says: never that code was run, tested or works unless the result says so.
+- world_clock gives the real current time in other places and shows the world clock. Call it for every question about what time it is somewhere else, or the time difference between places, and say the time exactly as its result gives it. Never work out another place's time yourself.
 - After using a tool, give the user a short natural spoken confirmation.
 - Keep casual answers concise and natural, never emoji.
 - Reply in English. Only when the user's message is written in Hebrew, reply in Hebrew.
@@ -4119,7 +5806,7 @@ SYSTEM_PROMPT = """You are Jervis, an AI desktop assistant.
 
 # ---------- Timers ----------
 typed_inputs = queue.Queue()  # lines typed into the window, handled by the main loop like spoken commands
-announcements = queue.Queue()  # spoken by the main loop, so Jervis never talks over his own microphone
+announcements = queue.Queue()  # spoken by the main loop, so Jarvis never talks over his own microphone
 
 
 def notify(title: str, message: str) -> None:
@@ -4147,7 +5834,11 @@ def deliver_alert(payload: dict) -> bool:
     return False
 
 
+last_timer_fired = {"at": 0.0, "timer": None}   # the one that went off most recently, for "stop timer" said right after
+
+
 def on_timer_fired(timer: dict) -> None:
+    last_timer_fired.update(at=time.time(), timer=timer)
     if timer["kind"] == "reminder":
         message = f"Reminder: {timer['label']}." if timer["label"] else "Time's up."
         spoken = message
@@ -4158,7 +5849,7 @@ def on_timer_fired(timer: dict) -> None:
         "id": timer["id"], "label": timer["label"], "kind": timer["kind"], "total": timer["total"], "message": message}})
     if not shown:  # nobody to play the chime yet, so use the system sound until the window opens
         threading.Thread(target=ring, daemon=True).start()
-    notify("Jervis", message)
+    notify("Jarvis", message)
     announcements.put(spoken)
 
 
@@ -4180,12 +5871,18 @@ def handle_timer_command(text: str):
     if action == "ask":
         return "How long should I set it for?"
     if action == "set":
+        last_timer_fired["at"] = 0.0
         timer = timer_manager.add(command["seconds"], command["label"], command["kind"])
         if timer["kind"] == "reminder":
             what = f" to {timer['label']}" if timer["label"] else ""
             return f"Okay, I'll remind you{what} in {format_duration(timer['total'])}."
         return f"Timer set for {format_duration(timer['total'])}" + (f", for {timer['label']}." if timer["label"] else ".")
     if action == "cancel":
+        if not command["all"] and not command["label"] and time.time() - last_timer_fired["at"] < 90:
+            # "stop timer" just after one went off means that one: it is silenced, and no other timer is touched
+            finished, last_timer_fired["at"] = last_timer_fired["timer"], 0.0
+            send_ui_update_once({"type": "dismiss_alert"})
+            return f"Your {describe_timer(finished)} already finished. I've silenced it."
         cancelled = timer_manager.cancel(command["label"], command["all"])
         if not cancelled:
             return "You don't have any timers running."
@@ -4203,28 +5900,16 @@ def handle_timer_command(text: str):
 
 
 last_llm_reply = None  # {"text", "at"}: the last answer the AI wrote, for "put this list in a document"
-pending_dictation = None  # {"app", "at"}: Jervis asked what to write, and the next thing you say is the content
-pending_spotify_request = None  # {"at"}: Jervis asked what to listen to, and the next thing you say is a song/artist
+pending_dictation = None  # {"app", "at"}: Jarvis asked what to write, and the next thing you say is the content
+pending_spotify_request = None  # {"at"}: Jarvis asked what to listen to, and the next thing you say is a song/artist
 pending_spotify_play = None     # {"query", "at"}: Spotify is showing a search, and "play it" plays it
 
-# Words people mistype when giving orders ("take contorl"), matched loosely so a typo doesn't send a command to the AI.
-_TYPO_TARGETS = ("control", "computer", "spotify", "search")
+from typos import fix_typos, _MISSPELLINGS, _TYPO_TARGETS   # noqa: E402,F401  (kept under their old names here)
 
 
-def fix_typos(text: str) -> str:
-    import difflib
-    def fix(match):
-        word = match.group(0)
-        if len(word) < 5 or word.lower() in _TYPO_TARGETS:
-            return word
-        close = difflib.get_close_matches(word.lower(), _TYPO_TARGETS, n=1, cutoff=0.8)
-        return close[0] if close else word
-    return re.sub(r"[A-Za-z]+", fix, text or "")
-
-
-# "Take control (of my computer) and …", said before something Jervis can do directly: the preamble adds nothing.
+# "Take control (of my computer) and …", said before something Jarvis can do directly: the preamble adds nothing.
 _CONTROL_PREAMBLE = re.compile(
-    r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis)[, ]+)?(?:please |can you |could you )*(?:take (?:the )?control"
+    r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis)[, ]+)?(?:please |can you |could you )*(?:take (?:the )?control"
     r"(?: (?:over|of|on))?(?: (?:my|the) (?:computer|mac|pc|laptop|screen))?|use my (?:computer|mac|pc)|control my "
     r"(?:computer|mac|pc))(?:,? (?:and|to|then))?\s+", re.I)
 _SPOTIFY_SEARCH = re.compile(
@@ -4269,10 +5954,10 @@ def handle_spotify_search(text: str):
         return "Spotify isn't installed on this computer. Get it from spotify.com, then ask me again."
     pending_spotify_play = {"query": query, "at": time.time()}
     return f"Here's {query} in Spotify. Say “play it” and I'll start it."
-pending_google_search = None  # {"at"}: Jervis asked what to search, and the next thing you say is the search itself
-pending_netflix_request = None  # {"at"}: Jervis asked what to watch, and the next thing you say is a show/movie title
+pending_google_search = None  # {"at"}: Jarvis asked what to search, and the next thing you say is the search itself
+pending_netflix_request = None  # {"at"}: Jarvis asked what to watch, and the next thing you say is a show/movie title
 pending_stremio_request = None  # {"at"}: same, for Stremio
-pending_calendar_choice = None  # {"at"}: Jervis asked "hear the next events, or make a new one?"
+pending_calendar_choice = None  # {"at"}: Jarvis asked "hear the next events, or make a new one?"
 pending_calendar_event = None  # {"step", "fields", "at"}: building a new event one answer at a time (see calendar_time)
 DEFAULT_DOC_APP = "gdocs"
 
@@ -4280,7 +5965,7 @@ DEFAULT_DOC_APP = "gdocs"
 def title_from_question(question: str) -> str:
     """"What is a healthy breakfast?" -> "Healthy Breakfast"."""
     t = " ".join(re.sub(r"[^\w' ]", " ", (question or "").lower()).split())
-    t = re.sub(r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:please )?(?:(?:can|could|would) you )?"
+    t = re.sub(r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:please )?(?:(?:can|could|would) you )?"
                r"(?:(?:give|tell|show|get) me |i (?:need|want) |what(?:'s| is| are) |list |suggest |recommend |write )?"
                r"(?:(?:a|an|the|some|me|few) )*", "", t)
     return " ".join(t.split()[:6]).title()
@@ -4332,7 +6017,7 @@ DOC_EDIT_PROMPT = (
     "revised document: the first line is the title, then a blank line, then the body. Keep everything the request "
     "does not touch. No commentary, no introduction, no markdown symbols such as # or **."
 )
-DOC_CONTEXT_SECONDS = 45 * 60  # how long "make it shorter" still refers to the document Jervis just wrote
+DOC_CONTEXT_SECONDS = 45 * 60  # how long "make it shorter" still refers to the document Jarvis just wrote
 last_document = None  # {"app", "ref", "title", "body", "at"}
 
 
@@ -4343,7 +6028,7 @@ def current_document():
 
 
 def edit_document(request: str) -> str:
-    """Apply a spoken change ("make it shorter", "add a paragraph about X") to the document Jervis wrote."""
+    """Apply a spoken change ("make it shorter", "add a paragraph about X") to the document Jarvis wrote."""
     global last_document
     doc = current_document()
     app_key, app_name = doc["app"], documents.APP_NAMES[doc["app"]]
@@ -4389,7 +6074,7 @@ DOC_SYSTEM_PROMPT = (
 )
 
 
-last_turn_typed = False   # whether the request being handled was typed into Jervis's window (else spoken)
+last_turn_typed = False   # whether the request being handled was typed into Jarvis's window (else spoken)
 
 
 def handle_screen_question(text: str):
@@ -4397,7 +6082,7 @@ def handle_screen_question(text: str):
     what's really there (screen_reader.py). Reading only — nothing is clicked or typed."""
     if not screen_reader.is_screen_question(text):
         return None
-    if (os.getenv("JERVIS_SCREEN_READING") or "on").strip().lower() == "off":
+    if (os.getenv("JARVIS_SCREEN_READING") or "on").strip().lower() == "off":
         return "Reading your screen is turned off in Settings."
     import screen_vision
     vision = screen_vision.ScreenVision() if screen_vision.available() else None
@@ -4453,7 +6138,7 @@ def handle_write_here(text: str):
     type it in right there, then check it's really there (see write_here.py). None when it isn't that."""
     if not write_here.is_write_request(text):
         return None
-    target = write_here.find_target()   # now, before Jervis's own window steps forward or aside
+    target = write_here.find_target()   # now, before Jarvis's own window steps forward or aside
     if not write_here.wants_here(text, target, spoken=not last_turn_typed):
         return None
 
@@ -4473,13 +6158,18 @@ def handle_write_here(text: str):
     return start_computer_task(text, scripted=[("Writing it and typing it where your cursor is", write_and_type)])
 
 
-def write_document(request: str, app_key: str) -> str:
-    """Write what the user asked for, then put it into a new document in the chosen app."""
+def write_document(request: str, app_key: str, into_open: bool = False) -> str:
+    """Write what the user asked for, then put it into a new document in the chosen app — or, with into_open, into
+    the one Jarvis just opened ("open a new Google Doc" … "write a short story")."""
+    global last_document
     app_name = documents.APP_NAMES[app_key]
+    open_doc = last_document if into_open and last_document and last_document.get("app") == app_key \
+        and time.time() - last_document.get("at", 0) < 60 * 60 else None
     try:
         response = groq_chat(
             model=GROQ_MODEL,
-            messages=[{"role": "system", "content": DOC_SYSTEM_PROMPT}, {"role": "user", "content": request}],
+            messages=[{"role": "system", "content": DOC_SYSTEM_PROMPT},
+                      {"role": "user", "content": documents.what_to_write(request)}],
             max_tokens=2500,
         )
         text = (response.choices[0].message.content or "").strip()
@@ -4489,7 +6179,13 @@ def write_document(request: str, app_key: str) -> str:
     if not text:
         return "I couldn't come up with any text for that. Try asking again."
     title, body = documents.split_title(text)
-    global last_document
+    if open_doc:
+        try:
+            documents.update(app_key, open_doc["ref"], title, f"{title}\n\n{body}" if app_key == "gdocs" else body)
+            last_document = {**open_doc, "title": title, "body": body, "at": time.time()}
+            return f"Done. I wrote {title} in the document I opened."
+        except Exception as e:
+            print(f"Writing into the open document failed, making a new one: {e!r}")
     try:
         ref = documents.insert(app_key, title, body, context=f"{request} {title}")
     except Exception as e:
@@ -4497,14 +6193,19 @@ def write_document(request: str, app_key: str) -> str:
         return f"I wrote it, but couldn't put it into {app_name}: {e}"
     last_document = {"app": app_key, "ref": ref, "title": title, "body": body, "at": time.time()}
     if app_key == "gdocs":
-        return f"I wrote {title} and opened a new Google Doc. The text is also on your clipboard if it doesn't appear."
+        if ref == documents.GDOCS_PASTED:
+            return f"Done. I wrote {title} in a new Google Doc."
+        return (f"I opened a new Google Doc for {title}, but couldn't type into it. The text is on your clipboard: click "
+                f"into the document and press {'Ctrl' if osal.IS_WIN else 'Command'}+V.")
     return f"Done. I wrote {title} in {app_name}."
 
 
 def is_music_command(text: str) -> bool:
     """Only allow music controls for an explicit music request."""
     normalized = " ".join((text or "").lower().strip().split())
-    return bool(re.search(r"\b(play|pause|stop|resume|next)\b.*\b(song|music|spotify|track)\b", normalized)) or normalized.startswith("play ")
+    return (bool(re.search(r"\b(play|pause|stop|resume|next|shuffle|put on|listen to)\b.*\b(song|songs|music|spotify|track|"
+                           r"playlist|album|apple music|youtube music|soundcloud|deezer|tidal)\b", normalized))
+            or normalized.startswith(("play ", "shuffle ")))
 
 
 def is_app_command(text: str) -> bool:
@@ -4522,7 +6223,21 @@ def should_enable_tools(text: str) -> bool:
     """Do not expose tools during ordinary conversation or incomplete phrases."""
     return (is_google_search_command(text) or is_music_command(text) or is_app_command(text) or is_youtube_command(text)
             or images.is_image_command(text) or images.has_pending_context() or is_computer_request(text)
-            or is_weather_command(text))
+            or is_weather_command(text) or is_distance_question(text) or is_clock_question(text) or is_code_request(text))
+
+
+def is_clock_question(text: str) -> bool:
+    """A question about the time somewhere else ("what time is it there?", "the time difference between…"): the only
+    kind the world_clock tool may answer. "I had a great time in Paris" is not one."""
+    n = " ".join((text or "").lower().replace("’", "'").split())
+    return bool(re.search(r"\bwhat(?:'s| is)? (?:the )?(?:current |local )?time\b.*\b(?:in|there|at)\b|\btime (?:is it|difference|zone)\b.*\b(?:in|there|between)\b|"
+                          r"\bworld clock\b|\bhours? (?:ahead|behind)\b", n))
+
+
+def is_distance_question(text: str) -> bool:
+    """"How far is it to …", "km between …": a distance the globe can show, however it was typed."""
+    n = earth._fix_spelling(" ".join((text or "").lower().split()))
+    return bool(re.search(r"\bdistance\b|\bhow far\b|\b(?:km|kilometers|kilometres|miles)\b.*\bbetween\b", n))
 
 
 def diagnose_connection(host: str = "api.groq.com") -> str:
@@ -4555,9 +6270,9 @@ def local_ai_summary() -> str:
 
 
 def check_ai_connection() -> None:
-    """At startup, say clearly which AI Jervis will use, so a missing key or a blocked network is not a mystery later."""
+    """At startup, say clearly which AI Jarvis will use, so a missing key or a blocked network is not a mystery later."""
     global groq_down_until
-    local_model, local_reason = local_llm.status()
+    local_model, local_reason = (None, "") if LLM_BACKEND == "groq" else local_llm.status()
     problem = None
     if LLM_BACKEND == "ollama":
         print(f"Using the local AI only (LLM_BACKEND=ollama): {local_ai_summary()}", flush=True)
@@ -4567,7 +6282,9 @@ def check_ai_connection() -> None:
     else:
         try:
             groq_client.with_options(timeout=12, max_retries=0).models.list()
-            print("The online AI connection works." + (f"  Local backup: Ollama ({local_model})." if local_model else ""), flush=True)
+            print("The online AI connection works." + (f"  Local backup: Ollama ({local_model})." if local_model else "")
+                  + ("  (LLM_BACKEND=groq: the online AI only, with no local backup.)" if LLM_BACKEND == "groq" else ""),
+                  flush=True)
             return
         except Exception as e:
             if getattr(e, "status_code", None) in (401, 403):
@@ -4577,12 +6294,20 @@ def check_ai_connection() -> None:
                            f" (technical detail: {type(e.__cause__ or e).__name__}: {e.__cause__ or e})")
     groq_down_until = time.time() + 3600
     if LLM_BACKEND == "auto":
-        print(f"\n*** {problem}\n    Jervis will use the local AI instead"
+        print(f"\n*** {problem}\n    Jarvis will use the local AI instead"
               + (f" (Ollama, model {local_model})." if local_model else " as soon as its setup finishes.") + " ***\n",
               flush=True)
     else:
-        print(f"\n*** {problem}\n    (Jervis still understands commands like opening apps and timers without any AI.)\n",
+        print(f"\n*** {problem}\n    (Jarvis still understands commands like opening apps and timers without any AI.)\n",
               flush=True)
+
+
+def release_local_ai() -> None:
+    """LLM_BACKEND=groq: only the online AI answers, so close the one on this computer and give its memory back."""
+    try:
+        print(local_ai.release_summary(local_ai.release()), flush=True)
+    except Exception:
+        traceback.print_exc()   # never a reason for Jarvis not to start
 
 
 def local_ai_status_reply() -> str:
@@ -4595,7 +6320,7 @@ def local_ai_status_reply() -> str:
                 "so ask me those any time, and ask me this again in a little while.")
     if state.get("error"):
         return f"My AI couldn't be set up: {state['error']} {state.get('hint') or ''}".strip()
-    if os.getenv("JERVIS_NO_AI_SETUP") != "1":
+    if os.getenv("JARVIS_NO_AI_SETUP") != "1":
         local_ai_manager.start_background()   # it was ready before and stopped: bring it back
     return "My AI isn't running right now, so I'm starting it again. Ask me again in a moment."
 
@@ -4649,7 +6374,14 @@ def is_model_glitch(error: Exception) -> bool:
     return code in ("tool_use_failed", "output_parse_failed") or "tool_use_failed" in str(error) or "output_parse_failed" in str(error)
 
 
-def _groq_chat_with_retry(**kwargs):
+def wanted_a_tool(error: Exception) -> bool:
+    """The AI was asked without its tools (the message didn't read like a command) and tried to use one anyway: it
+    understood a request in it ("new york and paris" after a distance question). Asking again the same way fails the
+    same way; asking again with the tools is what it needs."""
+    return "but model called a tool" in str(error)
+
+
+def _groq_chat_with_retry(tools_if_wanted=None, **kwargs):
     """One online-AI call. A short rate-limit wait is honoured (the answer comes a few seconds late instead of never)."""
     try:
         return groq_client.chat.completions.create(**kwargs)
@@ -4657,8 +6389,12 @@ def _groq_chat_with_retry(**kwargs):
         log_ai_error(e)
         status = getattr(e, "status_code", None)
         if is_model_glitch(e):
+            if tools_if_wanted and not kwargs.get("tools") and wanted_a_tool(e):
+                print("The online AI wants one of its tools for this; asking again with them...", flush=True)
+                return groq_client.chat.completions.create(**{**kwargs, "tools": tools_if_wanted, "tool_choice": "auto"})
             print("The online AI produced a garbled answer; asking again...", flush=True)
-            return groq_client.chat.completions.create(**kwargs)
+            # a little more freedom the second time: the same request at the same setting tends to fail the same way
+            return groq_client.chat.completions.create(**{**kwargs, "temperature": max(0.6, float(kwargs.get("temperature") or 0))})
         if status in (401, 403) or (status and status < 500 and status != 429):
             raise
         wait = rate_limit_wait(e) if status == 429 else 1.5
@@ -4673,7 +6409,7 @@ def trim_for_ai(messages: list) -> list:
     """What actually gets sent: the system prompt and the recent turns, with any big document text shortened.
 
     The free online AI allows only 8,000 tokens a minute, and everything sent counts, so a long history (or the full
-    text of a story Jervis wrote) would use it up in a few questions.
+    text of a story Jarvis wrote) would use it up in a few questions.
     """
     if not messages:
         return messages
@@ -4706,6 +6442,7 @@ def groq_chat(**kwargs):
     """
     global groq_down_until
     role = kwargs.pop("role", "chat")   # which local model does this job (see local_llm.model_for)
+    tools_if_wanted = kwargs.pop("tools_if_wanted", None)   # see wanted_a_tool: only the online AI is ever given them
     if "gpt-oss" in str(kwargs.get("model", "")):  # a "thinking" model: keep the thinking short, it counts against the limit
         kwargs.setdefault("reasoning_effort", "low")
         kwargs.setdefault("max_tokens", 1500)
@@ -4714,7 +6451,7 @@ def groq_chat(**kwargs):
     if LLM_BACKEND == "auto" and time.time() < groq_down_until:
         return local_llm.chat(role=role, **kwargs)
     try:
-        return _groq_chat_with_retry(**kwargs)
+        return _groq_chat_with_retry(tools_if_wanted=tools_if_wanted, **kwargs)
     except Exception as e:
         status = getattr(e, "status_code", None)
         log_ai_error(e)
@@ -4779,7 +6516,10 @@ def _failed_generation_text(error: Exception) -> str:
     return ""
 
 
-ACTION_TOOLS = {"use_computer", "play_song", "pause_music", "open_application", "play_youtube_video"}
+ACTION_TOOLS = {"use_computer", "play_song", "play_music", "pause_music", "open_application", "play_youtube_video", "write_code"}
+# Overheard talk about what someone else is doing ("no, he's doing it on the screen"): not a request to Jarvis, whatever
+# words it shares with one. It gets an ordinary answer, never the "say it as a command" correction.
+_ABOUT_SOMEONE_ELSE = re.compile(r"^(?:(?:no|yes|yeah|oh|well|look|see|wait)[, ]+)*(?:he|she|they|it)(?:'s|'re| is| are| was| were)\b", re.I)
 _CLAIMS_ACTION = re.compile(
     r"\b(?:i'?m (?:now )?(?:using|controlling) (?:the|your) (?:computer|mouse)|i (?:have |'ve )?(?:opened|clicked|typed|"
     r"searched|started|played|launched|pressed)\b|i(?:'ll| will) (?:now )?(?:take control (?:of|over|on)|open|click|"
@@ -4790,7 +6530,7 @@ _CLAIMS_ACTION = re.compile(
     r"i(?: have|'ve)? (?:created|added|moved|deleted|made) (?:a|an|the|your) (?:cube|sphere|cylinder|cone|object|"
     r"mesh|shape)\b|"
     r"(?:^|[.!] )(?:scaling|resizing|creating|adding|moving|rotating|colou?ring|deleting) (?:the|a|an|it|your)\b|"
-    # Jervis's own command replies start "Done —": the chat model copies them from the history ("Done — Cube.002 is
+    # Jarvis's own command replies start "Done —": the chat model copies them from the history ("Done — Cube.002 is
     # taller now.") for something that never ran
     r"^done\b|\b(?:is|are) (?:now (?:taller|shorter|bigger|smaller|wider|narrower|larger|thinner)\b|"
     r"(?:taller|shorter|bigger|smaller|wider|narrower|larger|thinner) now\b)|"
@@ -4811,13 +6551,15 @@ def with_verified_math(messages: list, user_text: str) -> list:
     return messages[:-1] + [note] + messages[-1:] if messages else messages
 
 
-def ask_jervis(messages, user_text=""):
+def ask_jarvis(messages, user_text=""):
     tools, tool_choice = select_tools(user_text)
     try:
         kwargs = {"model": GROQ_MODEL, "messages": trim_for_ai(with_verified_math(messages, user_text))}
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice
+        else:
+            kwargs["tools_if_wanted"] = TOOLS   # the tools it may still reach for; each one's own guard below still applies
         response = groq_chat(**kwargs)
     except Exception as e:
         if tools and tool_choice == "required":
@@ -4843,7 +6585,7 @@ def ask_jervis(messages, user_text=""):
         # ran — whatever the model wrote instead (a claim, or a whole fake back-and-forth about "confirming") is
         # never shown: a free-text answer to an action request is untrustworthy by construction here.
         action_shaped = (is_computer_request(user_text) or is_music_command(user_text) or is_youtube_command(user_text)
-                         or is_app_command(user_text))
+                         or is_app_command(user_text)) and not _ABOUT_SOMEONE_ELSE.search(user_text or "")
         if content and (action_shaped or _CLAIMS_ACTION.search(content)):
             print("The AI answered in text instead of acting on a request that needed a tool; replaced.", flush=True)
             return ("I didn't do anything on your computer for that. Say it as a command, like “make it taller”, "
@@ -4869,7 +6611,7 @@ def ask_jervis(messages, user_text=""):
         try:
             if name == "google_search" and not is_google_search_command(user_text):
                 result = "Google search was blocked because the user did not explicitly say Google. Respond without opening a browser."
-            elif name in {"play_song", "pause_music"} and not is_music_command(user_text):
+            elif name in {"play_song", "play_music", "pause_music"} and not is_music_command(user_text):
                 result = "Music control was blocked because the user did not explicitly request music playback. Respond normally."
             elif name == "play_youtube_video" and not is_youtube_command(user_text):
                 result = "YouTube playback was blocked because the user did not explicitly request a YouTube video. Respond normally."
@@ -4881,6 +6623,10 @@ def ask_jervis(messages, user_text=""):
                 result = "Image editing was blocked because the user did not explicitly ask to edit the image. Respond without editing it."
             elif name == "use_computer" and not is_computer_request(user_text):
                 result = "Using the computer was blocked because the user did not ask for anything to be done on screen. Respond normally."
+            elif name == "write_code" and not is_code_request(user_text):
+                result = "Writing code was blocked because the user did not ask for code to be written. Respond normally."
+            elif name == "world_clock" and not is_clock_question(user_text):
+                result = "The world clock was blocked because the user did not ask what time it is somewhere. Respond normally."
             elif name == "get_weather" and not is_weather_command(user_text):
                 result = "The weather tool was blocked because the user did not explicitly ask about the weather. Respond normally."
             elif func:
@@ -5020,16 +6766,16 @@ def _note(english: str, reply: str) -> str:
 
 
 _FAREWELL = re.compile(
-    r"(?:(?:hey|ok|okay|alright|all right|well|so|right|thanks|thank you|cool|great|jervis|jarvis)\s+)*"
+    r"(?:(?:hey|ok|okay|alright|all right|well|so|right|thanks|thank you|cool|great|jarvis|jervis)\s+)*"
     r"(?P<phrase>goodbye|good bye|bye(?: bye)?|goodnight|good night|see you(?: later| soon| tomorrow| around)?|see ya|"
     r"take care|talk to you later|catch you later|have a (?:good|great|nice|lovely|wonderful|pleasant) "
     r"(?:day|night|evening|one|afternoon|weekend)|sleep well|i(?:'m| am) (?:going|off) to (?:bed|sleep))"
-    r"(?:\s+(?:jervis|jarvis|buddy|friend|mate|man|thanks|thank you|now|for now|you too))*"
+    r"(?:\s+(?:jarvis|jervis|buddy|friend|mate|man|thanks|thank you|now|for now|you too))*"
 )
 
 
 def is_shutdown_command(text):
-    """Goodbyes in any of the usual forms ("Goodbye.", "Have a good day, Jervis", "bye bye") put Jervis to sleep."""
+    """Goodbyes in any of the usual forms ("Goodbye.", "Have a good day, Jarvis", "bye bye") put Jarvis to sleep."""
     if not text:
         return False
     normalized = " ".join(re.sub(r"[^a-z' ]", " ", text.lower()).split())
@@ -5038,7 +6784,7 @@ def is_shutdown_command(text):
 
 def farewell_reply(text: str) -> str:
     n = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower()).split())
-    sleep = "Going to sleep. Say Hey Jervis when you want me."
+    sleep = "Going to sleep. Say Hey Jarvis when you want me."
     if re.search(r"good ?night|\bnight\b|\bevening\b|sleep well|\bbed\b|\bsleep\b", n):
         return f"Goodnight! {sleep}"
     if re.search(r"have a", n):
@@ -5054,7 +6800,7 @@ WHISPER_HALLUCINATIONS = {
     "subscribe to my channel", "you", "so", "uh", "um", "hmm",
 }
 # ...and these in Hebrew (the closing lines of the subtitled videos it learned from). "תודה" / "תודה רבה" can be
-# real, so they're only dropped while Jervis is asleep and hearing the whole room.
+# real, so they're only dropped while Jarvis is asleep and hearing the whole room.
 WHISPER_HALLUCINATIONS_HE = re.compile(r"^(?:תודה (?:רבה )?(?:ש|על ה|ל)צפי(?:תם|ה|יה)|הפקה|"
                                        r"(?:תרגום|כתוביות)(?: \S+){0,3}|אה+|אממ+|הממ+|מממ+)$")   # (credits)
 WHISPER_HALLUCINATIONS_HE_PASSIVE = {"תודה", "תודה רבה", "שלום", "ביי", "להתראות"}
@@ -5075,6 +6821,13 @@ def transcribe_local(wav_bytes: bytes) -> str:
     print(f"Local Whisper ({heard.engine}, {heard.language} {heard.confidence:.2f}, {heard.seconds:.2f}s): "
           f"{heard.text!r}", flush=True)
     return heard.text
+# …and these too, confidently (a silent clip comes back as "Thank you."), but people also really say them, so a
+# second engine has to hear them too before they count: a made-up "Goodbye." would otherwise put Jarvis to sleep.
+WHISPER_SUSPECTS = {
+    "thank you", "thanks", "thank you so much", "thank you very much", "bye", "bye bye", "goodbye", "good bye",
+    "thank you goodbye", "thank you bye", "okay", "ok", "yeah", "oh", "ah", "i'm sorry", "sorry", "see you",
+    "see you next time", "see you later", "good night", "goodnight", "have a good day", "the end", "thank you for listening",
+}
 
 
 def transcribe_groq(wav_bytes: bytes) -> str:
@@ -5083,7 +6836,7 @@ def transcribe_groq(wav_bytes: bytes) -> str:
     No `prompt` on purpose: with silence or noise Whisper echoes the prompt back
     ("Play a song."), which would fire commands from background noise.
     """
-    language = stt_local.whisper_language()    # JERVIS_STT_LANGUAGE: "en" unless Hebrew speech was turned on
+    language = stt_local.whisper_language()    # JARVIS_STT_LANGUAGE: "en" unless Hebrew speech was turned on
     result = groq_client.audio.transcriptions.create(
         file=("speech.wav", wav_bytes),
         model=STT_MODEL,
@@ -5094,6 +6847,15 @@ def transcribe_groq(wav_bytes: bytes) -> str:
     return (result.text or "").strip()
 
 
+def is_own_echo(text: str) -> bool:
+    """The end of Jarvis's own last sentence, picked up by the microphone ("…whatever you need." -> "you need.")."""
+    if time.time() - last_spoken["at"] > 6 or not last_spoken["text"]:
+        return False
+    heard = " ".join(re.sub(r"[^a-z0-9' ]", " ", (text or "").lower()).split())
+    said = " ".join(re.sub(r"[^a-z0-9' ]", " ", last_spoken["text"].lower()).split())
+    return bool(heard) and len(heard.split()) <= 8 and f" {heard} " in f" {said} "
+
+
 def transcribe_google(audio) -> str:
     try:
         # Google's free recognizer hears one language: the one the conversation is in.
@@ -5101,6 +6863,14 @@ def transcribe_google(audio) -> str:
         return recognizer.recognize_google(audio, language="he-IL" if hebrew else "en-US").strip()
     except sr.UnknownValueError:
         return ""
+
+
+def heard_by_google_too(audio) -> bool:
+    """A second opinion on a short phrase Whisper is known to invent: Google's recognizer hears nothing in noise."""
+    try:
+        return bool(transcribe_google(audio))
+    except Exception:
+        return True   # no second opinion available (offline): trust what was heard rather than drop a real request
 
 
 def transcribe(audio, passive=False) -> str:
@@ -5132,7 +6902,11 @@ def transcribe(audio, passive=False) -> str:
         last_transcription.update(seconds=time.time() - last_transcription["started"], engine=name)
         if is_whisper_hallucination(text, passive):
             return ""
-        # Hebrew speech: "היי ג'רביס" -> "hey Jervis"; and "hey Gravis" / "okay Gervis" -> "hey jervis": the wake
+        cleaned = " ".join(re.sub(r"[^a-z' ]", " ", (text or "").lower()).split())
+        if cleaned in WHISPER_SUSPECTS and "Whisper" in name and not heard_by_google_too(audio):
+            print(f"Ignored (only Whisper heard it, likely invented from noise): {text!r}", flush=True)
+            return ""
+        # Hebrew speech: "היי ג'רביס" -> "hey Jarvis"; and "hey Gravis" / "okay Gervis" -> "hey jervis": the wake
         # phrases work however the name was heard.
         return speech_fixes.fix_wake_name(nlu.latin_names(text))
     return ""
@@ -5162,7 +6936,7 @@ _MIC_RETRY_SECONDS = 3
 
 def open_microphone():
     """The microphone chosen in Settings (by name), or the system default if none is chosen or it's unplugged."""
-    wanted = os.getenv("JERVIS_MIC", "").strip()
+    wanted = os.getenv("JARVIS_MIC", "").strip()
     if wanted:
         try:
             index = microphones.input_device_index(wanted)
@@ -5177,7 +6951,7 @@ def open_microphone():
 
 def report_mic_problem(message: str, blocking: bool = True) -> None:
     """Tell the window (once per distinct problem) and, for a problem that stops listening, wait before retrying so
-    a missing microphone doesn't make Jervis spin at full speed."""
+    a missing microphone doesn't make Jarvis spin at full speed."""
     global mic_problem
     if message != mic_problem:
         mic_problem = message
@@ -5200,7 +6974,7 @@ CONTINUATION_SECONDS = 3.0   # how long a sentence cut off by a pause ("make the
 def listen_for_the_rest() -> str:
     """The rest of a sentence the speaker paused in ("put a tree next to the..." "...house"): one more short listen,
     transcribed and returned ("" if nothing more was said)."""
-    if os.getenv("JERVIS_TEST_AUDIO"):
+    if os.getenv("JARVIS_TEST_AUDIO"):
         audio = _test_recording(gap=False) if TEST_AUDIO else None
         return transcribe(audio).strip() if audio is not None else ""
     try:
@@ -5219,18 +6993,18 @@ def listen_for_the_rest() -> str:
     return transcribe(audio).strip()
 
 
-# Tests only: JERVIS_TEST_AUDIO="a.wav;b.wav" plays these recordings to the listening loop, one per listen, in
+# Tests only: JARVIS_TEST_AUDIO="a.wav;b.wav" plays these recordings to the listening loop, one per listen, in
 # place of the microphone — the whole voice path (wake phrase, recognition, follow-ups) runs for real, and no
 # microphone is opened.
-TEST_AUDIO = [p for p in (os.getenv("JERVIS_TEST_AUDIO") or "").split(";") if p]
+TEST_AUDIO = [p for p in (os.getenv("JARVIS_TEST_AUDIO") or "").split(";") if p]
 
 
 def _test_recording(gap: bool = True):
     if not TEST_AUDIO:
         time.sleep(0.25)
         return None
-    if gap:   # JERVIS_TEST_AUDIO_GAP: seconds of "silence" before each recording (a build finishing meanwhile)
-        time.sleep(float(os.getenv("JERVIS_TEST_AUDIO_GAP") or 0))
+    if gap:   # JARVIS_TEST_AUDIO_GAP: seconds of "silence" before each recording (a build finishing meanwhile)
+        time.sleep(float(os.getenv("JARVIS_TEST_AUDIO_GAP") or 0))
     import wave
     with wave.open(TEST_AUDIO.pop(0), "rb") as wav:
         return sr.AudioData(wav.readframes(wav.getnframes()), wav.getframerate(), wav.getsampwidth())
@@ -5261,12 +7035,13 @@ def _recognized(audio, passive: bool):
 def listen(passive=False):
     """Capture one phrase and return its text, or None if nothing usable was heard."""
     global mic_calibrated, last_calibrated_at
-    if TEST_AUDIO or os.getenv("JERVIS_TEST_AUDIO"):
+    if TEST_AUDIO or os.getenv("JARVIS_TEST_AUDIO"):
         audio = _test_recording()
         return _recognized(audio, passive) if audio is not None else None
     if AUDIO_OFF:   # test mode: nothing is recorded; typed lines are handled by the main loop
         time.sleep(0.25)
         return None
+    mutes_before = mute_changes[0]
     try:
         microphone = open_microphone()
     except OSError as e:
@@ -5278,7 +7053,7 @@ def listen(passive=False):
             clear_mic_problem() if not mic_problem.startswith("The microphone \u201c") else None
             # Recalibrated once at startup, and again every few minutes while asleep (never mid-conversation, so it
             # can't clip the start of something you're saying), so a room that's gotten noisier or quieter is still
-            # tracked, without the fast per-slice decay that used to make Jervis go deaf (see the note by MIN_ENERGY_THRESHOLD).
+            # tracked, without the fast per-slice decay that used to make Jarvis go deaf (see the note by MIN_ENERGY_THRESHOLD).
             if not mic_calibrated or (passive and time.time() - last_calibrated_at > RECALIBRATE_EVERY):
                 print("Calibrating microphone...")
                 recognizer.adjust_for_ambient_noise(source, duration=1.0)
@@ -5295,7 +7070,16 @@ def listen(passive=False):
 
         if mic_muted.is_set():
             return None
-        return _recognized(audio, passive)
+        text = _recognized(audio, passive)
+        if text and (mic_muted.is_set() or mute_changes[0] != mutes_before):
+            print(f"Ignored (the microphone was muted meanwhile): {text!r}", flush=True)
+            send_status("muted" if mic_muted.is_set() else ("sleeping" if passive else "idle"))
+            return None
+        if text and is_own_echo(text):
+            print(f"Ignored (my own voice): {text!r}", flush=True)
+            send_status("sleeping" if passive else "idle")
+            return None
+        return text
 
     except sr.WaitTimeoutError:
         send_status("sleeping" if passive else "idle")
@@ -5333,7 +7117,7 @@ def speak(text):
     print(f"Speaking: {text}")
     interrupt_speech.clear()
     volume = speak_volume()
-    if AUDIO_OFF or speak_muted() or volume == 0:   # test mode, or the user muted/zeroed Jervis's voice
+    if AUDIO_OFF or speak_muted() or volume == 0:   # test mode, or the user muted/zeroed Jarvis's voice
         send_status("idle")
         return
 
@@ -5350,9 +7134,10 @@ def speak(text):
     except Exception as e:
         print(f"TTS Error: {e}")
     finally:
+        last_spoken.update(text=text, at=time.time())
         if interrupt_speech.is_set():
             interrupt_speech.clear()
-            send_status("listening")  # cut off on purpose: the next thing said is for Jervis, so no pause
+            send_status("listening")  # cut off on purpose: the next thing said is for Jarvis, so no pause
         else:
             time.sleep(POST_SPEECH_PAUSE)
             send_status("idle")
@@ -5363,10 +7148,10 @@ def speak(text):
 # unhandled and it reads like a command: the local model's structured intent -> validated -> canonical English ->
 # the same handlers. The model only ever picks from a closed set of intents; it never writes code that runs.
 
-SAY_NOTHING = PrivateReply("")      # handle_command's answer for speech that wasn't meant for Jervis
+SAY_NOTHING = PrivateReply("")      # handle_command's answer for speech that wasn't meant for Jarvis
 CLARIFY_SECONDS = 90                # how long an answer to "Which colour?" still belongs to the unclear command
 last_command = {"text": None, "at": 0.0}
-pending_clarify = None              # {"said", "question", "at"} after Jervis asked what an unclear command meant
+pending_clarify = None              # {"said", "question", "at"} after Jarvis asked what an unclear command meant
 
 
 def language_context() -> dict:
@@ -5405,7 +7190,7 @@ def _run_command(text):
 # they do in English; the reply is translated back when it's shown and spoken (localized). The window shows the
 # words as said, and the log keeps them next to the English.
 CONFIRM_SECONDS = 90
-pending_translation = None   # {"english", "input", "at"} while Jervis asks whether he understood a request right
+pending_translation = None   # {"english", "input", "at"} while Jarvis asks whether he understood a request right
 last_request = {"text": "", "at": 0.0}   # the last request, in English: helps read a follow-up or a correction
 
 
@@ -5413,7 +7198,7 @@ current_turn = {"language": "en", "original": "", "translated": False}   # how t
 
 
 class TurnTimer:
-    """One line per request in the log, written when Jervis is back to listening: where its time went, stage by
+    """One line per request in the log, written when Jarvis is back to listening: where its time went, stage by
     stage, from the end of the speech to the end of the spoken answer (never the words said or answered)."""
 
     def __init__(self):
@@ -5461,7 +7246,7 @@ turn_timer = TurnTimer()
 last_transcription = {"started": 0.0, "seconds": 0.0, "engine": ""}   # the speech just heard (see transcribe)
 
 HEBREW_CHAT_PROMPT = (   # (for talk in English too: see answer_in_users_language)
-    "You are Jervis, a friendly voice assistant on the user's computer, talking with the user in {name}. Answer in "
+    "You are Jarvis, a friendly voice assistant on the user's computer, talking with the user in {name}. Answer in "
     "natural, correct {name}, speaking about yourself in the masculine, briefly - one to three sentences - unless "
     "the user asks for more. You can't see the screen, the user's messages or files from here: never claim you did, "
     "opened, played or changed anything.")
@@ -5518,7 +7303,7 @@ def _answer_now(reply, typed) -> None:
 
 
 def understand_language(text, typed=None):
-    """The request in English for the rest of Jervis, or None when Jervis has already answered it himself (he asked
+    """The request in English for the rest of Jarvis, or None when Jarvis has already answered it himself (he asked
     whether he understood it right, or to hear it again). English passes through untouched."""
     global pending_translation
     current_turn.update(language="en", original=str(text), translated=False)
@@ -5576,7 +7361,7 @@ def understand_language(text, typed=None):
 
 
 def handle_command(text, typed: bool = False):
-    """A reply when Jervis handled `text` as a command (or asked what it meant), SAY_NOTHING for background speech,
+    """A reply when Jarvis handled `text` as a command (or asked what it meant), SAY_NOTHING for background speech,
     None for conversation (the chat model answers it, as before)."""
     global pending_clarify, last_turn_typed
     last_turn_typed = typed
@@ -5627,28 +7412,28 @@ def handle_command(text, typed: bool = False):
 
 
 def remember_turn(messages: list, user_text: str, reply: str, turn_started: float, private: bool = False) -> None:
-    """Put a command Jervis handled himself into the AI's memory, so "read the story" or "shorten it" makes sense later."""
+    """Put a command Jarvis handled himself into the AI's memory, so "read the story" or "shorten it" makes sense later."""
     messages.append({"role": "user", "content": user_text})
     messages.append({"role": "assistant", "content": PRIVATE_PLACEHOLDER if private else reply})
     doc = last_document
     if doc and doc.get("body") and doc["at"] >= turn_started:
         messages.append({"role": "system", "content": (
-            f"Context: Jervis just wrote or changed a document in {documents.APP_NAMES[doc['app']]}. "
+            f"Context: Jarvis just wrote or changed a document in {documents.APP_NAMES[doc['app']]}. "
             f"Title: {doc['title']}\nFull text:\n{doc['body']}")})
     if len(messages) > 42:  # keep the system prompt and the most recent exchanges
         del messages[1:len(messages) - 40]
 
 
 def main_loop():
-    global awake, last_llm_reply
+    global awake, last_llm_reply, turn_from_phone
 
     global chat_history
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     chat_history = messages
-    print("Jervis background listener is ready. Say 'Wake Up Jervis'.")
+    print("Jarvis background listener is ready. Say 'Wake Up Jarvis'.")
 
     while True:
-        turn_timer.finish()   # the last request's timing line, now that Jervis is back to listening
+        turn_timer.finish()   # the last request's timing line, now that Jarvis is back to listening
         while not announcements.empty():  # timers that finished: say so, awake or asleep
             message = announcements.get()
             broadcast("ai", message)
@@ -5658,8 +7443,9 @@ def main_loop():
             typed = typed_inputs.get_nowait()
         except queue.Empty:
             typed = None
+        turn_from_phone = isinstance(typed, PhoneVoiceInput)
         if typed:
-            awake = True  # typing to Jervis wakes him, and works while the microphone is muted
+            awake = True  # typing to Jarvis wakes him, and works while the microphone is muted
             text = typed
             send_status("thinking")
             print(f"Typed: {text}")
@@ -5671,8 +7457,8 @@ def main_loop():
                 time.sleep(0.3)
                 continue
 
-            if not awake and os.getenv("JERVIS_WAKE_WORD", "on") == "off":
-                awake = True   # Settings: no wake phrase needed, Jervis is always listening while the mic is on
+            if not awake and os.getenv("JARVIS_WAKE_WORD", "on") == "off":
+                awake = True   # Settings: no wake phrase needed, Jarvis is always listening while the mic is on
             if not awake:
                 send_status("sleeping")
                 text = listen(passive=True)
@@ -5681,17 +7467,17 @@ def main_loop():
                 awake = True
                 show_fullscreen()
                 command = after_wake_phrase(text)
-                if not command:   # just "Hey Jervis": greet, and listen for the request
+                if not command:   # just "Hey Jarvis": greet, and listen for the request
                     greeting = time_greeting()
                     broadcast("ai", greeting)
                     speak(greeting)
                     continue
-                # "Hey Jervis, create a house" in one breath: the request is handled right away, not dropped
+                # "Hey Jarvis, create a house" in one breath: the request is handled right away, not dropped
                 text = command
                 send_status("thinking")
             else:
                 text = listen()
-                if not text:
+                if not text or mic_muted.is_set():
                     continue
 
         if not typed:   # from the end of the speech: recognising it is part of the wait
@@ -5700,8 +7486,8 @@ def main_loop():
         if not isinstance(text, ImageCaption):  # already shown together with the image itself, in handle_client
             broadcast("user", text)
         if not typed:
-            text = fix_names(text) or text  # "Streamio", "Stream here" -> "stremio", etc.
-            if is_explicit_wake(text):  # "Hey Jervis" while already awake: bring the window up, full screen
+            text = fix_spoken(text) or text  # "Streamio", "Stream here" -> "stremio"; the sentence itself is left as heard
+            if is_explicit_wake(text):  # "Hey Jarvis" while already awake: bring the window up, full screen
                 reopened = not window_visible
                 show_fullscreen()
                 here = time_greeting() if reopened else "I'm here."
@@ -5756,7 +7542,7 @@ def main_loop():
                 turn_timer.mark("answer", time.time() - asked, "bilingual model, no swap")
             else:
                 with turn_timer.timed("answer", "chat"):
-                    direct = ask_jervis(messages, text)
+                    direct = ask_jarvis(messages, text)
             reply = tidy_math(direct)
             if len(reply) > 40:
                 last_llm_reply = {"text": reply, "at": time.time(), "question": text}
@@ -5774,7 +7560,7 @@ def main_loop():
 
 
 def greet_after_voice_launch() -> None:
-    """Jervis was opened by saying "Hey Jervis" while he was closed (see wake/jervis_wake.py): once his window is up,
+    """Jarvis was opened by saying "Hey Jarvis" while he was closed (see wake/jarvis_wake.py): once his window is up,
     show it and answer, then listen for the command right away."""
     global awake
     awake = True
@@ -5803,7 +7589,7 @@ def greet_on_startup() -> None:
 
 
 def set_window_visible(visible: bool) -> None:
-    """Closing the window puts Jervis back to sleep: he keeps listening, and the wake phrase opens him again. (Not
+    """Closing the window puts Jarvis back to sleep: he keeps listening, and the wake phrase opens him again. (Not
     while he's using the computer: then his window only steps aside.)"""
     global window_visible, awake
     window_visible = visible
@@ -5815,18 +7601,18 @@ def watch_parent_window() -> None:
     """The engine never outlives its window. If the window is ended without being able to stop the engine (Task
     Manager, a crash, an installer ending it), the engine would otherwise keep listening with nothing on screen."""
     try:
-        window = psutil.Process(int(os.getenv("JERVIS_PARENT_PID") or 0))
+        window = psutil.Process(int(os.getenv("JARVIS_PARENT_PID") or 0))
     except (ValueError, psutil.Error):
         return
     while True:
         time.sleep(2)
         if not window.is_running():   # (also false if the id now belongs to another program)
-            print("Jervis's window is gone, so the engine is stopping too.", flush=True)
+            print("Jarvis's window is gone, so the engine is stopping too.", flush=True)
             shutdown_now()
 
 
 def shutdown_now() -> None:
-    """Stop what Jervis started (a computer-control task, his local AI) and exit, from any thread."""
+    """Stop what Jarvis started (a computer-control task, his local AI) and exit, from any thread."""
     try:
         if computer_task is not None:
             computer_task.stop()
@@ -5844,10 +7630,10 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:   # an installed copy checking it has every part (see selftest.py)
         import selftest
         sys.exit(selftest.run())
-    # The window stops the backend with SIGTERM: turn that into a normal exit, so cleanups (the local AI engine Jervis
+    # The window stops the backend with SIGTERM: turn that into a normal exit, so cleanups (the local AI engine Jarvis
     # started) run instead of leaving it behind.
     signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
-    if SUPERVISED and os.getenv("JERVIS_PARENT_PID"):
+    if SUPERVISED and os.getenv("JARVIS_PARENT_PID"):
         threading.Thread(target=watch_parent_window, daemon=True, name="parent-watch").start()
     ws_thread = threading.Thread(target=run_ws_server, daemon=True)
     ws_thread.start()
@@ -5861,9 +7647,11 @@ if __name__ == "__main__":
 
     threading.Thread(target=check_ai_connection, daemon=True).start()
     threading.Thread(target=refresh_devices, daemon=True).start()   # so Settings has them ready
-    if LLM_BACKEND in ("ollama", "auto") and os.getenv("JERVIS_NO_AI_SETUP") != "1":   # (that switch: tests only)
+    if LLM_BACKEND in ("ollama", "auto") and os.getenv("JARVIS_NO_AI_SETUP") != "1":   # (that switch: tests only)
         local_ai_manager.start_background()   # the local AI is the AI, or the backup: make sure it's there
-    timer_manager.load()  # timers that were running when Jervis was last closed
+    elif LLM_BACKEND == "groq" and os.getenv("JARVIS_NO_AI_SETUP") != "1":
+        threading.Thread(target=release_local_ai, daemon=True, name="local-ai-release").start()
+    timer_manager.load()  # timers that were running when Jarvis was last closed
     threading.Thread(target=telemetry_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()
     threading.Thread(target=_install_blender_bridge, daemon=True, name="blender-startup-script").start()
@@ -5877,13 +7665,13 @@ if __name__ == "__main__":
     if stt_local.BILINGUAL:   # the Hebrew voice (CPU, ~3 s to load): ready before the first Hebrew answer
         import hebrew_voice
         threading.Thread(target=hebrew_voice.preload, daemon=True, name="hebrew-voice-preload").start()
-    if os.getenv("JERVIS_SHOW_WINDOW") == "1":  # started with run.py: show the window right away, not only after "Hey Jervis"
+    if os.getenv("JARVIS_SHOW_WINDOW") == "1":  # started with run.py: show the window right away, not only after "Hey Jarvis"
         launch_ui()
 
-    if os.environ.pop("JERVIS_WOKEN_BY_VOICE", "") == "1":   # opened by Jervis Wake (wake/): greet right away
+    if os.environ.pop("JARVIS_WOKEN_BY_VOICE", "") == "1":   # opened by Jarvis Wake (wake/): greet right away
         greet_after_voice_launch()
     else:
-        greet_on_startup()   # opened normally: greet once the window connects, and start awake right away
+        greet_on_startup()  
 
     try:
         main_loop()

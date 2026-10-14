@@ -1,4 +1,4 @@
-// The overlay shown while Jervis uses the mouse and keyboard: what he is doing, and how to stop him.
+// The overlay shown while Jarvis uses the mouse and keyboard: what he is doing, and how to stop him.
 const ACTIVE = new Set(['starting', 'observing', 'thinking', 'acting', 'waiting', 'paused', 'listening']);
 const ENDED_BADGE = { completed: 'Done', stopped: 'Stopped', error: 'Stopped' };
 const $ = (id) => document.getElementById(id);

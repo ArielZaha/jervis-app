@@ -1,5 +1,5 @@
 """Hebrew with the real models: Whisper (turbo + ivrit.ai), DictaLM through Ollama, and Windows' Hebrew voice saying
-the test sentences. Run with JERVIS_REAL_LANGUAGE=1 (and JERVIS_REAL_MODELS: a data folder whose models/whisper holds
+the test sentences. Run with JARVIS_REAL_LANGUAGE=1 (and JARVIS_REAL_MODELS: a data folder whose models/whisper holds
 the speech models). Kept apart from test_language.py, whose app tests run in a sandbox without network access.
 The letters name the cases the Hebrew support was specified with (see test_language.py).
 """
@@ -13,17 +13,17 @@ import local_llm
 import nlu
 import stt_local
 
-REAL = os.getenv("JERVIS_REAL_LANGUAGE") == "1"
-real = pytest.mark.skipif(not REAL, reason="real models: set JERVIS_REAL_LANGUAGE=1")
+REAL = os.getenv("JARVIS_REAL_LANGUAGE") == "1"
+real = pytest.mark.skipif(not REAL, reason="real models: set JARVIS_REAL_LANGUAGE=1")
 
 @pytest.fixture(scope="module")
 def real_models():
     if not REAL:
-        pytest.skip("real models: set JERVIS_REAL_LANGUAGE=1")
+        pytest.skip("real models: set JARVIS_REAL_LANGUAGE=1")
     if language.translator() != local_llm.DICTALM:
         pytest.skip("DictaLM isn't installed in Ollama")
     language._cache.clear()
-    folder = os.getenv("JERVIS_REAL_MODELS")
+    folder = os.getenv("JARVIS_REAL_MODELS")
     if folder:   # its models folder also has the English dictionary the translation checks use
         import paths
         original, paths.DATA_DIR = paths.DATA_DIR, folder
@@ -76,20 +76,20 @@ def test_real_replies_in_hebrew(real_models):
 
 
 def _hebrew_voice_says(text: str, folder) -> bytes:
-    """Windows' Hebrew voice (Asaf) says `text`; returned as 16 kHz 16-bit mono WAV, like Jervis records."""
+    """Windows' Hebrew voice (Asaf) says `text`; returned as 16 kHz 16-bit mono WAV, like Jarvis records."""
     import osal
     import speech_recognition as sr
     path = str(folder / "said.wav")
-    os.environ["JERVIS_SPEECH_OUT"] = path
+    os.environ["JARVIS_SPEECH_OUT"] = path
     # Windows' voice says the test sentences: it says them the same way every time (the neural voice varies a
     # little from one rendering to the next — measured on its own in the Hebrew voice report), and what's tested
     # here is hearing and understanding them.
-    os.environ["JERVIS_HEBREW_VOICE"] = "windows"
+    os.environ["JARVIS_HEBREW_VOICE"] = "windows"
     try:
         osal.speech_process(text, 100).wait(timeout=60)
     finally:
-        os.environ.pop("JERVIS_SPEECH_OUT", None)
-        os.environ.pop("JERVIS_HEBREW_VOICE", None)
+        os.environ.pop("JARVIS_SPEECH_OUT", None)
+        os.environ.pop("JARVIS_HEBREW_VOICE", None)
     with wave.open(path) as w:
         audio = sr.AudioData(w.readframes(w.getnframes()), w.getframerate(), w.getsampwidth())
     return audio.get_wav_data(convert_rate=16000, convert_width=2)
@@ -97,15 +97,15 @@ def _hebrew_voice_says(text: str, folder) -> bytes:
 
 @pytest.fixture(scope="module")
 def real_speech(real_models):
-    folder = os.getenv("JERVIS_REAL_MODELS")
+    folder = os.getenv("JARVIS_REAL_MODELS")
     if not folder:
-        pytest.skip("JERVIS_REAL_MODELS: a data folder with models/whisper")
+        pytest.skip("JARVIS_REAL_MODELS: a data folder with models/whisper")
     import paths
     original = paths.DATA_DIR
     paths.DATA_DIR = folder
     if not stt_local.model_ready():
         paths.DATA_DIR = original
-        pytest.skip("the speech models aren't in JERVIS_REAL_MODELS")
+        pytest.skip("the speech models aren't in JARVIS_REAL_MODELS")
     yield
     paths.DATA_DIR = original
 
@@ -126,14 +126,14 @@ def test_real_speech_to_english(real_speech, tmp_path, said, language_, words):
 
 @real
 def test_real_hebrew_voice_is_understood(real_speech):
-    """The natural Hebrew voice, heard back: Jervis's usual replies come through (measured average 3.3%)."""
+    """The natural Hebrew voice, heard back: Jarvis's usual replies come through (measured average 3.3%)."""
     import io
     import re
     from difflib import SequenceMatcher
     import hebrew_voice
     from faster_whisper import decode_audio
     if not hebrew_voice.available():
-        pytest.skip("the Hebrew voice isn't downloaded in JERVIS_REAL_MODELS")
+        pytest.skip("the Hebrew voice isn't downloaded in JARVIS_REAL_MODELS")
     said = ["סיימתי, פתחתי את התוכנה.", "הגג אדום עכשיו.", "שמרתי את הפרויקט בתיקיית המסמכים.",
             "סליחה, לא הבנתי. תוכל להגיד את זה שוב?", "אני מצוין, תודה ששאלת! במה אוכל לעזור?"]
     norm = lambda t: re.sub(r"[^\u05d0-\u05ea]", "", t)   # noqa: E731

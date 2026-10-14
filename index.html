@@ -3,10 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Jervis</title>
+  <title>Jarvis</title>
   <link rel="stylesheet" href="vendor/katex/katex.min.css" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="weather/weather.css" />
+  <link rel="stylesheet" href="clock/worldclock.css" />
+  <link rel="stylesheet" href="coding/coding.css" />
+  <!-- The new look, layered over style.css while <html data-ui="next">. Settings has "Classic look" to go back
+       (remembered on this computer); index.html?ui=classic opens the classic look once. -->
+  <link rel="stylesheet" href="style.next.css" />
+  <script>
+    (function () {
+      var look = 'next';
+      try { if (localStorage.getItem('jarvis-look') === 'classic') look = 'classic'; } catch (e) { /* no storage: the new look */ }
+      var asked = new URLSearchParams(location.search).get('ui');
+      if (asked === 'classic' || asked === 'next') look = asked;
+      document.documentElement.dataset.ui = look;
+    })();
+  </script>
 </head>
 <body>
   <div class="app" id="appShell" data-state="idle">
@@ -16,7 +30,7 @@
     <div class="scanlines" aria-hidden="true"></div>
     <div class="grain" aria-hidden="true"></div>
     <div class="frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-    <div class="boot" aria-hidden="true"><div><span class="boot-mark"></span><p>Initializing Jervis</p><em><i></i></em></div></div>
+    <div class="boot" aria-hidden="true"><div><span class="boot-mark"></span><p>Initializing Jarvis</p><em><i></i></em></div></div>
 
     <header class="topbar">
       <div class="brand">
@@ -26,11 +40,15 @@
           <ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#lg)" stroke-width="1.4" transform="rotate(-25 16 16)" opacity=".85"/>
           <ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="url(#lg)" stroke-width="1.4" transform="rotate(35 16 16)" opacity=".45"/>
         </svg>
-        <span class="wordmark">Jervis</span>
+        <span class="wordmark">Jarvis</span>
         <span class="tagline">Personal voice intelligence</span>
       </div>
       <div class="conn" id="connPill"><i></i><span id="connectionText">Connecting…</span><b class="bars" aria-hidden="true"><u></u><u></u><u></u><u></u></b></div>
       <div class="top-right">
+        <span class="phone-chip" id="phoneChip" hidden role="status" title="A paired phone is connected">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>
+          <span id="phoneChipText">Phone</span>
+        </span>
         <button type="button" class="setup-chip" id="setupChip" hidden title="Show the AI setup">AI setup</button>
         <button type="button" class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
@@ -81,26 +99,44 @@
           <ul id="timerList"></ul>
         </section>
 
-        <section class="card tips">
-          <header class="card-head"><h2>Try saying</h2></header>
-          <ul>
-            <li><b>“Play Echoes on YouTube”</b><span>Opens and plays in one tab</span></li>
-            <li><b>“Stop the song”</b><span>Pauses what’s playing</span></li>
-            <li><b>“Check Google Classroom for work I didn’t submit”</b><span>Opens Classroom and tells you what is missing</span></li>
-            <li><b>“Graph sine of x over x”</b><span>Any function. See it again any time: click it in the chat, or press G</span></li>
-            <li><b>“Distance between Tokyo and Paris”</b><span>A 3D globe with the route between them</span></li>
-            <li><b>“Tell me about Saturn”</b><span>A real, spinning 3D model with the facts</span></li>
-            <li><b>“Open my calendar”</b><span>Hear your next events, or make a new one by voice</span></li>
-            <li><b>“Solve x squared minus 5x plus 6 equals 0”</b><span>Exact answer with the steps</span></li>
-            <li><b>Attach a picture</b><span>Paperclip, drag &amp; drop, or paste — then ask “what’s wrong with it?”</span></li>
-            <li><b>“Generate an image of a cyberpunk city”</b><span>Free, no setup needed</span></li>
-            <li><b>Type instead of talking</b><span>Press / or click the box under the orb, then Enter. F = full screen</span></li>
-            <li><b>“Do I have unread WhatsApp messages?”</b><span>Then “read them” or “what did Dana write?”</span></li>
-            <li><b>“Set a timer for 10 minutes”</b><span>Also: “remind me in an hour to…”</span></li>
-            <li><b>“Show me the trailer of this series”</b><span>Works for any show you name or I suggest</span></li>
-            <li><b>“Play Breaking Bad season 3 episode 2 on Netflix”</b><span>Starts that exact episode</span></li>
-            <li><b>“Write a story in Word”</b><span>Then say “make it shorter”</span></li>
-            <li><b>“Episode 3, season 1, Breaking Bad”</b><span>Opens that episode in Stremio</span></li>
+        <section class="card tips" id="tipsCard">
+          <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+            <symbol id="tip-media" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l5.5-3.5z" class="fill"/></symbol>
+            <symbol id="tip-learn" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M6.5 15.5c2.5-7 5-9 7-5s3.5 2.5 5-3"/></symbol>
+            <symbol id="tip-tasks" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4M9 14.5l2 2 4-4"/></symbol>
+            <symbol id="tip-more" viewBox="0 0 24 24"><path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></symbol>
+          </svg>
+          <header class="card-head"><h2>Try saying</h2><span class="tips-hint">Click to try</span></header>
+          <div class="tip-tabs" role="tablist" aria-label="Kinds of things to try">
+            <button type="button" role="tab" data-cat="all" aria-selected="true">All</button>
+            <button type="button" role="tab" data-cat="media" aria-selected="false">Watch</button>
+            <button type="button" role="tab" data-cat="learn" aria-selected="false">Learn</button>
+            <button type="button" role="tab" data-cat="tasks" aria-selected="false">Do</button>
+            <button type="button" role="tab" data-cat="more" aria-selected="false">More</button>
+          </div>
+          <ul id="tipList">
+            <li data-cat="media"><button type="button" class="tip" data-say="Play Echoes on YouTube"><svg class="tip-ic" aria-hidden="true"><use href="#tip-media"/></svg><span class="tip-text"><b>“Play Echoes on YouTube”</b><span>Opens and plays in one tab</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="media"><button type="button" class="tip" data-say="Play my favorite songs playlist on Spotify"><svg class="tip-ic" aria-hidden="true"><use href="#tip-media"/></svg><span class="tip-text"><b>“Play my favorite songs playlist on Spotify”</b><span>Your own playlists, albums and liked songs</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="media"><button type="button" class="tip" data-say="Show me the trailer of Wednesday on Netflix"><svg class="tip-ic" aria-hidden="true"><use href="#tip-media"/></svg><span class="tip-text"><b>“Show me the trailer of Wednesday on Netflix”</b><span>Netflix’s own trailer, or YouTube’s</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="media"><button type="button" class="tip" data-say="Play Breaking Bad season 3 episode 2 on Netflix"><svg class="tip-ic" aria-hidden="true"><use href="#tip-media"/></svg><span class="tip-text"><b>“Play Breaking Bad season 3 episode 2 on Netflix”</b><span>Starts that exact episode</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="media"><button type="button" class="tip" data-say="Stop the song"><svg class="tip-ic" aria-hidden="true"><use href="#tip-media"/></svg><span class="tip-text"><b>“Stop the song”</b><span>Pauses whatever is playing</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Graph sine of x over x"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Graph sine of x over x”</b><span>Any function. Press G to see it again</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Solve x squared minus 5x plus 6 equals 0"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Solve x squared minus 5x plus 6 equals 0”</b><span>The exact answer, step by step</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Distance between Tokyo and Paris"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Distance between Tokyo and Paris”</b><span>Flies the route on a 3D globe, with the flight time</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Show sunrise over Tokyo"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Show sunrise over Tokyo”</b><span>The real sunlight, day and night, on the globe</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Write a Python calculator and open it in VS Code"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Write a Python calculator and open it in VS Code”</b><span>Real files, checked, in any language</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="What time is it in Tokyo?"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“What time is it in Tokyo?”</b><span>A live world clock, with any cities side by side</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Tell me about Saturn"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Tell me about Saturn”</b><span>A real, spinning 3D model with the facts</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="learn"><button type="button" class="tip" data-say="Check Google Classroom for work I didn’t submit"><svg class="tip-ic" aria-hidden="true"><use href="#tip-learn"/></svg><span class="tip-text"><b>“Check Google Classroom for work I didn’t submit”</b><span>Opens Classroom and tells you what’s missing</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Add a dentist appointment tomorrow at 5pm"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Add a dentist appointment tomorrow at 5pm”</b><span>Straight into your Google Calendar</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Write a short story in Google Docs"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Write a short story in Google Docs”</b><span>Then say “make it shorter”</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Set a timer for 10 minutes"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Set a timer for 10 minutes”</b><span>Or “remind me in an hour to…”</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Do I have unread WhatsApp messages?"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Do I have unread WhatsApp messages?”</b><span>Then “read them” or “what did Dana write?”</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="tasks"><button type="button" class="tip" data-say="Close the YouTube tab"><svg class="tip-ic" aria-hidden="true"><use href="#tip-tasks"/></svg><span class="tip-text"><b>“Close the YouTube tab”</b><span>Finds the tab by its site or title</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="more"><button type="button" class="tip" data-say="Generate an image of a cyberpunk city"><svg class="tip-ic" aria-hidden="true"><use href="#tip-more"/></svg><span class="tip-text"><b>“Generate an image of a cyberpunk city”</b><span>Free, no setup needed</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="more"><button type="button" class="tip" data-say="Connect my phone"><svg class="tip-ic" aria-hidden="true"><use href="#tip-more"/></svg><span class="tip-text"><b>“Connect my phone”</b><span>Jarvis on your phone, even with this computer off</span></span><svg class="tip-go" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button></li>
+            <li data-cat="more"><div class="tip tip-static"><svg class="tip-ic" aria-hidden="true"><use href="#tip-more"/></svg><span class="tip-text"><b>Attach a picture</b><span>Paperclip, drag &amp; drop or paste, then ask about it</span></span></div></li>
+            <li data-cat="more"><div class="tip tip-static"><svg class="tip-ic" aria-hidden="true"><use href="#tip-more"/></svg><span class="tip-text"><b>Type instead of talking</b><span>Press / to type, F for full screen</span></span></div></li>
           </ul>
         </section>
       </aside>
@@ -108,14 +144,14 @@
       <!-- ============ Center: the orb ============ -->
       <section class="stage">
         <div class="orb-wrap" id="orbWrap">
-          <canvas id="orbCanvas" aria-label="Jervis voice orb" role="img"></canvas>
+          <canvas id="orbCanvas" aria-label="Jarvis voice orb" role="img"></canvas>
           <i class="reticle tl"></i><i class="reticle tr"></i><i class="reticle bl"></i><i class="reticle br"></i>
           <div class="hud hud-l"><span>Core</span><b class="hud-state"></b></div>
           <div class="hud hud-r"><span>Link</span><b class="hud-link"></b></div>
         </div>
         <div class="stage-copy">
           <h1 id="stateTitle">Ready</h1>
-          <p id="stateSub">Say “Hey Jervis” or just start talking.</p>
+          <p id="stateSub">Say “Hey Jarvis” or just start talking.</p>
         </div>
         <div class="caption" id="caption" aria-live="polite"><span class="cap-label" id="capLabel"></span><p id="capText"></p></div>
         <div class="attach-preview" id="attachPreview" hidden>
@@ -129,7 +165,7 @@
           </button>
           <input type="file" id="imageFileInput" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden />
           <span class="type-prompt" aria-hidden="true">&#x203A;</span>
-          <input id="typeInput" type="text" maxlength="500" spellcheck="false" placeholder="Type a message or a number to Jervis…" aria-label="Type to Jervis" />
+          <input id="typeInput" type="text" maxlength="500" spellcheck="false" placeholder="Type a message or a number to Jarvis…" aria-label="Type to Jarvis" />
           <button type="submit" class="type-send" id="typeSend" aria-label="Send" title="Send (Enter)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </button>
@@ -145,11 +181,11 @@
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.2"/></svg>
           </button>
           <div class="speak-vol" id="speakVol">
-            <button class="speak-vol-btn" id="speakVolBtn" type="button" aria-pressed="false" aria-label="Mute Jervis's voice">
+            <button class="speak-vol-btn" id="speakVolBtn" type="button" aria-pressed="false" aria-label="Mute Jarvis's voice">
               <svg class="ic-loud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4h3l4 4V6l-4 4H4z"/><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/></svg>
               <svg class="ic-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4h3l4 4V6l-4 4H4z"/><path d="M16 9l5 5M21 9l-5 5"/></svg>
             </button>
-            <input type="range" id="speakVolSlider" min="0" max="100" step="1" value="100" aria-label="Jervis's speaking volume" />
+            <input type="range" id="speakVolSlider" min="0" max="100" step="1" value="100" aria-label="Jarvis's speaking volume" />
           </div>
           </div>
           <p class="mic-hint"><span id="pillText">Microphone on</span> · press <kbd>M</kbd> to <span id="buttonHint">mute</span> · <kbd>/</kbd> to type</p>
@@ -199,11 +235,18 @@
   <div class="earth-layer" id="earthLayer" hidden role="dialog" aria-modal="true" aria-labelledby="earthTitle">
     <div class="earth-card" id="earthCard">
       <header class="graph-head">
-        <div class="graph-heading"><p class="graph-kicker">Distance</p><h2 id="earthTitle"></h2><p class="earth-sub" id="earthSub"></p></div>
-        <div class="head-actions"><span class="graph-nav" id="earthNav" hidden><button class="ghost" id="earthPrev" type="button" title="Previous (←)">‹</button><span id="earthCount">1 / 1</span><button class="ghost" id="earthNext" type="button" title="Next (→)">›</button></span><button class="ghost" id="earthSave" type="button" title="Save the picture as a PNG">Save image</button><button class="ghost" id="earthClose" type="button" title="Close (Esc)">Close</button></div>
+        <div class="graph-heading"><p class="graph-kicker" id="earthKicker">Journey</p><h2 id="earthTitle"></h2><p class="earth-sub" id="earthSub"></p></div>
+        <div class="head-actions"><span class="journey-controls"><button class="ghost" id="earthPlay" type="button" title="Pause or resume (Space)">Pause</button><button class="ghost" id="earthReplay" type="button" title="Fly it again (R)">Replay</button><button class="ghost" id="earthSkip" type="button" title="Skip to the end (S)">Skip</button></span><span class="graph-nav" id="earthNav" hidden><button class="ghost" id="earthPrev" type="button" title="Previous (←)">‹</button><span id="earthCount">1 / 1</span><button class="ghost" id="earthNext" type="button" title="Next (→)">›</button></span><button class="ghost" id="earthSave" type="button" title="Save the picture as a PNG">Save image</button><button class="ghost" id="earthClose" type="button" title="Close (Esc)">Close</button></div>
       </header>
-      <div class="earth-stage"><canvas id="earthCanvas" aria-label="3D globe with the distance between two places"></canvas><p class="earth-hint">Drag to rotate · scroll to zoom</p></div>
-      <ul class="graph-facts" id="earthFacts"></ul>
+      <div class="earth-stage"><canvas id="earthCanvas" aria-label="3D globe with the distance between two places"></canvas><p class="earth-hint">Drag to look around · scroll to zoom</p>
+        <div class="journey-hud" id="journeyHud" hidden>
+          <span class="journey-end" id="journeyFrom"></span>
+          <div class="journey-track"><i class="journey-fill" id="journeyFill"></i><svg class="journey-plane" id="journeyPlane" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg></div>
+          <span class="journey-end" id="journeyTo"></span>
+          <span class="journey-km" id="journeyKm"></span>
+        </div>
+      </div>
+      <ul class="graph-facts earth-facts" id="earthFacts"></ul>
     </div>
   </div>
 
@@ -226,7 +269,7 @@
   <div class="sheet-layer" id="setupLayer" hidden role="dialog" aria-modal="true" aria-labelledby="setupTitle">
     <div class="sheet-card setup-card">
       <p class="graph-kicker">First start</p>
-      <h2 id="setupTitle">Getting Jervis ready</h2>
+      <h2 id="setupTitle">Getting Jarvis ready</h2>
       <p class="sheet-sub" id="setupSummary"></p>
       <ol class="setup-steps" id="setupSteps"></ol>
       <div class="setup-error" id="setupError" hidden><strong id="setupErrorText"></strong><span id="setupHint"></span></div>
@@ -241,7 +284,7 @@
   <div class="sheet-layer" id="controlLayer" hidden role="alertdialog" aria-modal="true" aria-labelledby="controlTitle" aria-describedby="controlQuestion">
     <div class="sheet-card control-card">
       <p class="graph-kicker">Computer control</p>
-      <h2 id="controlTitle">Let Jervis use the mouse and keyboard?</h2>
+      <h2 id="controlTitle">Let Jarvis use the mouse and keyboard?</h2>
       <p class="sheet-sub" id="controlQuestion"></p>
       <ul class="control-points">
         <li>A glowing edge and a bar with <b>Pause</b> and <b>Stop</b> stay on screen the whole time.</li>
@@ -263,8 +306,9 @@
       <p class="graph-kicker">Connect your phone</p>
       <h2 id="phonePairingTitle">Scan this with your phone's camera</h2>
       <div class="phone-pairing-qr" id="phonePairingQr"></div>
-      <p class="sheet-sub">Can't scan? Open this link on your phone instead: <code id="phonePairingAddress"></code></p>
-      <p class="sheet-note">This is only needed once for this phone — expires in a few minutes.</p>
+      <p class="sheet-sub" id="phonePairingSub">Same Wi-Fi as this computer. The link opens Jarvis on your phone and pairs it, then you can add it to your Home Screen.</p>
+      <p class="phone-pairing-code" id="phonePairingCodeRow" hidden>Already have the Jarvis app? Enter <b id="phonePairingCode"></b></p>
+      <p class="sheet-note">Can't scan? On the same Wi-Fi, open <code id="phonePairingAddress"></code> on your phone. Only needed once per phone. Expires in a few minutes.</p>
       <div class="sheet-actions">
         <button type="button" class="sheet-btn" id="phonePairingClose">Close</button>
       </div>
@@ -275,18 +319,18 @@
   <div class="sheet-layer" id="welcomeLayer" hidden role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
     <div class="sheet-card welcome-card">
       <p class="graph-kicker">Welcome</p>
-      <h2 id="welcomeTitle">Let’s get Jervis set up for you</h2>
+      <h2 id="welcomeTitle">Let’s get Jarvis set up for you</h2>
       <p class="sheet-sub">A few quick things — everything here is optional, and can be changed anytime in Settings.</p>
       <div class="set-row">
-        <div class="set-text"><label for="welcomeName">Your name</label><small>So Jervis can greet you by name instead of “Sir”.</small></div>
+        <div class="set-text"><label for="welcomeName">Your name</label><small>So Jarvis can greet you by name instead of “Sir”.</small></div>
         <input id="welcomeName" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Ariel" />
       </div>
       <div class="set-row toggle">
-        <div class="set-text"><label for="welcomeWake">Wait for “Hey Jervis”</label><small>Off: Jervis listens all the time while the microphone is on.</small></div>
+        <div class="set-text"><label for="welcomeWake">Wait for “Hey Jarvis”</label><small>Off: Jarvis listens all the time while the microphone is on.</small></div>
         <input id="welcomeWake" type="checkbox" class="switch" checked />
       </div>
       <div class="set-row">
-        <div class="set-text"><label for="welcomePhone">Your phone number</label><small>For text notifications, e.g. when Jervis wants to pair with your phone. Needs Twilio set up too — add that under “optional extras” below.</small></div>
+        <div class="set-text"><label for="welcomePhone">Your phone number</label><small>For text notifications, e.g. when Jarvis wants to pair with your phone. Needs Twilio set up too — add that under “optional extras” below.</small></div>
         <input id="welcomePhone" type="text" autocomplete="off" spellcheck="false" placeholder="+15551234567" />
       </div>
       <div class="sheet-actions">
@@ -300,12 +344,13 @@
   <div class="sheet-layer" id="settingsLayer" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="sheet-card settings-card">
       <header class="graph-head">
-        <div class="graph-heading"><p class="graph-kicker">Jervis</p><h2 id="settingsTitle">Settings</h2></div>
+        <div class="graph-heading"><p class="graph-kicker">Jarvis</p><h2 id="settingsTitle">Settings</h2></div>
         <div class="head-actions"><button type="button" class="ghost" id="settingsClose" title="Close (Esc)">Close</button></div>
       </header>
       <div class="settings-body" id="settingsBody"><p class="sheet-sub">Loading…</p></div>
       <footer class="settings-foot">
         <label class="adv-toggle"><input type="checkbox" id="settingsAdvanced" /> Show advanced settings</label>
+        <label class="adv-toggle" title="Switch between Jarvis's new look and the one before it"><input type="checkbox" id="classicLook" /> Classic look</label>
         <span class="settings-status" id="settingsStatus" role="status" aria-live="polite"></span>
         <button type="button" class="sheet-btn primary" id="settingsSave" disabled>Save</button>
       </footer>
@@ -315,13 +360,14 @@
   <template id="emptyTpl">
     <div class="empty" id="emptyChat">
       <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12a4 4 0 0 1 4-4h24a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H22l-8 7v-7h-2a4 4 0 0 1-4-4z"/><path d="M17 17h14M17 23h9"/></svg>
-      <p>Nothing yet</p><small>Your conversation with Jervis shows up here.</small>
+      <p>Nothing yet</p><small>Your conversation with Jarvis shows up here.</small>
     </div>
   </template>
 
   <script src="orb.js"></script>
   <script src="bg.js"></script>
   <script src="graph.js"></script>
+  <script src="sphere_gl.js"></script>
   <script src="earth.js"></script>
   <script src="planet.js"></script>
   <script src="renderer.js"></script>
@@ -331,5 +377,7 @@
   <script src="weather/charts.js"></script>
   <script src="weather/map.js"></script>
   <script src="weather/panel.js"></script>
+  <script src="clock/worldclock.js"></script>
+  <script src="coding/coding.js"></script>
 </body>
 </html>

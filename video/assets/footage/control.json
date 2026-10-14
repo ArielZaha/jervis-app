@@ -1,0 +1,14 @@
+{
+ "name": "control",
+ "frames": 293,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "sent": 113,
+  "asked": 125,
+  "allow": 251
+ },
+ "notes": {},
+ "opened": []
+}

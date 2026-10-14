@@ -1,4 +1,4 @@
-// The control overlay's only link to the rest of Jervis: state in, button presses out.
+// The control overlay's only link to the rest of Jarvis: state in, button presses out.
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('control', {

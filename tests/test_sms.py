@@ -47,11 +47,11 @@ def test_send_posts_to_twilios_api_with_the_right_fields(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(sms.requests, "post", fake_post)
-    result = sms.send("Jervis wants to pair.")
+    result = sms.send("Jarvis wants to pair.")
     assert result == ""
     assert len(calls) == 1
     assert calls[0]["auth"] == ("SIDxxxx", "tokxxxx")
-    assert calls[0]["data"] == {"From": "+15550000000", "To": "+15551111111", "Body": "Jervis wants to pair."}
+    assert calls[0]["data"] == {"From": "+15550000000", "To": "+15551111111", "Body": "Jarvis wants to pair."}
     assert "SIDxxxx" in calls[0]["url"]
 
 

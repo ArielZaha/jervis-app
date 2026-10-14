@@ -1,4 +1,4 @@
-"""Finished props for Jervis's Blender kit: furniture and the small things that make a place believable — a sofa
+"""Finished props for Jarvis's Blender kit: furniture and the small things that make a place believable — a sofa
 with cushions, armchairs, tables, chairs, a TV, shelves with books, a rug, lamps that really light, potted plants,
 a parasol, street lamps, paper lanterns, a crate of produce. Each is built from real parts (frames, legs,
 cushions, shades) with fitting materials, sized like the real thing, front toward -y.
@@ -127,7 +127,7 @@ def tv(name="TV", at=None, size=1.3, stand=True, on=False, rotation=0, **kw):
     screen.box((0, 0.028, z0 + 0.12 + S * 0.28), (S - 0.03, 0.005, S * 0.56 - 0.03))
     made = [unit.done(f"{name} Stand", at, "dark wood", bevel=0.006) if stand else None,
             frame.done(f"{name} Frame", at, "#111113", bevel=0.005),
-            screen.done(f"{name} Screen", at, material("#0b1622", name="Jervis TV screen", emission=1.2 if on else 0.0))]   # noqa: F821
+            screen.done(f"{name} Screen", at, material("#0b1622", name="Jarvis TV screen", emission=1.2 if on else 0.0))]   # noqa: F821
     return _finish_asset(name, "tv", dict(size=S, stand=stand, on=on, rotation=rotation), [m for m in made if m],   # noqa: F821
                          at, rotation, "a flat TV on a media unit")
 
@@ -185,14 +185,14 @@ def floor_lamp(name="Floor Lamp", at=None, height=1.6, on=False, kelvin=2700, **
     base.cylinder((0, 0, 0.03), 0.015, Hh - 0.3, segments=10)
     shade.cylinder((0, 0, Hh - 0.32), 0.22, 0.32, segments=24, radius_top=0.16)
     made = [base.done(f"{name} Stand", at, "dark metal", smooth=True),
-            shade.done(f"{name} Shade", at, material("#efe3c8", name=f"Jervis lamp shade {name}", emission=0.0),   # noqa: F821
+            shade.done(f"{name} Shade", at, material("#efe3c8", name=f"Jarvis lamp shade {name}", emission=0.0),   # noqa: F821
                        smooth=True)]
     root = _finish_asset(name, "floor_lamp", dict(height=Hh, on=on, kelvin=kelvin), made, at, 0, "a floor lamp")   # noqa: F821
     lt = light(f"{name} Bulb", "point", at=(at[0], at[1], at[2] + Hh - 0.18), energy=35, color=kelvin, size=0.1,   # noqa: F821
                on=on)
     _adopt(lt, root)   # noqa: F821
     lt["jervis_light_for"] = name
-    lt["jervis_glow_material"] = f"Jervis lamp shade {name}"
+    lt["jervis_glow_material"] = f"Jarvis lamp shade {name}"
     return root
 
 
@@ -247,14 +247,14 @@ def street_lamp(name="Street Lamp", at=None, height=4.5, style="modern", on=Fals
         head.cylinder((0, 0, Hh + 0.45), 0.26, 0.15, segments=6, radius_top=0.05)
         lamp_at = (at[0], at[1], at[2] + Hh + 0.2)
     made = [pole.done(f"{name} Pole", at, "dark metal", smooth=True),
-            head.done(f"{name} Head", at, material("#fff1d0", name=f"Jervis lamp glass {name}", emission=0.0))]   # noqa: F821
+            head.done(f"{name} Head", at, material("#fff1d0", name=f"Jarvis lamp glass {name}", emission=0.0))]   # noqa: F821
     root = _finish_asset(name, "street_lamp", dict(height=Hh, style=style, on=on, kelvin=kelvin, rotation=rotation),   # noqa: F821
                          made, at, rotation, f"a {style} street lamp {Hh:.1f} m tall")
     lt = light(f"{name} Bulb", "spot" if style == "modern" else "point", at=lamp_at, energy=450 if style == "modern"   # noqa: F821
                else 250, color=kelvin, angle=120, size=0.2, aim=(lamp_at[0], lamp_at[1], 0.0), on=on)
     _adopt(lt, root)   # noqa: F821
     lt["jervis_light_for"] = name
-    lt["jervis_glow_material"] = f"Jervis lamp glass {name}"
+    lt["jervis_glow_material"] = f"Jarvis lamp glass {name}"
     root["jervis_tags"] = "light_source_night"
     return root
 
@@ -268,13 +268,13 @@ def lantern(name="Lantern", at=None, color="#f4e3c0", height=2.6, on=False, **kw
     caps.cylinder((0, 0, Hh + 0.26), 0.09, 0.05, segments=12)
     caps.cylinder((0, 0, Hh - 0.31), 0.09, 0.05, segments=12)
     caps.cylinder((0, 0, Hh + 0.31), 0.006, 0.4, segments=6)
-    made = [body.done(f"{name} Paper", at, material(color, name=f"Jervis lantern paper {name}", emission=0.0),   # noqa: F821
+    made = [body.done(f"{name} Paper", at, material(color, name=f"Jarvis lantern paper {name}", emission=0.0),   # noqa: F821
                       smooth=True), caps.done(f"{name} Caps", at, "#1a1210")]
     root = _finish_asset(name, "lantern", dict(color=color, height=Hh, on=on), made, at, 0, "a paper lantern")   # noqa: F821
     lt = light(f"{name} Bulb", "point", at=(at[0], at[1], at[2] + Hh), energy=25, color=2400, size=0.15, on=on)   # noqa: F821
     _adopt(lt, root)   # noqa: F821
     lt["jervis_light_for"] = name
-    lt["jervis_glow_material"] = f"Jervis lantern paper {name}"
+    lt["jervis_glow_material"] = f"Jarvis lantern paper {name}"
     root["jervis_tags"] = "light_source_night"
     return root
 

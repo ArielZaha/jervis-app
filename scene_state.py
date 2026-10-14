@@ -1,11 +1,11 @@
-"""What Jervis knows about the scene he is working on — two things kept apart:
+"""What Jarvis knows about the scene he is working on — two things kept apart:
 
 REFERENCE: the picture a scene was rebuilt from, what was seen in it (its VisualScene) and which object rebuilt which
 element. It is kept (on disk, keyed by an id stored in the .blend) so the picture can still be consulted — "make it
 look more like the photo" — but it is never re-applied by itself.
 
 CURRENT: the scene as it is NOW, read fresh from Blender every time: each thing's meaning (its semantic tag), where
-it is, its lights and motion; the environment Jervis set (time, weather, fog, water, wind); the cameras. After the
+it is, its lights and motion; the environment Jarvis set (time, weather, fog, water, wind); the cameras. After the
 user changes something ("make it sunrise"), the current scene is what every next edit starts from — the reference's
 night doesn't come back.
 

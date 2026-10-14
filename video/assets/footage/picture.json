@@ -1,0 +1,17 @@
+{
+ "name": "picture",
+ "frames": 462,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "sent:Generate an image of a lighthouse at sunset": 104,
+  "reply:Generate an image of a lighthouse at sunset": 119,
+  "picture": 119,
+  "attached": 248,
+  "sent:What is this?": 306,
+  "reply:What is this?": 321
+ },
+ "notes": {},
+ "opened": []
+}

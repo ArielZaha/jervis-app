@@ -1,4 +1,4 @@
-"""Jervis's Hebrew voice: a neural voice ("Shaul", Piper/VITS, from the Phonikud project — Interspeech 2026) in place
+"""Jarvis's Hebrew voice: a neural voice ("Shaul", Piper/VITS, from the Phonikud project — Interspeech 2026) in place
 of Windows' old desktop voice (Microsoft Asaf), all on this computer's CPU (~0.2 s a sentence).
 
     text -> spoken form (file names instead of paths, "ה-6" instead of "minus 6") -> vowel marks and stress
@@ -7,12 +7,12 @@ of Windows' old desktop voice (Microsoft Asaf), all on this computer's CPU (~0.2
 English words inside Hebrew ("פתחתי את Blender") are pronounced from the CMU Pronouncing Dictionary, mapped onto
 the sounds the Hebrew voice knows; unknown English words by spelling rules.
 
-Measured (each voice says Jervis's real Hebrew replies, ivrit.ai large-v3 writes back what it heard): character
+Measured (each voice says Jarvis's real Hebrew replies, ivrit.ai large-v3 writes back what it heard): character
 error 5.8% for Shaul vs 6.0% for Asaf — as clear, but natural speech, the right vowels ("צור לי", which Asaf said as
 "צאו לי"), and faster (0.23 s vs 0.38 s a sentence).
 
 Files (downloaded once, into the models folder): the diacritizer (MIT, 308 MB), the voice (63 MB; the Phonikud
-voices are licensed for NON-COMMERCIAL use), the CMU dictionary (BSD, 3.6 MB). Without them Jervis falls back to
+voices are licensed for NON-COMMERCIAL use), the CMU dictionary (BSD, 3.6 MB). Without them Jarvis falls back to
 Windows' Hebrew voice (osal.py).
 """
 import io
@@ -50,7 +50,7 @@ def downloaded() -> bool:
 
 
 def available() -> bool:
-    if (os.getenv("JERVIS_HEBREW_VOICE") or "neural").lower() in ("windows", "off"):
+    if (os.getenv("JARVIS_HEBREW_VOICE") or "neural").lower() in ("windows", "off"):
         return False
     try:
         import onnxruntime  # noqa: F401

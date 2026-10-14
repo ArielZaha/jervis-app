@@ -3,7 +3,7 @@
 // error, shows a clear message with "Try again". Drawn by the pieces next to it: icons.js (condition icons), fx.js
 // (the living sky behind it), charts.js (hourly curve, 7-day ranges) and map.js (map + rain radar).
 //
-// Talks to the rest of Jervis only through the 'jervis-message' event and window.jervisSend (renderer.js), so the
+// Talks to the rest of Jarvis only through the 'jarvis-message' event and window.jarvisSend (renderer.js), so the
 // renderer needs no weather code of its own.
 (function () {
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -107,6 +107,7 @@
     const wasOpen = !layer.hidden;
     askedCity = opts.city || '';
     if (!wasOpen) {
+      window.hideClock?.();
       returnFocus = document.activeElement;
       layer.hidden = false;
       layer.classList.remove('closing');
@@ -203,7 +204,7 @@
     $('.wx-uv-scale i', layer).style.left = `${Math.min(100, ((uv ?? 0) / 11) * 100)}%`;
 
     window.weatherCharts.hourly($('.wx-hourly-chart', layer), d.hourly, { windUnit: d.units?.wind });
-    window.weatherCharts.daily($('.wx-daily-list', layer), d.daily, c);
+    window.weatherCharts.daily($('.wx-daily-list', layer), d.daily, c, d.asked || []);
 
     if (d.place.lat !== null && d.place.lat !== undefined) {
       const moved = !data || data.place.lat !== d.place.lat || data.place.lon !== d.place.lon || !map.home;
@@ -250,8 +251,8 @@
 
   function refresh(force = true) {
     $('.wx-refresh', layer).classList.add('busy');
-    if (!window.jervisSend?.({ type: 'weather_refresh', city: askedCity, refresh: force })) {
-      fail('Jervis’s engine isn’t connected, so I can’t get the forecast right now.');
+    if (!window.jarvisSend?.({ type: 'weather_refresh', city: askedCity, refresh: force })) {
+      fail('Jarvis’s engine isn’t connected, so I can’t get the forecast right now.');
       return;
     }
     clearTimeout(loadingTimer);
@@ -259,7 +260,7 @@
   }
 
   // ---------- from the backend ----------
-  window.addEventListener('jervis-message', (event) => {
+  window.addEventListener('jarvis-message', (event) => {
     const msg = event.detail || {};
     if (msg.type === 'weather_open') open({ city: msg.city || '' });
     else if (msg.type === 'close_weather') close();

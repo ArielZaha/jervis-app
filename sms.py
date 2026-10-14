@@ -1,4 +1,4 @@
-"""A real text message when Jervis wants to reach you — no page, no app, no one-time setup on the phone at all,
+"""A real text message when Jarvis wants to reach you — no page, no app, no one-time setup on the phone at all,
 unlike push.py's web notifications. Sent through Twilio's SMS API (twilio.com), a paid third-party service the
 user sets up themselves (Settings, Optional services): nothing here creates an account or costs anything on its
 own, and nothing is sent unless all four Twilio settings are filled in.

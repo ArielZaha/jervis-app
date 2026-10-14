@@ -1,4 +1,4 @@
-"""Repair speech-recognition mishearings of the names Jervis has to understand.
+"""Repair speech-recognition mishearings of the names Jarvis has to understand.
 
 Recognizers turn "Stremio" into "Streamio", "Stream here", "Freemio", "Thremial"
 and so on. Fixing them before any command parsing keeps every downstream parser
@@ -73,8 +73,8 @@ def fix_names(text: str) -> str:
     return fixed
 
 
-# ---------- Jervis's own name ----------
-# Speech recognition rarely gets "Jervis" right: Jarvis, Gravis, Gervis, Jervais, Travis... After a greeting ("hey
+# ---------- Jarvis's own name ----------
+# Speech recognition rarely gets "Jarvis" right: Jarvis, Gravis, Gervis, Jervais, Travis... After a greeting ("hey
 # Gravis", "okay Gervis") or as the first word with a pause after it ("Gravis, open Spotify") it's the name — but never
 # on its own inside a sentence, where "service", "nervous" or a friend called Travis are just words.
 _NAME_HEARD = (r"(?:jervis|jarvis|gravis|gervis|gervais|jervais|jervus|jarvus|jarves|jervas|jarvas|travis|chervis|"
@@ -100,3 +100,47 @@ _DANGLING = re.compile(r"\b(?:and|or|but|the|a|an|to|of|with|for|in|on|at|from|i
 def sounds_unfinished(text: str) -> bool:
     words = (text or "").split()
     return len(words) >= 2 and bool(_DANGLING.search(text or ""))
+# ---------- the same repairs, on the sentence as it was heard ----------
+_WORD = re.compile(r"[^\W_]+(?:['’][^\W_]+)*")
+_STREAM_PAIR_HEARD = re.compile(r"\bstream (?:here|hear|io|you|yo|me o|mio|e o|ear|ee o)\b", re.I)
+_OPEN_STREAM_HEARD = re.compile(r"\b(open|launch|start)\s+stream(?=\s+(?:and|then)\b|\s*,|[\s.!?]*$)", re.I)
+_ON_STREAM_HEARD = re.compile(r"\b(on|in|with|using)\s+stream(?=[\s.!?]*$)", re.I)
+_GLUED_VERB_HEARD = re.compile(r"\b(open|launch|play|watch)(?=(?:stream|strem|strim|netflix|youtube))", re.I)
+_WHATSAPP_HEARD = re.compile(r"\b(?:whats ?app|whatsap|watsapp|what's app|whats up app|what's up app|whatsup app)\b", re.I)
+
+
+def fix_spoken(text: str) -> str:
+    """What was heard, with service names spelled correctly and everything else left exactly as it was said.
+
+    fix_names() above also lower-cases the sentence and drops every mark in it, which is fine for a name but ruins a
+    sentence: "Solve 2x + 4 = 24." became "solve 2x 4 24" (a different equation), "15% of 80" lost its percent sign,
+    "3.5 minutes" became "3 5 minutes", and the commas between "play this, set a timer, and show me the weather"
+    (or between the places in "from Tel Aviv, London or New York") were gone before anything could read them.
+    Speech recognition writes those marks on purpose, so the command parsers get them, as they do for typed text."""
+    s = (text or "").strip()
+    s = _GLUED_VERB_HEARD.sub(r"\1 ", s)
+    s = _STREAM_PAIR_HEARD.sub("stremio", s)
+    s = _OPEN_STREAM_HEARD.sub(r"\1 stremio", s)
+    s = _ON_STREAM_HEARD.sub(r"\1 stremio", s)
+    words = list(_WORD.finditer(s))
+    swaps, i = [], 0   # (start, end, name)
+    while i < len(words):
+        word = words[i].group().lower()
+        if i + 1 < len(words) and not _match(word) and s[words[i].end():words[i + 1].start()].isspace():
+            after = words[i + 1].group().lower()
+            joined = _match(word + after)   # two words that were really one ("you tube", "net flicks")
+            if joined and len(word) >= 3 and len(after) >= 2 and word not in {"the", "and", "in", "on"}:
+                swaps.append((words[i].start(), words[i + 1].end(), joined))
+                i += 2
+                continue
+        name = _match(word)
+        if name and name != word:
+            swaps.append((words[i].start(), words[i].end(), name))
+        i += 1
+    for start, end, name in reversed(swaps):
+        s = s[:start] + name + s[end:]
+    s = _WHATSAPP_HEARD.sub("whatsapp", s)
+    if re.search(r"\b(stremio|netflix)\b", s, re.I):
+        s = re.sub(r"\bplayhouse\b", "play house", s, flags=re.I)   # "play House" is heard as one word
+    return s
+

@@ -27,7 +27,7 @@ INTERACTIVE = {
     "MenuBarControl": "menu bar", "SpinnerControl": "spinner", "DocumentControl": "document",
 }
 CONTEXT = {"TextControl": "text", "HeaderItemControl": "header", "ImageControl": "image"}
-OWN_PROCESSES = {"jervis.exe", "electron.exe", "jervis-backend.exe"}   # never operate Jervis himself
+OWN_PROCESSES = {"jarvis.exe", "electron.exe", "jarvis-backend.exe"}   # never operate Jarvis himself
 MAX_VISITED = 2500
 MAX_ELEMENTS = 400
 TIME_BUDGET = 2.0   # seconds; a huge web page must not stall a step
@@ -59,7 +59,7 @@ class WindowsScreen(computer_use.Environment):
 
     # ---------- looking ----------
     def _target_window(self):
-        """The window the user is working in: the one in front, or the one right behind Jervis's own window."""
+        """The window the user is working in: the one in front, or the one right behind Jarvis's own window."""
         front = winctl.foreground_window()
         if front and winctl.window_process_name(front) not in OWN_PROCESSES:
             return front
@@ -140,7 +140,7 @@ class WindowsScreen(computer_use.Environment):
 
     # ---------- acting ----------
     def _bring_forward(self) -> None:
-        """Keys and clicks go to the window in front: if that is Jervis's own, put the one being worked in first."""
+        """Keys and clicks go to the window in front: if that is Jarvis's own, put the one being worked in first."""
         target = getattr(self, "_target", None)
         front = winctl.foreground_window()
         if target and front != target and winctl.window_process_name(front) in OWN_PROCESSES:
@@ -249,7 +249,7 @@ class WindowsScreen(computer_use.Environment):
 
     def scroll(self, amount: int, point=None) -> str:
         # Wheel turns go to whatever is under the pointer: with no element given, that must be the window being
-        # worked in (brought forward), not wherever the pointer happened to be (Jervis's own window, the desktop).
+        # worked in (brought forward), not wherever the pointer happened to be (Jarvis's own window, the desktop).
         self._bring_forward()
         point = point or self._target_center()
         if point is not None:

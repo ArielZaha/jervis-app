@@ -1,5 +1,5 @@
 """Questions about the screen: "what's on my screen?", "what does this error say?", "explain this error", "what am I
-looking at?". Jervis reads the window the user is working in and answers from what is really there:
+looking at?". Jarvis reads the window the user is working in and answers from what is really there:
 
   - first the window's own structure (computer_use.Environment.observe: the app, the window title, every dialog,
     button, field and piece of text with its value) — exact, instant, and nothing leaves the computer;
@@ -19,7 +19,7 @@ QUESTION = re.compile(
 FEW_ELEMENTS = 6
 MAX_LINES = 90
 
-ANSWER_PROMPT = """You are Jervis, answering a question about what is on the user's screen right now. Below is what
+ANSWER_PROMPT = """You are Jarvis, answering a question about what is on the user's screen right now. Below is what
 was read from the window they are working in (its app, title, and its controls and text, in reading order; a
 "(focused)" item has the keyboard focus). Answer the question in a few short sentences, using ONLY this information:
 say what app and window it is and what matters in it. If there is an error or warning, quote its key words, explain

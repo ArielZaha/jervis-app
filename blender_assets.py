@@ -27,12 +27,12 @@ try:
     import bpy
     import mathutils
     from mathutils import Matrix, Vector
-except ImportError:   # imported by Jervis itself, for the catalogue only
+except ImportError:   # imported by Jarvis itself, for the catalogue only
     bpy = bmesh = mathutils = Matrix = Vector = None
 
 ASSETS_VERSION = 1
 
-# What Jervis (outside Blender) needs to know about each asset: the words that ask for it, and the options the AI may
+# What Jarvis (outside Blender) needs to know about each asset: the words that ask for it, and the options the AI may
 # set. Kept as plain data so agent_blender.py can import it without Blender.
 ASSET_TYPES = {
     "house": {
@@ -399,7 +399,7 @@ def _finish_asset(name, kind, params, parts, at, rotation=0.0, summary=""):
     if rotation:
         root.rotation_euler = (0, 0, math.radians(float(rotation)))
     _remember(root, kind, params)
-    root["jervis_summary"] = summary or f"a {kind}"   # what Jervis tells the user he built
+    root["jervis_summary"] = summary or f"a {kind}"   # what Jarvis tells the user he built
     _select(root)   # noqa: F821
     return root
 
@@ -1229,7 +1229,7 @@ def _sink_into_ground(name, at, outline, rotation=0.0, depth=4.0):
     hole.hide_set(True)
     hole["jervis_role"] = "cutter"
     for g in grounds:
-        mod = g.modifiers.get(f"Jervis hole {name}") or g.modifiers.new(f"Jervis hole {name}", "BOOLEAN")
+        mod = g.modifiers.get(f"Jarvis hole {name}") or g.modifiers.new(f"Jarvis hole {name}", "BOOLEAN")
         mod.operation, mod.object = "DIFFERENCE", hole
         try:
             mod.solver = "EXACT"
@@ -1900,7 +1900,7 @@ def _terrain_material(name, sand_to=0.45, grass_from=0.85):
 
 def _water_material(color=None):
     rgb = _rgb(color, (0.01, 0.2, 0.3))
-    name = "Jervis water surface" if color is None else "Jervis water %02x%02x%02x" % tuple(int(c * 255) for c in rgb)
+    name = "Jarvis water surface" if color is None else "Jarvis water %02x%02x%02x" % tuple(int(c * 255) for c in rgb)
     mat = bpy.data.materials.get(name)
     if mat is not None:
         return mat
@@ -1995,7 +1995,7 @@ def _shore_foam(name, at, terrain, R, seed):
         j = (k + 1) % steps
         bm.faces.new((inner[k], inner[j], outer[j], outer[k]))
     obj = p.done(name, at, None, smooth="all", kind="water")
-    mat = bpy.data.materials.get("Jervis surf") or bpy.data.materials.new("Jervis surf")
+    mat = bpy.data.materials.get("Jarvis surf") or bpy.data.materials.new("Jarvis surf")
     mat.use_nodes = True
     nodes, links = mat.node_tree.nodes, mat.node_tree.links
     bsdf = nodes.get("Principled BSDF")
@@ -2053,7 +2053,7 @@ def island(name="Island", at=None, radius=15.0, height=4.0, seed=0, water=True, 
         z = max(-6.0, min(shore, 0.6) + land) + 0.06 * noise.noise(Vector((x, y, 0)) * 0.9 + off)
         v.co.z = z
     terrain = p.done(f"{name} Terrain", at, None, smooth="all", kind="terrain")
-    terrain.data.materials.append(_terrain_material(f"Jervis island ground {name}"))
+    terrain.data.materials.append(_terrain_material(f"Jarvis island ground {name}"))
     made = [terrain]
     if rocks:
         rp = Parts()
@@ -2161,7 +2161,7 @@ def asset_info(obj):
 
 def rebuild_asset(obj, **changes):
     """Build an asset again with some options changed ("bigger windows", "a red roof", "two floors"), in the same
-    place, under the same name. The old one is kept aside (Jervis's undo can bring it back)."""
+    place, under the same name. The old one is kept aside (Jarvis's undo can bring it back)."""
     info = asset_info(obj)
     if info is None:
         raise ValueError(f"{get(obj).name!r} isn't one of the finished assets (house, tree, island...), so it can't be "   # noqa: F821

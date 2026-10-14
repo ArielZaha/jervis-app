@@ -59,7 +59,7 @@ def test_poll_processes_a_new_request_and_ignores_a_repeat(tmp_path, monkeypatch
     monkeypatch.setattr(blender_bridge, "RESPONSE_FILE", str(tmp_path / "response.json"))
     blender_bridge._last_id = None
     blender_bridge._namespace.clear()
-    blender_bridge._namespace["__name__"] = "jervis_blender"
+    blender_bridge._namespace["__name__"] = "jarvis_blender"
 
     blender_bridge._write_json_atomic(blender_bridge.REQUEST_FILE, {"id": 1, "code": "RESULT = 'pong'"})
     blender_bridge.poll()

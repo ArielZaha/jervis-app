@@ -1,0 +1,40 @@
+{
+ "name": "mind",
+ "frames": 666,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "listening:Solve x squared minus five x plus six equals zero and draw the function": 10,
+  "heard:Solve x squared minus five x plus six equals zero and draw the function": 88,
+  "reply:Solve x squared minus five x plus six equals zero and draw the function": 97,
+  "listening:Compare x squared and x plus one": 233,
+  "heard:Compare x squared and x plus one": 284,
+  "reply:Compare x squared and x plus one": 293,
+  "listening:Where do they meet": 441,
+  "heard:Where do they meet": 471,
+  "reply:Where do they meet": 480
+ },
+ "notes": {},
+ "lines": [
+  {
+   "file": "mind_01.wav",
+   "frame": 97,
+   "text": "The solutions are x equals 2 and x equals 3. I've put the details on your screen.",
+   "seconds": 5.79
+  },
+  {
+   "file": "mind_02.wav",
+   "frame": 293,
+   "text": "Here are both on one graph. f is a parabola and g is a straight line. They meet at two points: x equals negative 0.62 and x equals 1.62. I've put the details on your screen.",
+   "seconds": 14.23
+  },
+  {
+   "file": "mind_03.wav",
+   "frame": 480,
+   "text": "They meet at (-0.618, 0.382), (1.618, 2.618).",
+   "seconds": 7.77
+  }
+ ],
+ "opened": []
+}

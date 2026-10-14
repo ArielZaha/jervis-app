@@ -6,11 +6,11 @@ requests
 SpeechRecognition
 spotipy
 websockets
-pywebpush                  # Phone control: real push notifications to a paired/pairing phone (no cloud service of Jervis's own)
+pywebpush                  # Phone control: real push notifications to a paired/pairing phone (no cloud service of Jarvis's own)
 google-api-python-client   # Optional: Google Calendar (reading and creating events)
 google-auth-oauthlib
 google-auth-httplib2
-Pillow                     # Image handling: validating, resizing and saving pictures Jervis sees or makes
+Pillow                     # Image handling: validating, resizing and saving pictures Jarvis sees or makes
 openai                     # Optional: image generation/editing (OPENAI_API_KEY). Understanding images uses Groq, no extra key needed.
 faster-whisper             # Speech recognition on this computer: no key, works offline (model downloads on first run)
 av                          # Decodes a phone's voice recording (webm/opus, mp4/aac, ...) for relay_client.py; also
@@ -19,7 +19,7 @@ numpy
 phonikud                   # Hebrew voice: vowel marks -> phonemes (CC-BY-4.0); see hebrew_voice.py
 phonikud-onnx              # Hebrew voice: the diacritizer that adds the vowel marks (runs on onnxruntime)
 
-# Windows: exact volume control (without it Jervis presses the keyboard volume keys instead)
+# Windows: exact volume control (without it Jarvis presses the keyboard volume keys instead)
 pycaw; sys_platform == "win32"
 comtypes; sys_platform == "win32"
 

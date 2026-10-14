@@ -2,7 +2,7 @@
 
 PortAudio's start-up and shut-down (Pa_Initialize / Pa_Terminate, i.e. pyaudio.PyAudio() and .terminate()) are not
 thread-safe: two threads doing them at once crash the whole process with an access violation, before Python can
-raise anything. Jervis did exactly that on every start — the Settings device list was gathered on one thread while
+raise anything. Jarvis did exactly that on every start — the Settings device list was gathered on one thread while
 the listening loop opened the microphone on another — and the window could only report that the engine "keeps
 stopping". speech_recognition's Microphone creates its own PyAudio instances (in __init__, __enter__ and __exit__),
 so it is wrapped too.

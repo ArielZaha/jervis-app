@@ -1,6 +1,6 @@
-"""Motion, cameras and light for Jervis's Blender kit: the timeline, keyframes with real easing, things that move by
+"""Motion, cameras and light for Jarvis's Blender kit: the timeline, keyframes with real easing, things that move by
 themselves (water, wind, fire, smoke, rain, snow, clouds, flags), cameras that frame what they should, lights and
-skies that change over time — and what Jervis checks it all with (motion_report) and undoes it with
+skies that change over time — and what Jarvis checks it all with (motion_report) and undoes it with
 (anim_snapshot / anim_restore).
 
 Loaded into the bridge's namespace after blender_kit.py and blender_assets.py (it uses their functions: get, bounds,
@@ -132,7 +132,7 @@ def _clear_keys(owner, path, f0, f1):
                 fc.keyframe_points.remove(kp)
 
 
-def _key(owner, path, value, frame, group="Jervis"):
+def _key(owner, path, value, frame, group="Jarvis"):
     """Set owner.path = value and key it at `frame`."""
     if isinstance(value, (tuple, list)):
         current = getattr(owner, path)
@@ -180,7 +180,7 @@ def animate(obj, prop, keys, ease="smooth", loop=False, group=None):
         raise ValueError("animate() needs at least one (seconds, value) key.")
     f0, f1 = keys[0][0], keys[-1][0]
     prop = str(prop).lower()
-    group = group or f"Jervis {prop}"
+    group = group or f"Jarvis {prop}"
     if prop in ("location", "position", "move"):
         owner, path = target, "location"
         parent_inv = target.parent.matrix_world.inverted() if target.parent else None
@@ -610,7 +610,7 @@ def _invert_ease(progress, ease="smooth"):
 
 # ---------- things that move by themselves ----------
 
-def _noise(owner, path, index, strength, scale, phase=0.0, group="Jervis motion"):
+def _noise(owner, path, index, strength, scale, phase=0.0, group="Jarvis motion"):
     """A procedural wobble on one channel (non-destructive, forever, no keys to maintain)."""
     value = getattr(owner, path)
     if not hasattr(value, "__len__"):   # a single number (a light's energy): no index
@@ -726,7 +726,7 @@ def animate_water(obj, kind="waves", strength=1.0, speed=1.0, direction=(1.0, 0.
             tex = bpy.data.textures.get(f"{p.name} Waves") or bpy.data.textures.new(f"{p.name} Waves", "CLOUDS")
             tex.noise_scale = max(1.5, span / 18.0)
             tex.noise_depth = 2
-            mod = p.modifiers.get("Jervis Waves") or p.modifiers.new("Jervis Waves", "DISPLACE")
+            mod = p.modifiers.get("Jarvis Waves") or p.modifiers.new("Jarvis Waves", "DISPLACE")
             mod.texture, mod.texture_coords, mod.texture_coords_object = tex, "OBJECT", drv
             mod.strength = min(0.6, max(0.04, span / 300.0)) * float(strength)
             mod.mid_level, mod.direction = 0.5, "Z"
@@ -797,7 +797,7 @@ def flutter(obj, strength=1.0, speed=1.0):
             mod.height = mod.height or 0.1 * float(strength)
         elif p.type == "MESH" and any(w in p.name.lower() for w in ("cloth", "flag", "banner", "sail", "curtain")) \
                 and len(p.data.vertices) >= 30:
-            mod = p.modifiers.new("Jervis Flutter", "WAVE")
+            mod = p.modifiers.new("Jarvis Flutter", "WAVE")
             (lo, hi) = bounds(p)   # noqa: F821
             mod.use_normal, mod.use_x, mod.use_y = True, True, False
             mod.height = 0.08 * float(strength) * max(0.5, hi[0] - lo[0])
@@ -867,9 +867,9 @@ def wind(strength=1.0, things=None):
 
 def _library():
     """A hidden collection for the shapes particles are made of (never rendered themselves)."""
-    lib = bpy.data.collections.get("Jervis Library")
+    lib = bpy.data.collections.get("Jarvis Library")
     if lib is None:
-        lib = bpy.data.collections.new("Jervis Library")
+        lib = bpy.data.collections.new("Jarvis Library")
         _scene().collection.children.link(lib)   # noqa: F821
     lib.hide_render = lib.hide_viewport = True
     return lib
@@ -897,7 +897,7 @@ def _emitter(name, at, size, z):
 
 def _particles(obj, count, lifetime, velocity, shape, size, random_size=0.3, brownian=0.0, gravity=0.0, preroll=True):
     s = _scene()   # noqa: F821
-    mod = obj.modifiers.new("Jervis Particles", "PARTICLE_SYSTEM")
+    mod = obj.modifiers.new("Jarvis Particles", "PARTICLE_SYSTEM")
     st = obj.particle_systems[-1].settings
     st.count = int(count)
     st.lifetime = int(lifetime)
@@ -990,7 +990,7 @@ def smoke(name="Smoke", at=None, size=1.0, rate=1.0):
         p = Parts()   # noqa: F821
         p.lump((0, 0, 0), 0.35, irregularity=0.3, detail=2)
         d = p.done(f"{name} Puff", (0, 0, -200), None, kind="particle", smooth="all")
-        m = bpy.data.materials.new(f"Jervis {name} smoke")
+        m = bpy.data.materials.new(f"Jarvis {name} smoke")
         m.use_nodes = True
         b = m.node_tree.nodes.get("Principled BSDF")
         b.inputs["Base Color"].default_value = (0.45, 0.45, 0.46, 1)
@@ -1015,10 +1015,10 @@ def smoke(name="Smoke", at=None, size=1.0, rate=1.0):
 # ---------- fire, clouds, flags, rivers, waterfalls ----------
 
 def _flame_material():
-    m = bpy.data.materials.get("Jervis flame")
+    m = bpy.data.materials.get("Jarvis flame")
     if m is not None:
         return m
-    m = bpy.data.materials.new("Jervis flame")
+    m = bpy.data.materials.new("Jarvis flame")
     m.use_nodes = True
     nodes, links = m.node_tree.nodes, m.node_tree.links
     b = nodes.get("Principled BSDF")
@@ -1131,7 +1131,7 @@ def flag(name="Flag", at=None, height=5.0, size=1.5, color="red", pole_color="st
     group = flag_obj.vertex_groups.new(name="Flutter")
     for v in flag_obj.data.vertices:
         group.add([v.index], min(1.0, (v.co.x / w) ** 1.2), "REPLACE")
-    mod = flag_obj.modifiers.new("Jervis Flutter", "WAVE")   # the wave first, then the thickness
+    mod = flag_obj.modifiers.new("Jarvis Flutter", "WAVE")   # the wave first, then the thickness
     mod.use_normal, mod.use_x, mod.use_y = True, True, False
     mod.height, mod.width, mod.narrowness, mod.speed = 0.09 * w, 0.55 * w, 1.0, 0.25
     mod.vertex_group = "Flutter"
@@ -1237,7 +1237,7 @@ def river(name="River", start=None, end=None, width=4.0, points=None, color="#2b
     water = Parts()   # noqa: F821
     _strip_with_uv(water, local, width / 2, -0.25)
     w_obj = water.done(f"{name} Water", at, None, kind="water")
-    w_obj.data.materials.append(_flow_material(f"Jervis river {name}", color))
+    w_obj.data.materials.append(_flow_material(f"Jarvis river {name}", color))
     banks = Parts()   # noqa: F821
     for side in (-1, 1):
         inner = _offset_line(local, side * width / 2 * 0.98)   # noqa: F821
@@ -1295,7 +1295,7 @@ def _carve_terrain(name, local, at, half):
         if max(v.x for v in c) < lo.x or min(v.x for v in c) > hi.x or \
                 max(v.y for v in c) < lo.y or min(v.y for v in c) > hi.y:
             continue
-        mod = o.modifiers.new(f"Jervis cut {name}", "BOOLEAN")
+        mod = o.modifiers.new(f"Jarvis cut {name}", "BOOLEAN")
         mod.operation, mod.object = "DIFFERENCE", cutter
         try:
             mod.solver = "EXACT"
@@ -1386,7 +1386,7 @@ def waterfall(name="Waterfall", at=None, height=4.0, width=2.5, pool=True, moss=
                                               (i / nx, along[j + 1]))):
                 loop[uv].uv = (u * width / 2, v / 2)
     fall = sheet.done(f"{name} Water", at, None, kind="water", smooth=True)
-    fall.data.materials.append(_flow_material(f"Jervis falling water {name}", "#9fd3e0", alpha=0.75))
+    fall.data.materials.append(_flow_material(f"Jarvis falling water {name}", "#9fd3e0", alpha=0.75))
     made.append(fall)
     foam = Parts()   # noqa: F821
     for k in range(8):
@@ -1482,8 +1482,8 @@ def _rig(name="Camera", lens=35.0):
         target = bpy.data.objects.new(f"{cam.name} Target", None)
         target.empty_display_type, target.empty_display_size = "SPHERE", 0.25
         _scene().collection.objects.link(target)   # noqa: F821
-    track = cam.constraints.get("Jervis Aim") or cam.constraints.new("TRACK_TO")
-    track.name = "Jervis Aim"
+    track = cam.constraints.get("Jarvis Aim") or cam.constraints.new("TRACK_TO")
+    track.name = "Jarvis Aim"
     track.target, track.track_axis, track.up_axis = target, "TRACK_NEGATIVE_Z", "UP_Y"
     try:
         cam.data.dof.use_dof = True
@@ -1562,9 +1562,9 @@ def camera_move(name="Camera", move="push_in", subject=None, start=0.0, end=None
         _clear_keys(owner, path, f0, f1)
     for p, loc, aim, lens in keys:
         f = int(round(f0 + (f1 - f0) * p))
-        _key(cam, "location", loc, f, "Jervis camera")
-        _key(target, "location", aim, f, "Jervis camera")
-        _key(cam.data, "lens", float(lens), f, "Jervis camera")
+        _key(cam, "location", loc, f, "Jarvis camera")
+        _key(target, "location", aim, f, "Jarvis camera")
+        _key(cam.data, "lens", float(lens), f, "Jarvis camera")
     many = len(keys) > 2
     shape = "linear" if move in ("follow", "track") else ("smooth" if not many else "smooth")
     for owner, path in ((cam, "location"), (target, "location"), (cam.data, "lens")):
@@ -1604,7 +1604,7 @@ def unblock_camera(name="Camera"):
         if new != pos:
             cam.location = new
             if fcs:
-                cam.keyframe_insert("location", frame=f, group="Jervis camera")
+                cam.keyframe_insert("location", frame=f, group="Jarvis camera")
             moved += 1
     s.frame_set(keep)
     return moved
@@ -1735,7 +1735,7 @@ def sky(look="day", start=None, end=None, sun_name="Sun"):
         bg.inputs["Color"].default_value = (*k["sky"], 1.0)
         bg.inputs["Strength"].default_value = k["sky_strength"]
         if len(keys) > 1:
-            sun_obj.keyframe_insert("rotation_euler", frame=f, group="Jervis sky")
+            sun_obj.keyframe_insert("rotation_euler", frame=f, group="Jarvis sky")
             sun_obj.data.keyframe_insert("color", frame=f)
             sun_obj.data.keyframe_insert("energy", frame=f)
             bg.inputs["Color"].keyframe_insert("default_value", frame=f)
@@ -1812,7 +1812,7 @@ def pool_lights(pool_name, on=False, energy=120.0, color="#bff4ff"):
     o = get(water[0]) if water else get(t["name"])   # noqa: F821
     (lo, hi) = bounds(o)   # noqa: F821
     root = bpy.data.objects.get(t["name"])
-    glow = bpy.data.materials.get("Jervis pool light") or material("#e8fdff", name="Jervis pool light",   # noqa: F821
+    glow = bpy.data.materials.get("Jarvis pool light") or material("#e8fdff", name="Jarvis pool light",   # noqa: F821
                                                                    emission=0.0)
     made = []
     for k, (p, facing) in enumerate(cinema.pool_light_spots(lo, hi), 1):   # noqa: F821
@@ -1861,7 +1861,7 @@ def lights_on(target=None, start=0.0, end=None, ease="smooth", off=False):
         full = float(lt.get("jervis_energy") or lt.data.energy or 300.0)
         a, b = (0.0, full) if not off else (full, 0.0)
         animate(lt.name, "energy", [(start, a), (end, b)], ease)
-    for mat in [m for m in bpy.data.materials if m.name.startswith("Jervis pool light")]:
+    for mat in [m for m in bpy.data.materials if m.name.startswith("Jarvis pool light")]:
         bsdf = mat.node_tree.nodes.get("Principled BSDF") if mat.use_nodes else None
         if bsdf is not None and "Emission Strength" in bsdf.inputs:
             for t_, v in ((start, 0.0 if not off else 6.0), (end, 6.0 if not off else 0.0)):
@@ -1897,7 +1897,7 @@ def check_lights():
     return fixed
 
 
-# ---------- what Jervis checks ----------
+# ---------- what Jarvis checks ----------
 
 def _animated(o):
     ad = o.animation_data
@@ -1955,7 +1955,7 @@ def _key_range(o):
 def motion_report(names=None, samples=5):
     """What moves in the scene, measured at a few frames across the timeline: per object its keys, world box,
     location/rotation/scale, a deformation signature, its light energy, a camera's view of its subject — and the
-    sky. JSON for Jervis's checks; the current frame is left as it was."""
+    sky. JSON for Jarvis's checks; the current frame is left as it was."""
     s = _scene()   # noqa: F821
     keep = s.frame_current
     f0, f1 = s.frame_start, s.frame_end

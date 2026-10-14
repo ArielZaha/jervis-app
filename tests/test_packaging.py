@@ -19,8 +19,11 @@ def _resource_names() -> set:
 
 
 def test_every_file_read_from_the_engine_folder_is_packaged():
-    spec = open(os.path.join(ROOT, "jervis-backend.spec"), encoding="utf-8").read()
+    spec = open(os.path.join(ROOT, "jarvis-backend.spec"), encoding="utf-8").read()
     packaged = set(re.findall(r"""\(\s*["']([^"']+)["']\s*,\s*["']\.["']\s*\)""", spec))
+    packaged |= {a for a, b in re.findall(r"""\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*\)""", spec) if a == b}   # a folder, kept whole
+    for group in re.findall(r"""\(f, "\."\) for f in \(([^)]*)\)""", spec):   # datas += [(f, ".") for f in (...)]
+        packaged |= set(re.findall(r"""["']([^"']+)["']""", group))
     names = _resource_names()
     assert {"phone_client.html", "phone_sw.js", "confirm.html"} <= names
     assert names - packaged == set()
@@ -29,4 +32,4 @@ def test_every_file_read_from_the_engine_folder_is_packaged():
 def test_the_installed_selftest_checks_them_too():
     assert _resource_names() <= set(selftest.BUNDLED_FILES)
     for name in selftest.BUNDLED_FILES:
-        assert os.path.isfile(os.path.join(ROOT, name)), name
+        assert os.path.exists(os.path.join(ROOT, name)), name

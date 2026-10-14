@@ -3,14 +3,14 @@ again". The code is never assumed to work:
 
     WRITE  -> the local coding model writes the program, non-interactive, ending with its OWN self-checks (asserts
               on known cases, then the line SELF-CHECK OK)
-    RUN    -> it runs in its own project folder (Jervis's data folder, projects/<name>/), with a time limit;
+    RUN    -> it runs in its own project folder (Jarvis's data folder, projects/<name>/), with a time limit;
               code that deletes files, starts programs or uses the network runs only after the user says yes
     INSPECT-> exit code 0, no traceback, the self-checks passed, and the output the request expects is there
     FIX    -> otherwise the model gets its code, the exact error and the output, and rewrites it
     RUN AGAIN, VERIFY -> up to MAX_FIXES times; the reply says only what was verified ("ran it, self-checks passed,
               it printed ...") or exactly what still fails.
 
-Python and JavaScript run when their interpreter is installed (a packaged Jervis has no Python of its own for user
+Python and JavaScript run when their interpreter is installed (a packaged Jarvis has no Python of its own for user
 code, so the system's is used); other languages are written to a file and reported as not run.
 """
 import os
@@ -347,7 +347,7 @@ class CodeTask:
         done = "I ran it again" if self.rerun else f"I wrote {os.path.basename(self.path)} ({lines} lines)"
         return (f"Done — {done}.{what} It ran and its self-checks passed."
                 + (f" It printed: `{printed}`." if printed else "") + fixed
-                + " It's in your Jervis projects folder.")   # the full path is shown with the code (see app.py)
+                + " It's in your Jarvis projects folder.")   # the full path is shown with the code (see app.py)
 
     def program(self) -> dict:
         """What a follow-up ("make it also ...") builds on."""

@@ -1,0 +1,30 @@
+{
+ "name": "docs",
+ "frames": 407,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "sent:Write a short story about exploring space in Google Docs": 126,
+  "reply:Write a short story about exploring space in Google Docs": 141,
+  "sent:Make it shorter": 284,
+  "reply:Make it shorter": 299
+ },
+ "notes": {
+  "first": {
+   "app": "gdocs",
+   "ref": "pasted",
+   "title": "Exploring the Unknown",
+   "body": "On a crisp morning in 2045, the crew of the starship *Aurora* gathered around the holographic display, their eyes gleaming with anticipation. Captain Lian, a seasoned explorer, announced their next destination: the uncharted exoplanet Kepler‑452b, known only from faint radio signals. \n\nThe team, consisting of astrobiologist Dr. Maya, engineer Jax, and linguist Asha, suited up in lightweight exosuits designed for the planet’s thin atmosphere. As the ship descended, the red sky shimmered, revealing a landscape of towering crystal forests and rivers that glowed with bioluminescence. \n\n“Stay close,” Dr. Maya whispered, her voice echoing through the suit’s comms. They stepped onto the surface, and their boots sank into a soft, moss‑like ground that hummed underfoot. Jax’s visor detected a faint magnetic field, indicating a hidden core beneath the planet. Asha, ever curious, began translating the rhythmic patterns of the crystal vines, discovering they were a form of communication.\n\nSuddenly, a storm of glittering ice crystals swirled, but the crew’s shields held strong. In the heart of the storm, a colossal cavern opened, revealing a shimmering dome of living stars. The crew pressed their palms to the crystalline walls, feeling the pulse of a galaxy within. \n\nWhen they returned to the *Aurora*, they carried not just data, but the knowledge that space was not a void but a living, breathing tapestry of unknown wonders.",
+   "at": 1791811426.20115
+  },
+  "shorter": {
+   "app": "gdocs",
+   "ref": "pasted",
+   "title": "Exploring the Unknown",
+   "body": "On a crisp morning in 2045, the crew of the starship *Aurora* gathered around a holographic display, eyes gleaming with anticipation. Captain Lian announced their next destination: the uncharted exoplanet Kepler‑452b, known only from faint radio signals.\n\nThe team—astrobiologist Dr. Maya, engineer Jax, and linguist Asha—sued up in lightweight exosuits for the planet’s thin atmosphere. As the ship descended, the red sky shimmered, revealing a landscape of crystal forests and bioluminescent rivers.\n\n“Stay close,” Dr. Maya whispered. They stepped onto the surface, boots sinking into moss‑like ground that hummed. Jax’s visor detected a faint magnetic field, hinting at a hidden core. Asha translated the rhythmic patterns of crystal vines, uncovering a form of communication.\n\nA storm of glittering ice crystals swirled, but the crew’s shields held. In the heart of the storm, a cavern opened, revealing a shimmering dome of living stars. The crew pressed their palms to the crystalline walls, feeling a galaxy’s pulse.\n\nReturning to the *Aurora*, they carried data and the knowledge that space is not a void but a living, breathing tapestry of unknown wonders.",
+   "at": 1791811442.6956959
+  }
+ },
+ "opened": []
+}

@@ -1,4 +1,4 @@
-"""Jervis's building kit for Blender: a small, forgiving API that the agent's AI writes against instead of raw bpy.
+"""Jarvis's building kit for Blender: a small, forgiving API that the agent's AI writes against instead of raw bpy.
 
 Loaded into the bridge's namespace (see agent_blender.BlenderAdapter.prepare), so code the AI sends can call
 box(), roof(), color()... directly. Why a kit and not raw bpy: a local 7B model writes correct ten-line scripts
@@ -11,7 +11,7 @@ against a short, documented API far more reliably than against bpy's huge, conte
   - accepts the argument spellings models tend to use (at/location/position, size as a number or a tuple, colors
     as names, hex or RGB).
 
-Also importable outside Blender (bpy is then None), so Jervis shares COLORS and color_name() for its checks.
+Also importable outside Blender (bpy is then None), so Jarvis shares COLORS and color_name() for its checks.
 """
 import json
 import math
@@ -21,7 +21,7 @@ try:
     import bmesh
     import bpy
     import mathutils
-except ImportError:   # imported by Jervis itself for COLORS / color_name
+except ImportError:   # imported by Jarvis itself for COLORS / color_name
     bpy = bmesh = mathutils = None
 try:
     spatial   # inside Blender: loaded just before the kit (agent_blender.kit_source)
@@ -30,7 +30,7 @@ except NameError:
 
 KIT_VERSION = 27   # (includes blender_assets.py and spatial.py, loaded with it)
 
-# What the current step made and anything the kit had to work around, read back by Jervis after every step: a step
+# What the current step made and anything the kit had to work around, read back by Jarvis after every step: a step
 # that was meant to build something but made nothing has failed, whatever its code returned.
 STEP = {"made": [], "warnings": [], "retired": []}
 
@@ -65,7 +65,7 @@ COLORS = {
 _METALLIC = {"gold", "silver", "metal", "steel"}
 
 
-# ---------- colors (pure Python: also used by Jervis's checks) ----------
+# ---------- colors (pure Python: also used by Jarvis's checks) ----------
 
 def _rgb_numbers(values):
     values = [float(v) for v in values]
@@ -259,8 +259,8 @@ def material(color, name=None, metallic=None, roughness=0.5, emission=0.0, alpha
         if guess:
             return textured_material(guess, vary=vary, seed=seed)
         rgb, color = (0.6, 0.6, 0.6), "light grey"
-    label = name or (f"Jervis {str(color).strip().lower()}" if isinstance(color, str) else
-                     "Jervis #%02x%02x%02x" % tuple(int(c * 255) for c in rgb))
+    label = name or (f"Jarvis {str(color).strip().lower()}" if isinstance(color, str) else
+                     "Jarvis #%02x%02x%02x" % tuple(int(c * 255) for c in rgb))
     if metallic is None:
         metallic = 1.0 if isinstance(color, str) and color.strip().lower() in _METALLIC else 0.0
     mat = bpy.data.materials.get(label) or bpy.data.materials.new(label)
@@ -310,7 +310,7 @@ def color(obj, color_value=None, **kw):
     return obj
 
 
-# Names of objects that were in the scene before the current request (set by Jervis for each request). A builder
+# Names of objects that were in the scene before the current request (set by Jarvis for each request). A builder
 # never silently replaces one of those: "build a house" next to an existing 'House Walls' must not rebuild it.
 PROTECTED = set()
 
@@ -318,7 +318,7 @@ PROTECTED = set()
 # Per request: names the AI asked for that were taken by something already in the scene, and what its new object
 # was called instead ('Bench Seat' -> 'Bench 2 Seat'). get() follows them, so the AI's own code keeps working.
 ALIASES = {}
-NAME_HINT = ""      # the thing being built ("Bench 2"), when Jervis knows it: renames follow its pattern
+NAME_HINT = ""      # the thing being built ("Bench 2"), when Jarvis knows it: renames follow its pattern
 
 
 def _fresh_name(name):
@@ -384,7 +384,7 @@ def _make_room_for(name):
 
 def _retire(obj):
     """Take an object this request made out of the way of a new one with its name — kept aside (like trash()) under
-    another name, never deleted: if the step that replaces it is undone, Jervis's snapshot brings back this very
+    another name, never deleted: if the step that replaces it is undone, Jarvis's snapshot brings back this very
     object (by its session id). Its parts are freed first, exactly where they stand."""
     if obj.children:
         _update()
@@ -722,7 +722,7 @@ def stairs(name, steps=5, width=1.0, step_height=0.2, step_depth=0.3, at=None, c
 import random as _random
 
 
-# Set by Jervis for each request, so code reusing the same seeds (often straight from an example) still gives each
+# Set by Jarvis for each request, so code reusing the same seeds (often straight from an example) still gives each
 # tree, rock or bush its own shape — while a step re-run within one request stays exactly the same.
 SALT = 0
 
@@ -1110,7 +1110,7 @@ def cut(obj, cutter, keep_cutter=False):
     kept = {m.name: (m.width, m.segments) for m in obj.modifiers if m.type == "BEVEL"}
     for m in list(obj.modifiers):
         obj.modifiers.remove(m)
-    mod = obj.modifiers.new("Jervis cut", "BOOLEAN")
+    mod = obj.modifiers.new("Jarvis cut", "BOOLEAN")
     mod.operation = "DIFFERENCE"
     mod.object = cutter
     try:
@@ -1399,7 +1399,7 @@ def textured_material(preset, vary=0.0, seed=0, name=None):
     'metal', 'glass'...). vary=0.15 with different seeds gives each copy a slightly different shade."""
     key = preset_of(preset)
     spec = PRESETS[key]
-    label = name or (f"Jervis {key}" + (f" {seed}" if vary else ""))
+    label = name or (f"Jarvis {key}" + (f" {seed}" if vary else ""))
     existing = bpy.data.materials.get(label)
     if existing is not None:
         return existing
@@ -1563,7 +1563,7 @@ def resize(obj, size):
 
 
 def trash(obj):
-    """Take an object out of the scene but keep it (so Jervis's undo can put it back): see purge_trash."""
+    """Take an object out of the scene but keep it (so Jarvis's undo can put it back): see purge_trash."""
     obj = get(obj)
     for coll in list(obj.users_collection):
         coll.objects.unlink(obj)
@@ -1573,15 +1573,15 @@ def trash(obj):
 
 
 def _rewire_holes():
-    """Every "Jervis hole <thing>" Boolean (a pool or pond dug into a ground plane) cuts only while its thing's cutter
+    """Every "Jarvis hole <thing>" Boolean (a pool or pond dug into a ground plane) cuts only while its thing's cutter
     is really in the scene: after a delete the ground is whole again, after an undo the hole is back."""
     if bpy is None:
         return
     for g in bpy.data.objects:
         for mod in getattr(g, "modifiers", []):
-            if mod.type != "BOOLEAN" or not mod.name.startswith("Jervis hole "):
+            if mod.type != "BOOLEAN" or not mod.name.startswith("Jarvis hole "):
                 continue
-            cutter = bpy.data.objects.get(mod.name[len("Jervis hole "):] + " Ground Cut")
+            cutter = bpy.data.objects.get(mod.name[len("Jarvis hole "):] + " Ground Cut")
             live = cutter is not None and bool(cutter.users_collection) and not cutter.get("jervis_trash")
             if live:
                 mod.object = cutter
@@ -1794,7 +1794,7 @@ def size(obj):
     return tuple(b - a for a, b in zip(lo, hi))
 
 
-# ---------- where things go: the same spatial reasoning Jervis checks the scene with (spatial.py) ----------
+# ---------- where things go: the same spatial reasoning Jarvis checks the scene with (spatial.py) ----------
 
 def scene_things():
     """The separate things in the scene (see spatial.things): name, category, footprint, front, door..."""
@@ -1994,7 +1994,7 @@ def _object_color(obj):
 
 
 def scene_state():
-    """The scene as JSON: every object's name, type, world bounds, size, location and color — what Jervis's checks
+    """The scene as JSON: every object's name, type, world bounds, size, location and color — what Jarvis's checks
     and the AI's next decision are based on (never a guess)."""
     _update()
     layer = _layer()
@@ -2060,6 +2060,6 @@ def scene_state():
 
 
 # Everything above, kept aside: code the AI sends runs in this same namespace, and a variable it names `top`, `size`
-# or `color` would otherwise replace the kit's function for every later step. Jervis restores these before each step.
+# or `color` would otherwise replace the kit's function for every later step. Jarvis restores these before each step.
 _PER_REQUEST = {"SALT", "NAME_HINT", "X", "Y", "r", "ALIASES", "PROTECTED"}
 _KIT = {k: v for k, v in list(globals().items()) if not k.startswith("__") and k not in _PER_REQUEST}

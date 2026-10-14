@@ -67,8 +67,9 @@ def test_attaching_an_approved_session_sends_an_encrypted_session_ready(server):
 
     assert "conn-1" in router._conns
     assert router._conns["conn-1"]["key"] == key
-    [envelope] = sent
-    assert phone_crypto.decrypt(key, envelope) == {"type": "session_ready"}
+    ready, info = sent
+    assert phone_crypto.decrypt(key, ready) == {"type": "session_ready"}
+    assert phone_crypto.decrypt(key, info)["type"] == "session_info"
 
 
 def test_auto_attach_skips_the_approval_dance_for_an_already_paired_device(server):
@@ -82,8 +83,9 @@ def test_auto_attach_skips_the_approval_dance_for_an_already_paired_device(serve
 
     assert "conn-1" in router._conns
     assert router._conns["conn-1"]["key"] == key
-    [envelope] = sent
-    assert phone_crypto.decrypt(key, envelope) == {"type": "session_ready"}
+    ready, info = sent
+    assert phone_crypto.decrypt(key, ready) == {"type": "session_ready"}
+    assert phone_crypto.decrypt(key, info)["type"] == "session_info"
     assert server.current_session_id() is not None   # a real session now exists, same as a tapped notification
 
 
@@ -94,7 +96,8 @@ def test_auto_attach_with_bad_credentials_sends_session_error(server):
     _run(router.on_frame("conn-1", {"type": "auto_attach", "deviceId": "nope", "token": "nope"}, send))
 
     assert "conn-1" not in router._conns
-    assert sent == [{"type": "session_error", "message": "This phone isn't paired anymore. Pair again."}]
+    assert sent == [{"type": "session_error", "code": "unpaired",
+                     "message": "This phone isn't paired anymore. Pair again."}]
 
 
 def test_a_command_frame_is_decrypted_run_and_the_result_re_encrypted(server):
@@ -397,3 +400,102 @@ def test_decoding_a_real_encoded_clip_roundtrips_to_pcm():
     pcm = phone_session.decode_audio_to_pcm16(buf.getvalue(), sample_rate=16000)
     assert len(pcm) > 0
     assert abs(len(pcm) / 2 / 16000 - 0.5) < 0.05   # about half a second of 16kHz mono s16 audio, give or take
+
+
+# ---------- relay attach without the token ever passing through the relay ----------
+def test_auto_attach_with_a_fresh_key_proof_attaches_without_a_token(server):
+    import time
+    router = _router(server)
+    sent, send = _recorder()
+    device_id, _token, key = server.registry.add("Phone")
+    proof = phone_crypto.encrypt(key, {"type": "attach", "deviceId": device_id, "ts": time.time() * 1000})
+
+    _run(router.on_frame("conn-1", {"type": "auto_attach", "deviceId": device_id, "proof": proof}, send))
+
+    assert "conn-1" in router._conns
+    assert phone_crypto.decrypt(key, sent[0]) == {"type": "session_ready"}
+
+
+@pytest.mark.parametrize("mutate", ["stale", "other_device", "wrong_key", "garbage"])
+def test_auto_attach_refuses_a_bad_key_proof(server, mutate):
+    import time
+    router = _router(server)
+    sent, send = _recorder()
+    device_id, _token, key = server.registry.add("Phone")
+    ts = time.time() * 1000 - (60 * 60 * 1000 if mutate == "stale" else 0)
+    claimed = "someone-else" if mutate == "other_device" else device_id
+    use_key = phone_crypto.new_key() if mutate == "wrong_key" else key
+    proof = {"n": "x", "ct": "y"} if mutate == "garbage" else \
+        phone_crypto.encrypt(use_key, {"type": "attach", "deviceId": claimed, "ts": ts})
+
+    _run(router.on_frame("conn-1", {"type": "auto_attach", "deviceId": device_id, "proof": proof}, send))
+
+    assert "conn-1" not in router._conns
+    assert sent[0]["type"] == "session_error"
+
+
+def test_presence_is_reported_on_attach_and_on_forget(server):
+    seen = []
+    router = phone_session.PhoneSessionRouter(server, lambda pcm, rate: "", lambda text, sid: None,
+                                              on_presence=seen.append)
+    _sent, send = _recorder()
+    device_id, token, _key = server.registry.add("Galaxy")
+    _run(router.on_frame("conn-1", {"type": "auto_attach", "deviceId": device_id, "token": token}, send))
+    router.forget("conn-1")
+    assert seen == [["Galaxy"], []]
+
+
+def test_voice_cancel_drops_the_recording(server):
+    transcribed = []
+    router = _router(server, transcribe=lambda pcm, rate: transcribed.append(pcm) or "x")
+    sent, send = _recorder()
+    device_id, token, key = server.registry.add("Phone")
+    _run(router.on_frame("c", {"type": "auto_attach", "deviceId": device_id, "token": token}, send))
+    for message in ({"type": "voice_start"}, {"type": "voice_chunk", "data": base64.b64encode(b"abc").decode()},
+                    {"type": "voice_cancel"}, {"type": "voice_end"}):
+        _run(router.on_frame("c", phone_crypto.encrypt(key, message), send))
+    assert router._conns["c"]["voice"] is None and transcribed == []
+
+
+# ---------- the native phone app (mobile/): its own agent, encrypted on the Wi-Fi too ----------
+def _attached_router(server, local, encrypt=False, **callbacks):
+    router = phone_session.PhoneSessionRouter(server, lambda pcm, rate: "", callbacks.pop("deliver", lambda t, s, **k: None), **callbacks)
+    sent, send = _recorder()
+    device_id, token, key = server.registry.add("Galaxy")
+    _run(router.on_frame("c", {"type": "auto_attach", "deviceId": device_id, "token": token, "encrypt": encrypt}, send, local=local))
+    return router, sent, send, key
+
+
+def test_the_app_can_ask_for_an_encrypted_session_on_the_wifi(server):
+    router, sent, _send, key = _attached_router(server, local=True, encrypt=True)
+    assert router._conns["c"]["local"] is False
+    assert phone_crypto.decrypt(key, sent[0]) == {"type": "session_ready"}
+    plain_router, plain_sent, _s, _k = _attached_router(server, local=True)   # the web page on plain http: as before
+    assert plain_router._conns["c"]["local"] is True and plain_sent[0] == {"type": "session_ready"}
+
+
+def test_the_ai_key_only_goes_out_over_an_encrypted_session(server):
+    cfg = lambda: {"provider": "groq", "apiKey": "gsk_secret", "model": "m"}
+    router, sent, send, key = _attached_router(server, local=True, encrypt=True, get_ai_config=cfg)
+    _run(router.on_frame("c", phone_crypto.encrypt(key, {"type": "get_ai_config"}), send, local=True))
+    assert phone_crypto.decrypt(key, sent[-1]) == {"type": "ai_config", "provider": "groq", "apiKey": "gsk_secret", "model": "m"}
+    plain, plain_sent, plain_send, _k = _attached_router(server, local=True, get_ai_config=cfg)
+    _run(plain.on_frame("c", {"type": "get_ai_config"}, plain_send, local=True))
+    assert plain_sent[-1] == {"type": "ai_config", "error": "encrypted session required"}
+    assert "gsk_secret" not in str(plain_sent)
+
+
+def test_a_request_id_comes_back_on_its_reply(server):
+    delivered = []
+    router, sent, send, key = _attached_router(server, local=False, deliver=lambda t, s, **k: delivered.append((t, k)))
+    _run(router.on_frame("c", phone_crypto.encrypt(key, {"type": "text", "text": "open youtube", "requestId": "r7"}), send))
+    assert delivered == [("open youtube", {"request_id": "r7"})]
+    router.deliver_reply(router._conns["c"]["session_id"], "Opened YouTube.", "r7")
+    assert phone_crypto.decrypt(key, sent[-1]) == {"type": "reply", "text": "Opened YouTube.", "requestId": "r7"}
+
+
+def test_a_turn_handled_on_the_phone_is_reported_to_the_computer(server):
+    turns = []
+    router, sent, send, key = _attached_router(server, local=False, on_phone_turn=lambda u, r, n: turns.append((u, r, n)))
+    _run(router.on_frame("c", phone_crypto.encrypt(key, {"type": "phone_turn", "user": "Open Spotify", "reply": "Opened Spotify."}), send))
+    assert turns == [("Open Spotify", "Opened Spotify.", "Galaxy")]

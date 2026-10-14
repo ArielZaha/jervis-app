@@ -1,4 +1,4 @@
-"""What things ARE, and what naturally happens around them — the data the rest of Jervis reasons with.
+"""What things ARE, and what naturally happens around them — the data the rest of Jarvis reasons with.
 
 ONTOLOGY: every kind of thing a picture or a request can mention ("palm tree", "storefront", "swimming pool") ->
 its category, its semantic tags (wind_reactive, commercial, lightable, water_waves...), its usual real size, how

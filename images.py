@@ -1,14 +1,14 @@
-"""Image intelligence for Jervis: understanding pictures (description, questions, OCR, comparison) and creating or
+"""Image intelligence for Jarvis: understanding pictures (description, questions, OCR, comparison) and creating or
 editing them.
 
-Understanding uses the same account as the rest of Jervis's AI (a vision-capable model on Groq, GROQ_API_KEY) —
+Understanding uses the same account as the rest of Jarvis's AI (a vision-capable model on Groq, GROQ_API_KEY) —
 nothing extra to set up. Generating a picture works out of the box too, through Pollinations.ai (no key, genuinely
 free, no billing) — OpenAI's image API (OPENAI_API_KEY, optional) is used instead when it's configured and working,
 since it also supports editing an existing picture, which Pollinations' simple endpoint does not. If OpenAI is
 configured but a request to it fails (no credits, bad key, service issue), generation quietly falls back to
 Pollinations rather than giving up — but says so, so nothing is hidden from the user.
 
-Every image that passes through Jervis (attached by the user, or made/edited by him) is saved under images/ and kept
+Every image that passes through Jarvis (attached by the user, or made/edited by him) is saved under images/ and kept
 in a short rolling memory (`_recent`) so the conversation can refer to "it", "this image", or compare "these two" —
 the same idea as `last_function`/`last_document` in app.py, just for pictures.
 """
@@ -38,7 +38,7 @@ except ImportError:  # the package ships in requirements.txt, but keep this modu
 
 # Optional, heavy, opt-in (see requirements-local-images.txt / run.py --local-images): genuinely unlimited, free,
 # private image generation on this machine's own GPU, instead of a cloud service. The actual generation runs in a
-# separate process (local_image_worker.py, via _generate_local) so a hang or crash there can never affect Jervis.
+# separate process (local_image_worker.py, via _generate_local) so a hang or crash there can never affect Jarvis.
 # Only checked for here, never imported at startup: importing torch takes seconds (much longer on a cold start), and
 # is only needed when a picture is actually generated locally.
 _LOCAL_IMAGE_PACKAGES = all(importlib.util.find_spec(name) is not None for name in ("torch", "diffusers"))
@@ -109,6 +109,20 @@ def _use_local_vision() -> bool:
     return not _groq_key() or (os.getenv("LLM_BACKEND") or "").strip().lower() in ("ollama", "local")
 
 
+def vision_missing_message() -> str:
+    """The vision model isn't on this computer yet: start its one-time download (if this computer is set to have it)
+    and say what is happening."""
+    import local_ai
+    state = local_ai.MANAGER.fetch_vision() if local_ai.MANAGER else "not_ready"
+    if state in ("started", "fetching"):
+        return ("I'm downloading my vision model now, so I can see pictures and the screen on this computer: a one-time "
+                "download of about 3 GB. Ask me again in a few minutes.")
+    if state == "not_wanted":
+        return ("This computer is set not to download the local vision model (it needs 16 GB of memory to run well). "
+                "Settings can turn it on, or a Groq key in Settings lets me see pictures online.")
+    return "My local AI isn't ready yet, so I can't look at pictures right now. Try again in a little while."
+
+
 LOCAL_VISION_MAX_DIMENSION = 768    # a small local model: the work grows with the picture's area, so keep it modest
 
 
@@ -132,8 +146,7 @@ def _local_vision_call(image_paths: list, prompt: str, max_tokens: int) -> str:
         raise ImageError("My local AI isn't running yet (it may still be setting up), so I can't look at pictures "
                          "right now. Try again in a little while.")
     if response.status_code == 404:
-        raise ImageError("This computer doesn't have the local vision model (it's installed automatically on "
-                         "computers with 16 GB of memory; Settings can turn it on). A Groq key in Settings works too.")
+        raise ImageError(vision_missing_message())
     if not response.ok:
         raise ImageError(f"Looking at the image failed (the local AI answered {response.status_code}).")
     text = ((response.json().get("message") or {}).get("content") or "").strip()
@@ -156,8 +169,8 @@ def _groq() -> Groq:
     global _groq_client
     key = _groq_key()
     if not key:
-        raise ImageError("Image understanding needs GROQ_API_KEY, the same key the rest of Jervis's AI uses — "
-                          "add it to your .env file (free at console.groq.com) and restart Jervis.")
+        raise ImageError("Image understanding needs GROQ_API_KEY, the same key the rest of Jarvis's AI uses — "
+                          "add it to your .env file (free at console.groq.com) and restart Jarvis.")
     if _groq_client is None:
         _groq_client = Groq(api_key=key)
     return _groq_client
@@ -166,11 +179,11 @@ def _groq() -> Groq:
 def _openai():
     global _openai_client
     if OpenAI is None:
-        raise ImageError("The 'openai' package isn't installed. Run:  pip install -r requirements.txt   and restart Jervis.")
+        raise ImageError("The 'openai' package isn't installed. Run:  pip install -r requirements.txt   and restart Jarvis.")
     key = _openai_key()
     if not key:
         raise ImageError("Generating or editing images needs an OPENAI_API_KEY in your .env file (create one at "
-                          "platform.openai.com, then restart Jervis). Without it I can still look at, describe and "
+                          "platform.openai.com, then restart Jarvis). Without it I can still look at, describe and "
                           "read text from images.")
     if _openai_client is None:
         _openai_client = OpenAI(api_key=key)
@@ -179,7 +192,7 @@ def _openai():
 
 # ---------- validation, storage, metadata ----------
 def validate_image_bytes(data: bytes, max_bytes: int = MAX_UPLOAD_BYTES) -> Image.Image:
-    """Open and verify image bytes are a real, undamaged image Jervis can work with. Raises ImageError otherwise."""
+    """Open and verify image bytes are a real, undamaged image Jarvis can work with. Raises ImageError otherwise."""
     if not data:
         raise ImageError("That file was empty.")
     if len(data) > max_bytes:
@@ -286,8 +299,8 @@ def context_note() -> str:
     if not has_pending_context():
         return ""
     last = _recent[-1]
-    phrase = {"upload": "The user attached an image", "generated": "Jervis just generated an image",
-              "edited": "Jervis just edited an image"}.get(last["kind"], "There is an image")
+    phrase = {"upload": "The user attached an image", "generated": "Jarvis just generated an image",
+              "edited": "Jarvis just edited an image"}.get(last["kind"], "There is an image")
     extra = f' ("{last["caption"]}")' if last.get("caption") else (f' (prompt: "{last["prompt"]}")' if last.get("prompt") else "")
     more = f" There are {len(_recent)} images total in this conversation, which compare_images can use." if len(_recent) > 1 else ""
     return (f"Context: {phrase}{extra} earlier in this conversation; it has not yet been described in words to the "
@@ -458,18 +471,32 @@ def _generate_openai(prompt: str, size: str) -> dict:
     return {"path": path, "id": entry["id"], "prompt": prompt, "provider": "openai", **get_metadata(img, path)}
 
 
+class PollinationsOffline(ImageError):
+    """The service couldn't be reached at all (no internet), not just busy."""
+
+
 def _generate_pollinations(prompt: str, size: str) -> dict:
     """Pollinations.ai: a free, keyless text-to-image service (https://pollinations.ai). No account needed; a free
     registration at auth.pollinations.ai raises the rate limit and drops the small watermark, but isn't required."""
     width, height = _size_to_pixels(size)
     seed = int(time.time() * 1000) % 1_000_000  # a fresh seed each call, so asking twice doesn't return the same picture
+    token = (os.getenv("POLLINATIONS_TOKEN") or "").strip()
+    # Without an account only the "sana" model is free (anything else answers 402); an account unlocks FLUX.
+    model = (os.getenv("POLLINATIONS_MODEL") or ("flux" if token else "sana")).strip()
     url = (f"https://image.pollinations.ai/prompt/{_urlquote(prompt)}"
-           f"?width={width}&height={height}&seed={seed}&nologo=true")
-    try:
-        response = requests.get(url, timeout=90)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        raise ImageError(f"The free image service (Pollinations.ai) couldn't be reached: {e}")
+           f"?width={width}&height={height}&seed={seed}&nologo=true&model={model}")
+    response = None
+    for wait in (0, 5, 10, 15):   # the free tier takes one picture at a time: when it's busy (402/429), wait a moment
+        time.sleep(wait)
+        try:
+            response = requests.get(url, timeout=60, headers={"Authorization": f"Bearer {token}"} if token else {})
+        except requests.RequestException as e:
+            raise PollinationsOffline(f"The free image service (Pollinations.ai) couldn't be reached: {e}")
+        if response.status_code not in (402, 429, 500, 502, 503, 504):
+            break
+    if not response.ok:
+        raise ImageError(f"The free image service (Pollinations.ai) is busy right now ({response.status_code}). "
+                         "Try again in a minute, or add a free Cloudflare account in Settings for faster, sharper pictures.")
     if "image" not in response.headers.get("content-type", ""):
         raise ImageError("The free image service didn't return a picture (it may be temporarily overloaded). Try again in a moment.")
     img = validate_image_bytes(response.content, max_bytes=50 * 1024 * 1024)
@@ -490,7 +517,7 @@ def _local_device() -> str:
 LOCAL_WORKER_SCRIPT = os.path.join(APP_DIR, "local_image_worker.py")
 LOCAL_LOAD_TIMEOUT = 900    # generous: a first-ever call also downloads the model (a few GB) over the network
 LOCAL_INFER_TIMEOUT = 120   # tight: once downloaded, this should take seconds; a machine that can't finish in time
-                             # (not enough free memory, thrashing) is killed and Jervis falls back automatically
+                             # (not enough free memory, thrashing) is killed and Jarvis falls back automatically
 
 
 def _local_model_cached(model: str) -> bool:
@@ -506,7 +533,7 @@ def _generate_local(prompt: str) -> dict:
     timeout: torch's MPS/CUDA calls can hold Python's GIL for a very long time, or the GPU driver itself can stall,
     in a way nothing inside this same process can reliably interrupt. Only killing the whole process — which
     subprocess.run(..., timeout=...) does, unconditionally, regardless of what that process is stuck on — can
-    guarantee generating locally never hangs the rest of Jervis."""
+    guarantee generating locally never hangs the rest of Jarvis."""
     model = _local_image_model()
     device = _local_device()
     timeout = LOCAL_INFER_TIMEOUT if _local_model_cached(model) else LOCAL_LOAD_TIMEOUT
@@ -532,6 +559,57 @@ def _generate_local(prompt: str) -> dict:
     return {"path": path, "id": entry["id"], "prompt": prompt, "provider": "local", **get_metadata(img, path)}
 
 
+def cloudflare_configured() -> bool:
+    return bool((os.getenv("CLOUDFLARE_ACCOUNT_ID") or "").strip() and (os.getenv("CLOUDFLARE_API_TOKEN") or "").strip())
+
+
+def _generate_cloudflare(prompt: str) -> dict:
+    """FLUX.1 [schnell] on Cloudflare Workers AI: sharp, fast (a few seconds), and free for hundreds of pictures a
+    day with a free Cloudflare account (an account ID and an API token with Workers AI permission)."""
+    import base64
+    account = os.environ["CLOUDFLARE_ACCOUNT_ID"].strip()
+    url = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/black-forest-labs/flux-1-schnell"
+    try:
+        response = requests.post(url, timeout=60, json={"prompt": prompt[:2000], "steps": 8},
+                                 headers={"Authorization": f"Bearer {os.environ['CLOUDFLARE_API_TOKEN'].strip()}"})
+        data = response.json()
+    except (requests.RequestException, ValueError) as e:
+        raise ImageError(f"Cloudflare couldn't be reached: {e}")
+    image_b64 = (data.get("result") or {}).get("image") if isinstance(data, dict) else None
+    if not response.ok or not image_b64:
+        errors = "; ".join(str(err.get("message", err)) for err in (data.get("errors") or [])) if isinstance(data, dict) else ""
+        raise ImageError(f"Cloudflare didn't make the picture ({errors or response.status_code})")
+    img = validate_image_bytes(base64.b64decode(image_b64), max_bytes=50 * 1024 * 1024)
+    path = _save(img, GENERATED_DIR, prompt, fmt="JPEG" if img.format == "JPEG" else "PNG")
+    entry = remember(path, "generated", prompt=prompt)
+    return {"path": path, "id": entry["id"], "prompt": prompt, "provider": "cloudflare", **get_metadata(img, path)}
+
+
+_ENHANCE_PROMPT = (
+    "You turn a short request for a picture into one prompt for an image model. Keep exactly what was asked for "
+    "(every subject, person, place, count, color and style the user named) and add only what makes it look great: "
+    "the composition, the setting's details, lighting, lens or art medium, mood and quality cues. Photorealistic unless "
+    "the user asked for a style. No text or letters in the picture unless asked. Answer with the prompt only, one "
+    "paragraph, at most 70 words.")
+_openai_rejected = [False]   # a key OpenAI refused once isn't tried again until Jarvis restarts
+
+
+def enhance_prompt(prompt: str) -> str:
+    """"a dog" -> a detailed, well-lit, well-composed description: the biggest single difference to the result."""
+    if len(prompt.split()) > 60:
+        return prompt
+    try:
+        client = _groq().with_options(timeout=8, max_retries=0)
+        response = client.chat.completions.create(
+            model=os.getenv("GROQ_MODEL") or "openai/gpt-oss-20b", max_tokens=400, temperature=0.7,
+            messages=[{"role": "system", "content": _ENHANCE_PROMPT}, {"role": "user", "content": prompt}])
+        better = (response.choices[0].message.content or "").strip().strip('"')
+    except Exception as e:
+        print(f"Image prompt kept as said ({e!r})", flush=True)
+        return prompt
+    return better if 10 <= len(better) <= 1200 else prompt
+
+
 def generate(prompt: str, size: str = "auto") -> dict:
     """Tries, in order: the local model (unlimited, free, private, if installed — see requirements-local-images.txt),
     then OpenAI (if configured), then the free Pollinations.ai service (always available, no setup). Whichever one
@@ -539,20 +617,33 @@ def generate(prompt: str, size: str = "auto") -> dict:
     prompt = (prompt or "").strip()
     if not prompt:
         raise ImageError("Tell me what to draw, for example: generate an image of a futuristic city at night.")
+    asked = prompt
+    detailed = enhance_prompt(prompt)
+    # The best that's set up first; the small local model only as a last resort (it's slow: it loads for every
+    # picture, and draws at a low quality), so with no internet there's still a picture.
     providers = []
+    if generation_configured() and not _openai_rejected[0]:
+        providers.append(("OpenAI", lambda: _generate_openai(detailed, size)))
+    if cloudflare_configured():
+        providers.append(("Cloudflare FLUX", lambda: _generate_cloudflare(detailed)))
+    providers.append(("the free Pollinations.ai service", lambda: _generate_pollinations(detailed, size)))
     if local_generation_configured():
-        providers.append(("the local model", lambda: _generate_local(prompt)))
-    if generation_configured():
-        providers.append(("OpenAI", lambda: _generate_openai(prompt, size)))
-    providers.append(("the free Pollinations.ai service", lambda: _generate_pollinations(prompt, size)))
+        providers.append(("the local model", lambda: _generate_local(detailed)))
 
     failures = []
+    offline = False
     for label, make in providers:
+        if label == "the local model" and not offline and len(providers) > 1:
+            break   # online services were reachable, just unable: the slow local model wouldn't do better
         try:
             result = make()
         except ImageError as e:
+            offline = offline or isinstance(e, PollinationsOffline)
+            if label == "OpenAI" and re.search(r"401|invalid|incorrect api key|rejected", str(e), re.I):
+                _openai_rejected[0] = True
             failures.append(f"{label} ({e})")
             continue
+        result["asked"] = asked
         if failures:
             result["note"] = f"Used {label} after {' and '.join(failures)} didn't work."
         return result

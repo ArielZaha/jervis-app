@@ -1,7 +1,7 @@
 """Language understanding: what the user means, as a structured intent — kept separate from doing it.
 
     utterance -> rewrite()      deterministic, instant: Hebrew / mixed Hebrew-English commands and speech-recognition
-                                slips become the canonical English command Jervis's handlers already understand
+                                slips become the canonical English command Jarvis's handlers already understand
               -> (the existing deterministic handlers in app.py execute and verify)
               -> understand()   only when nothing handled it and it looks like it could be a command (or it's Hebrew):
                                 the local model returns ONE intent from a closed list, with slots, a confidence and
@@ -153,7 +153,7 @@ def rewrite_hebrew(text: str):
     t = _clean(latin_names(text))
     if not has_hebrew(t):
         return None
-    # "Jervis, תפתח בלנדר" / "בבקשה תפתח בלנדר": the address and the politeness aren't part of the command
+    # "Jarvis, תפתח בלנדר" / "בבקשה תפתח בלנדר": the address and the politeness aren't part of the command
     t = re.sub(r"^(?:(?:hey|hi|ok|okay)\s+)?(?:jervis|jarvis)\s+", "", t, flags=re.I)
     t = re.sub(r"^(?:בבקשה|אפשר|תוכל|תוכלי|יאללה|טוב|אוקיי|עכשיו)\s+", "", t)
     t = re.sub(r"\s+(?:בבקשה|תודה)$", "", t)
@@ -285,22 +285,22 @@ _STT_PHRASES = [
 
 
 # (Whisper also hears the name as ג'רמיס / ג'רמיז, and people wake him in the feminine too: "קומי")
-_JERVIS_HE = re.compile(r"(?<!\w)(?:(?:היי|הי|הֵי|הלו|תתעורר|קום|קומי|תתעוררי)\s+)?[גצ]['׳]?א?ר(?:ב|ו|וו|מ)י[סז](?!\w)")
+_JARVIS_HE = re.compile(r"(?<!\w)(?:(?:היי|הי|הֵי|הלו|תתעורר|קום|קומי|תתעוררי)\s+)?[גצ]['׳]?א?ר(?:ב|ו|וו|מ)י[סז](?!\w)")
 _GREETING_HE = {"היי": "hey", "הי": "hey", "הֵי": "hey", "הלו": "hello", "תתעורר": "wake up", "קום": "wake up",
                 "קומי": "wake up", "תתעוררי": "wake up"}
 
 
 def latin_names(text: str) -> str:
-    """Hebrew speech recognition spells "Jervis" in Hebrew letters (ג'רביס, ג'רוויס): write it in English, with
-    the greeting before it, so wake phrases and "Jervis, ..." work whatever language was heard."""
+    """Hebrew speech recognition spells "Jarvis" in Hebrew letters (ג'רביס, ג'רוויס): write it in English, with
+    the greeting before it, so wake phrases and "Jarvis, ..." work whatever language was heard."""
     def fix(m):
         greeting = m.group(0).split()[0] if len(m.group(0).split()) > 1 else ""
-        return (_GREETING_HE.get(greeting, "") + " Jervis").strip()
-    return _JERVIS_HE.sub(fix, text or "") if has_hebrew(text or "") else (text or "")
+        return (_GREETING_HE.get(greeting, "") + " Jarvis").strip()
+    return _JARVIS_HE.sub(fix, text or "") if has_hebrew(text or "") else (text or "")
 
 
 def fix_speech(text: str) -> str:
-    """Common recognizer slips Jervis has seen that a name-based fix can't catch ("open spot if I")."""
+    """Common recognizer slips Jarvis has seen that a name-based fix can't catch ("open spot if I")."""
     t = text or ""
     for pattern, fix in _STT_PHRASES:
         t = pattern.sub(fix, t)
@@ -336,11 +336,11 @@ INTENTS = {
     "volume": "change the volume (direction: up/down)",
     "timer": "set a timer (duration, in English words like '5 minutes')",
     "web_search": "search the web (query, in the user's words)",
-    "control_start": "let Jervis use the mouse and keyboard (goal: what to do, in English, may be empty)",
-    "control_stop": "stop Jervis using the computer",
+    "control_start": "let Jarvis use the mouse and keyboard (goal: what to do, in English, may be empty)",
+    "control_stop": "stop Jarvis using the computer",
     "screen_task": "do something on screen in the current app (goal, in English)",
-    "chat": "a question, conversation or anything that isn't a command for Jervis to do",
-    "ignore": "background noise, speech not meant for Jervis, or fragments",
+    "chat": "a question, conversation or anything that isn't a command for Jarvis to do",
+    "ignore": "background noise, speech not meant for Jarvis, or fragments",
     "clarify": "a command that is genuinely unclear: ask ONE short question (question)",
 }
 _SLOTS = ("app", "shape", "description", "target", "change", "times", "color", "direction", "next_to", "degrees",
@@ -369,11 +369,11 @@ SCHEMA_COMPACT = {"anyOf": [
                     **{slot: {"type": "string"} for slot in INTENT_SLOTS.get(name, ())}},
      "required": ["intent", "confidence", *INTENT_SLOTS.get(name, ())]}
     for name in INTENTS]}
-COMPACT = os.getenv("JERVIS_NLU_SCHEMA", "compact") != "full"
+COMPACT = os.getenv("JARVIS_NLU_SCHEMA", "compact") != "full"
 if COMPACT:
     SCHEMA = SCHEMA_COMPACT
 
-PROMPT ="""You understand what the user of Jervis, a voice assistant on their PC, means. Their words come from \
+PROMPT ="""You understand what the user of Jarvis, a voice assistant on their PC, means. Their words come from \
 speech recognition (so names may be misheard: "blend ever" = Blender, "spot if I" = Spotify, "make the cube girl" = \
 bigger) or are typed, in English, Hebrew, or a mix. Reply with JSON: one intent and its details, in English \
 (translate Hebrew; keep song/artist names and search queries as said).
@@ -436,14 +436,14 @@ def validate(raw) -> dict:
 _CHANGES = {"bigger", "smaller", "taller", "shorter", "wider", "narrower", "larger", "thinner", "fatter"}
 _DIRECTIONS = {"left", "right", "up", "down", "forward", "back", "backward", "forwards", "backwards"}
 _SHAPES = {"cube", "sphere", "cylinder", "cone", "plane", "torus", "monkey", "box", "ball"}
-# The colours Jervis's Blender commands know (blender_commands._COLORS): anything else isn't a colour command.
+# The colours Jarvis's Blender commands know (blender_commands._COLORS): anything else isn't a colour command.
 _COLOR_NAMES = {"red", "green", "blue", "yellow", "orange", "purple", "pink", "white", "black", "gray", "grey",
                 "brown", "gold", "silver", "cyan"}
 MIN_CONFIDENCE = 0.55
 
 
 def render(intent: dict):
-    """A validated intent -> the canonical English command Jervis's deterministic handlers understand, or None when
+    """A validated intent -> the canonical English command Jarvis's deterministic handlers understand, or None when
     it isn't a command (chat), can't be made safe, or isn't confident enough to act on."""
     kind = intent.get("intent")
     g = intent.get
@@ -596,7 +596,7 @@ def _mentioned(app: str, text: str) -> bool:
 
 def interpret(text: str, context: dict, ask_json):
     """What to do with `text` that no deterministic rule recognised:
-        ("command", canonical English command)   run it through Jervis's normal command handling
+        ("command", canonical English command)   run it through Jarvis's normal command handling
         ("clarify", question)                    ask: it looks like a command, but it's unclear
         ("ignore", None)                         background speech: say nothing
         ("chat", None)                           conversation: answer it as before

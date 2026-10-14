@@ -22,4 +22,4 @@ SOFTWARE.
 
 (Source: https://github.com/kazuhikoarase/qrcode-generator, vendored as
 vendor/qrcode-generator/qrcode.js for the phone-pairing QR code shown in the
-Jervis window — see start_phone_pairing() in app.py and panels.js.)
+Jarvis window — see start_phone_pairing() in app.py and panels.js.)

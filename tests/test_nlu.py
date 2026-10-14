@@ -13,7 +13,7 @@ import speech_fixes
 
 @pytest.mark.parametrize("said, canonical", [
     ("תפתח בלנדר", "open Blender"),
-    ("Jervis תפתח בלנדר", "open Blender"),
+    ("Jarvis תפתח בלנדר", "open Blender"),
     ("ג'רביס, תיצור קובייה בבקשה", "create a cube"),
     ("תיצור קובייה", "create a cube"),
     ("תיצור cube", "create a cube"),
@@ -37,7 +37,7 @@ import speech_fixes
     ("תגביר", "volume up"),
     ("open Spotify ותפעיל את השיר הזה", "open Spotify and resume the music"),
     ("open spot if I", "open spotify"),
-    ("Jervis stay control", "Jervis stay in control of my computer"),
+    ("Jarvis stay control", "Jarvis stay in control of my computer"),
     ("make the cube girl", "make the cube bigger"),
 ])
 def test_deterministic_rewrites(said, canonical):
@@ -62,8 +62,8 @@ def test_speech_name_fixes(heard, fixed):
 
 
 def test_hebrew_spelling_of_jervis_becomes_the_wake_phrase():
-    assert nlu.latin_names("היי ג'רביס") == "hey Jervis"
-    assert nlu.latin_names("תתעורר ג׳רוויס") == "wake up Jervis"
+    assert nlu.latin_names("היי ג'רביס") == "hey Jarvis"
+    assert nlu.latin_names("תתעורר ג׳רוויס") == "wake up Jarvis"
     assert nlu.latin_names("שלום עולם") == "שלום עולם"
     assert nlu.latin_names("hello there") == "hello there"
 

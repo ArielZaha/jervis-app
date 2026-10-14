@@ -1,4 +1,4 @@
-"""The agent's Blender adapter: act through the scripting bridge with Jervis's building kit (blender_kit.py), read
+"""The agent's Blender adapter: act through the scripting bridge with Jarvis's building kit (blender_kit.py), read
 the real scene back as structured data, and verify checks against it — no screen reading, no mouse."""
 import json
 import math
@@ -70,7 +70,7 @@ build one out of boxes, cylinders and spheres (that is a blockout, not a model):
   shore(name, width=120, sand_depth=30)  a beach running into the sea (sand toward -y, waves beyond)
   ground(name, size=80, kind='lawn'|'wild grass'|'sand'|'forest floor'|'paving', hilly=0)   hills(name, distance, height)
   forest(name, width, depth, count, kind='mixed'|'pine'|'palm'|'tropical'|'shrubs'|'grass'|'flowers'|'ferns'|'rocks')
-  Jervis builds the world round what you make by himself afterwards — its ground, planting, street, shore, sky, light
+  Jarvis builds the world round what you make by himself afterwards — its ground, planting, street, shore, sky, light
   and camera — so build only what the request names (a bakery is one storefront(), not a street of them).
   walkway(name, start, end, width=1.2, style='pavers'|'stones'|'gravel')  a path that really connects two things:
         walkway('Path', 'Villa', 'Pool') leaves the villa's front door, goes round whatever is in the way, ends at
@@ -589,7 +589,7 @@ def _module_source(module) -> str:
 
 def kit_source() -> str:
     """The building kit and the finished assets built on it (blender_assets.py), as one script for the bridge —
-    preceded by spatial.py as its own module `spatial`, the very code Jervis checks scenes with."""
+    preceded by spatial.py as its own module `spatial`, the very code Jarvis checks scenes with."""
     loader = ("import types as _jervis_types\n"
               "spatial = _jervis_types.ModuleType('jervis_spatial')\n"
               f"exec(compile({_module_source(spatial)!r}, '<spatial>', 'exec'), spatial.__dict__)\n"
@@ -700,7 +700,7 @@ def _place_options(builder: str, what: str) -> dict:
 
 
 # ---------- finished assets: the request is "build a <house/tree/island...>", or "change its <option>" ----------
-_BUILD_VERB = re.compile(r"^(?:(?:please|can you|could you|would you|will you|now|also|then|and|ok|okay|jervis|"
+_BUILD_VERB = re.compile(r"^(?:(?:please|can you|could you|would you|will you|now|also|then|and|ok|okay|jarvis|jervis|"
                          r"hey)\b[\s,]*)*(?:create|make|build|add|generate|model|design|put|place|give me|i (?:want|need)|"
                          r"i'd like|let's (?:make|build|have|add|plant)|draw|construct|plant|grow|scatter|spawn|"
                          r"set up|raise|erect)\b\s*(?:me |us )?", re.I)
@@ -910,7 +910,7 @@ _WALLS_TO_STYLE = {"brick": "brick", "logs": "cabin", "log": "cabin", "wood": "c
                    "siding": "farmhouse"}
 
 
-# "Improve the water", "make the roof nicer": the user leaves the choice to Jervis — for the part they named.
+# "Improve the water", "make the roof nicer": the user leaves the choice to Jarvis — for the part they named.
 _IMPROVE = re.compile(r"\b(?:improve|better|nicer|prettier|more (?:realistic|detailed|beautiful|natural|interesting)|"
                       r"enhance|upgrade|polish|fix up|look good|beautify)\b", re.I)
 _PART_OPTIONS = [(re.compile(r"\b(?:water|sea|ocean|waves?|surf|shore)\b", re.I), {"waves", "sea_color", "foam"}),
@@ -2854,7 +2854,7 @@ class BlenderAdapter(AppAdapter):
     # things should stand; anything else that names a relation ("a villa with a pool beside it", "move the pool
     # behind the house") is held to it.
     _MOVES = re.compile(r"\b(?:move|put|place|position|shift|relocate|drag|bring|set)\b(?!\s+up\b)", re.I)
-    _EDIT_ONLY = re.compile(r"^(?:(?:please|now|also|then|and|ok|okay|jervis|hey|can you|could you)\b[\s,]*)*"
+    _EDIT_ONLY = re.compile(r"^(?:(?:please|now|also|then|and|ok|okay|jarvis|jervis|hey|can you|could you)\b[\s,]*)*"
                             r"(?:colou?r|paint|recolou?r|rename|resize|scale|rotate|turn|change|make (?:it|them|the|"
                             r"its|this|that)\b|give (?:it|the|them)\b|delete|remove|hide|show|select|save|undo)\b",
                             re.I)

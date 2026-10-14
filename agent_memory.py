@@ -1,7 +1,7 @@
 """What the agent has done successfully before, so a similar request is planned from a known-good example.
 
 Only requests whose every check passed are kept (agent_core.AgentTask), so this never teaches the AI a mistake.
-Stored as JSON in Jervis's data folder; the oldest entries drop off past LIMIT.
+Stored as JSON in Jarvis's data folder; the oldest entries drop off past LIMIT.
 """
 import json
 import os
@@ -14,7 +14,7 @@ import paths
 LIMIT = 80
 MIN_SIMILARITY = 0.4
 _STOP = {"a", "an", "the", "and", "with", "of", "to", "in", "on", "for", "please", "can", "you", "could", "me", "my",
-         "it", "some", "make", "create", "build", "add", "jervis", "blender", "minecraft", "then", "now", "that",
+         "it", "some", "make", "create", "build", "add", "jarvis", "jervis", "blender", "minecraft", "then", "now", "that",
          "this", "is", "be", "i", "want", "would", "like"}
 
 

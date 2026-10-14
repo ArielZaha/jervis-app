@@ -1,4 +1,4 @@
-"""Hebrew (and mixed Hebrew-English) around Jervis's English pipeline: language.py, the bilingual speech recognizer
+"""Hebrew (and mixed Hebrew-English) around Jarvis's English pipeline: language.py, the bilingual speech recognizer
 (stt_local.py), the Hebrew voice (osal.py) and how app.py puts them together.
 
 These run sandboxed with a fake translation model, so they're fast and deterministic; the same cases with the real
@@ -50,7 +50,7 @@ def fake_translator(monkeypatch):
     ("Open Blender and create a detailed house", "en", False),
     ("תפתח את בלנדר", "he", False),
     ("תפתח Blender", "he", True),
-    ("hey Jervis תפתח את בלנדר", "he", False),     # the wake phrase isn't English speech
+    ("hey Jarvis תפתח את בלנדר", "he", False),     # the wake phrase isn't English speech
     ("", "", False),
     ("42", "", False),
 ])
@@ -61,8 +61,8 @@ def test_detect(text, code, mixed):
 @pytest.mark.parametrize("text, switch", [
     ("תעשה את הגג אדום", "he"),
     ("make the roof red", "en"),
-    ("OK", ""),            # a Hebrew speaker's "OK" doesn't switch Jervis to English
-    ("hey Jervis", ""),
+    ("OK", ""),            # a Hebrew speaker's "OK" doesn't switch Jarvis to English
+    ("hey Jarvis", ""),
     ("yes", ""),
 ])
 def test_turn_language(text, switch):
@@ -144,7 +144,7 @@ def test_e_a_correction_keeps_its_no(fake_translator):
 
 
 def test_o_reply_language_is_remembered_across_restarts(monkeypatch):
-    monkeypatch.delenv("JERVIS_REPLY_LANGUAGE", raising=False)
+    monkeypatch.delenv("JARVIS_REPLY_LANGUAGE", raising=False)
     language.set_reply_language("he")
     language._state["reply"] = None          # as after a restart
     assert language.reply_language() == "he"
@@ -153,7 +153,7 @@ def test_o_reply_language_is_remembered_across_restarts(monkeypatch):
 
 
 def test_o_settings_can_fix_the_reply_language(monkeypatch):
-    monkeypatch.setenv("JERVIS_REPLY_LANGUAGE", "he")
+    monkeypatch.setenv("JARVIS_REPLY_LANGUAGE", "he")
     language.set_reply_language("en")
     assert language.reply_language() == "he"
 
@@ -399,9 +399,9 @@ def test_setup_has_a_hebrew_step_that_never_blocks_the_rest(monkeypatch):
 def test_settings_offer_the_languages():
     import settings
     keys = {s["key"]: s for s in settings.SCHEMA}
-    assert [c[0] for c in keys["JERVIS_STT_LANGUAGE"]["choices"]] == ["auto", "en"]
-    assert keys["JERVIS_STT_LANGUAGE"]["default"] == "auto"
-    assert [c[0] for c in keys["JERVIS_REPLY_LANGUAGE"]["choices"]] == ["auto", "en", "he"]
+    assert [c[0] for c in keys["JARVIS_STT_LANGUAGE"]["choices"]] == ["auto", "en"]
+    assert keys["JARVIS_STT_LANGUAGE"]["default"] == "auto"
+    assert [c[0] for c in keys["JARVIS_REPLY_LANGUAGE"]["choices"]] == ["auto", "en", "he"]
 
 
 def test_hebrew_speech_uses_the_natural_voice_when_it_is_there(monkeypatch):
@@ -410,7 +410,7 @@ def test_hebrew_speech_uses_the_natural_voice_when_it_is_there(monkeypatch):
     said = []
     monkeypatch.setattr(osal, "IS_WIN", True)
     monkeypatch.setattr(osal, "IS_MAC", False)
-    monkeypatch.delenv("JERVIS_SPEECH_OUT", raising=False)
+    monkeypatch.delenv("JARVIS_SPEECH_OUT", raising=False)
     monkeypatch.setattr(hebrew_voice, "available", lambda: True)
     monkeypatch.setattr(hebrew_voice, "speak",
                         lambda text, volume, out_path=None: said.append((text, volume)) or "playing")
@@ -479,8 +479,8 @@ def test_hebrew_speech_goes_to_windows_voice_without_the_natural_one(monkeypatch
     monkeypatch.setattr(osal.subprocess, "Popen", lambda cmd, **kw: started.append(kw["env"]) or object())
     osal.speech_process("סיימתי — פתחתי את Blender.", 40)
     osal.speech_process("Done.", 40)
-    assert started[0]["JERVIS_HEBREW"] == "1" and started[0]["JERVIS_VOLUME"] == "40"
-    assert started[1]["JERVIS_HEBREW"] == "0"
+    assert started[0]["JARVIS_HEBREW"] == "1" and started[0]["JARVIS_VOLUME"] == "40"
+    assert started[1]["JARVIS_HEBREW"] == "0"
     assert "Windows.Media.SpeechSynthesis" in osal._WIN_SPEECH and "AudioVolume" in osal._WIN_SPEECH
 
 
@@ -501,7 +501,7 @@ def sandboxed():
 
 @pytest.fixture
 def hebrew_app(sandboxed, monkeypatch, fake_translator):
-    monkeypatch.delenv("JERVIS_REPLY_LANGUAGE", raising=False)
+    monkeypatch.delenv("JARVIS_REPLY_LANGUAGE", raising=False)
     shown, spoken = [], []
     monkeypatch.setattr(app, "broadcast", lambda sender, text="", **k: shown.append(str(app.localized(text))))
     monkeypatch.setattr(app, "speak", lambda text: spoken.append(text))
@@ -633,7 +633,7 @@ def test_the_agent_warm_up_doesnt_evict_the_translator(sandboxed, monkeypatch):
     primed = []
     monkeypatch.setattr(app.agent_core.AgentTask, "prime", lambda self: primed.append(1))
     monkeypatch.setattr(app.language, "translator", lambda: local_llm.DICTALM)
-    monkeypatch.delenv("JERVIS_REPLY_LANGUAGE", raising=False)
+    monkeypatch.delenv("JARVIS_REPLY_LANGUAGE", raising=False)
     language.set_reply_language("he")
     app.prime_blender_agent()
     language.set_reply_language("en")

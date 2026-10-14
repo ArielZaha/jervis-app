@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const STATES = {
     idle:      { title: 'Ready',            sub: 'I’m listening. Just say what you need.' },
-    sleeping:  { title: 'Sleeping',         sub: 'Say “Hey Jervis” or “Wake up Jervis” to wake me.' },
+    sleeping:  { title: 'Sleeping',         sub: 'Say “Hey Jarvis” or “Wake up Jarvis” to wake me.' },
     listening: { title: 'Listening…',       sub: 'Go ahead, I’m all ears.' },
     thinking:  { title: 'Thinking…',        sub: 'Working on it.' },
     speaking:  { title: 'Speaking',         sub: 'Press the stop button, or Space, to make me listen.' },
@@ -42,9 +42,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ---------- Connection ----------
+  let everConnected = false;   // until the first connection Jarvis is starting, not reconnecting
   function setConnection(connected) {
+    everConnected = everConnected || connected;
     app.classList.toggle('is-connected', connected);
-    $('connectionText').textContent = connected ? 'Connected' : 'Reconnecting…';
+    $('connectionText').textContent = connected ? 'Connected' : everConnected ? 'Reconnecting…' : 'Starting…';
   }
   function scheduleReconnect() {
     if (reconnectTimer) return;
@@ -55,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setConnection(false);
     try {
       socket = new WebSocket(new URLSearchParams(location.search).get('ws') || 'ws://127.0.0.1:8765');
-      socket.onopen = () => { setConnection(true); window.dispatchEvent(new CustomEvent('jervis-connected')); };
+      socket.onopen = () => { setConnection(true); window.dispatchEvent(new CustomEvent('jarvis-connected')); };
       socket.onclose = () => { setConnection(false); scheduleReconnect(); };
       socket.onerror = () => setConnection(false);
       socket.onmessage = handleMessage;
@@ -445,7 +447,7 @@ document.addEventListener('DOMContentLoaded', () => {
     typingEl = null;
   }
   function showCaption(isUser, text) {
-    $('capLabel').textContent = isUser ? 'You said' : 'Jervis';
+    $('capLabel').textContent = isUser ? 'You said' : 'Jarvis';
     $('capText').textContent = text;
     $('caption').classList.add('show');
     clearTimeout(captionTimer);
@@ -503,7 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!pendingPlanets.length) return;
       $('emptyChat')?.remove();
       const wrap = document.createElement('article');
-      wrap.className = 'msg jervis';
+      wrap.className = 'msg jarvis';
       pendingPlanets.splice(0).forEach((p) => wrap.append(makePlanetChip(p)));
       chatLog.appendChild(wrap);
       chatLog.scrollTop = chatLog.scrollHeight;
@@ -523,9 +525,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const kicker = document.createElement('small');
     kicker.textContent = 'Globe';
     const name = document.createElement('b');
-    name.textContent = `${d.a.name} \u2192 ${d.b.name}`;
+    name.textContent = d.title || `${d.a.name} \u2192 ${d.b.name}`;
     const hint = document.createElement('em');
-    hint.textContent = `${d.km.toLocaleString()} km \u00b7 click to open again`;
+    const what = d.mode === 'sun' ? 'Sunlight' : d.mode === 'radius' ? `${d.km.toLocaleString()} km radius`
+      : d.mode === 'compare' ? `${(d.routes || []).length} routes` : `${d.km.toLocaleString()} km`;
+    hint.textContent = `${what} \u00b7 click to open again`;
     label.append(kicker, name, hint);
     chip.append(picture, label);
     chip.addEventListener('click', () => window.showGlobe?.(d));
@@ -539,7 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!pendingGlobes.length) return;
       $('emptyChat')?.remove();
       const wrap = document.createElement('article');
-      wrap.className = 'msg jervis';
+      wrap.className = 'msg jarvis';
       pendingGlobes.splice(0).forEach((g) => wrap.append(makeGlobeChip(g)));
       chatLog.appendChild(wrap);
       chatLog.scrollTop = chatLog.scrollHeight;
@@ -554,14 +558,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!pendingGraphs.length) return;
       $('emptyChat')?.remove();
       const wrap = document.createElement('article');
-      wrap.className = 'msg jervis';
+      wrap.className = 'msg jarvis';
       pendingGraphs.splice(0).forEach((g) => wrap.append(makeGraphChip(g)));
       chatLog.appendChild(wrap);
       chatLog.scrollTop = chatLog.scrollHeight;
     }, 2500);
   }
 
-  // ---------- Images in the conversation: attached by the user, or generated/edited by Jervis ----------
+  // ---------- Images in the conversation: attached by the user, or generated/edited by Jarvis ----------
   const IMAGE_KIND_LABEL = { upload: 'Attached image', generated: 'Generated image', edited: 'Edited image' };
   function openLightbox(src) {
     $('lightboxImg').src = src;
@@ -593,9 +597,9 @@ document.addEventListener('DOMContentLoaded', () => {
     $('emptyChat')?.remove();
     hideTyping();
     const msg = document.createElement('article');
-    msg.className = `msg ${isUser ? 'user' : 'jervis'}`;
+    msg.className = `msg ${isUser ? 'user' : 'jarvis'}`;
     const meta = document.createElement('small');
-    meta.textContent = `${isUser ? 'You' : 'Jervis'} · ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    meta.textContent = `${isUser ? 'You' : 'Jarvis'} · ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     msg.append(meta);
     if (image) msg.append(makeImageFigure(image, imageKind));
     if (text && text.trim()) {
@@ -625,7 +629,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Other scripts (panels.js: setup, settings, computer control) talk to the backend through these two.
-  window.jervisSend = (payload) => {
+  window.jarvisSend = (payload) => {
     if (socket?.readyState !== WebSocket.OPEN) return false;
     socket.send(JSON.stringify(payload));
     return true;
@@ -634,7 +638,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleMessage(event) {
     try {
       const data = JSON.parse(event.data);
-      window.dispatchEvent(new CustomEvent('jervis-message', { detail: data }));
+      window.dispatchEvent(new CustomEvent('jarvis-message', { detail: data }));
       if (data.sender && (data.text || data.image)) appendChatMessage(data.sender, data.text || '', data.image, data.imageKind);
       if (data.status) setState(data.status);
       if (data.type === 'system_stats' && data.data) updateStats(data.data);
@@ -721,14 +725,15 @@ document.addEventListener('DOMContentLoaded', () => {
   $('stopBtn').addEventListener('click', () => { if (app.dataset.state === 'speaking') interruptSpeech(); });
   connectBtn.addEventListener('click', () => applyMute(!isMuted));
 
-  // ---------- Jervis's own speaking volume (separate from the mic above) ----------
+  // ---------- Jarvis's own speaking volume (separate from the mic above) ----------
   const speakVolWrap = $('speakVol'), speakVolBtn = $('speakVolBtn'), speakVolSlider = $('speakVolSlider');
   let speakVolume = 100, speakMuted = false, lastSpeakVolume = 100;
   function renderSpeakVol() {
     speakVolWrap.classList.toggle('muted', speakMuted || speakVolume === 0);
     speakVolBtn.setAttribute('aria-pressed', String(speakMuted));
-    speakVolBtn.title = speakMuted ? "Unmute Jervis's voice" : "Mute Jervis's voice";
+    speakVolBtn.title = speakMuted ? "Unmute Jarvis's voice" : "Mute Jarvis's voice";
     speakVolSlider.value = speakVolume;
+    speakVolSlider.style.setProperty('--p', `${speakVolume}%`);   // how far the track is filled (the new look draws its own)
   }
   function sendSpeakVolume() {
     if (socket?.readyState === WebSocket.OPEN) {
@@ -797,7 +802,7 @@ document.addEventListener('DOMContentLoaded', () => {
     void $('typeForm').offsetWidth;
     $('typeForm').classList.add('nope');
     clearTimeout(flashTypebarNotice._t);
-    flashTypebarNotice._t = setTimeout(() => { typeInput.placeholder = 'Type a message or a number to Jervis…'; }, 2600);
+    flashTypebarNotice._t = setTimeout(() => { typeInput.placeholder = 'Type a message or a number to Jarvis…'; }, 2600);
   }
   function renderAttachPreview() {
     attachPreview.hidden = !stagedImage;
@@ -835,7 +840,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (item) { e.preventDefault(); stageImageFile(item.getAsFile()); }
   });
 
-  // ---------- Typing to Jervis: the same as saying it (words, numbers, anything) ----------
+  // ---------- Typing to Jarvis: the same as saying it (words, numbers, anything) ----------
   const sent = [];        // what was typed, so the arrow keys can bring it back
   let sentAt = 0;         // where in that history the arrow keys are
   function sendTyped() {
@@ -858,7 +863,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (sent.length > 30) sent.shift();
     sentAt = sent.length;
     typeInput.value = '';
-    typeInput.placeholder = 'Type a message or a number to Jervis…';
+    typeInput.placeholder = 'Type a message or a number to Jarvis…';
     $('typeForm').classList.remove('sent');
     void $('typeForm').offsetWidth;
     $('typeForm').classList.add('sent');
@@ -894,5 +899,37 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.initBackground) window.initBackground('netCanvas');
   setState('idle');
   startVoiceMeter();
+  // ---------- Try saying: tabs by kind; clicking an example puts it in the message box, ready to send ----------
+  (function setUpTips() {
+    const card = $('tipsCard');
+    if (!card) return;
+    const items = [...card.querySelectorAll('#tipList li')];
+    const show = (cat) => {
+      let i = 0;
+      for (const li of items) {
+        const visible = cat === 'all' || li.dataset.cat === cat;
+        li.hidden = !visible;
+        if (visible) { li.style.setProperty('--i', i++); li.style.animation = 'none'; void li.offsetWidth; li.style.animation = ''; }
+      }
+      for (const tab of card.querySelectorAll('.tip-tabs button')) tab.setAttribute('aria-selected', String(tab.dataset.cat === cat));
+      $('tipList').scrollTop = 0;
+    };
+    card.querySelector('.tip-tabs').addEventListener('click', (e) => {
+      const tab = e.target.closest('button[data-cat]');
+      if (tab) show(tab.dataset.cat);
+    });
+    card.addEventListener('click', (e) => {
+      const tip = e.target.closest('button.tip');
+      if (!tip) return;
+      const input = $('typeInput');
+      input.value = tip.dataset.say;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      const bar = input.closest('.typebar');
+      if (bar) { bar.classList.remove('tip-filled'); void bar.offsetWidth; bar.classList.add('tip-filled'); }
+    });
+    show('all');
+  })();
+
   connectSocket();
 });

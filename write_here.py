@@ -1,5 +1,5 @@
 """Write where the cursor is: "write me a story about a secret island" with the cursor in a document, an email, a
-chat box or a code editor — Jervis writes it and types it in right there, then reads the field back to check it's
+chat box or a code editor — Jarvis writes it and types it in right there, then reads the field back to check it's
 really there.
 
     request -> TARGET (the window the user is working in, remembered at once, and its focused text control)
@@ -11,7 +11,7 @@ really there.
 
 When is a request "write it here" rather than "show me"? An explicit "here" / "where my cursor is" / "in this field"
 always is. A plain "write me a story" is only when an editable text control of another app has the keyboard focus —
-spoken while working in a document. Typed into Jervis's own window, it's a chat answer as before.
+spoken while working in a document. Typed into Jarvis's own window, it's a chat answer as before.
 
 Typing goes through the same computer-control task as everything else (app.py: start_computer_task with scripted
 steps), so it respects the permission setting, shows the overlay, and Stop works.
@@ -27,11 +27,11 @@ EXPLICIT = re.compile(
     r"(?:current|open|selected)) (?:field|box|text ?box|document|doc|page|window|chat|email|message|editor|file|form|"
     r"cell)|where (?:my|the) (?:cursor|caret|mouse) is|at (?:my|the) (?:cursor|caret)|for me in (?:this|the) "
     r"(?:field|box|document|editor))\b", re.I)
-OWN_PROCESSES = {"jervis.exe", "electron.exe", "jervis-backend.exe"}
+OWN_PROCESSES = {"jervis.exe", "electron.exe", "jarvis-backend.exe"}
 EDITABLE_TYPES = {"EditControl", "DocumentControl", "ComboBoxControl", "CustomControl", "PaneControl",
                   "GroupControl", "TextControl"}
 PASTE_OVER = 280          # characters: longer text (or any code) is pasted, not typed key by key
-# Apps whose window is mostly a place to type: with Jervis's own window just woken in front of one, a spoken "write me
+# Apps whose window is mostly a place to type: with Jarvis's own window just woken in front of one, a spoken "write me
 # a story" is meant for it (the caret is restored when it comes back to the front, and checked then).
 TEXT_APPS = {"notepad", "wordpad", "winword", "code", "notepad++", "sublime_text", "onenote", "outlook", "obsidian",
              "typora", "soffice", "swriter", "pycharm64", "idea64", "devenv", "notion", "joplin", "word"}
@@ -46,7 +46,7 @@ class Target:
     title: str = ""          # the window's title ("Untitled - Notepad", "Inbox - Outlook")
     control: str = ""        # the focused control's type, when it could be read at request time
     editable: object = False  # True: an editable text control had the focus; None: probably (a text app behind
-                              # Jervis's window — checked once it's back in front); False: no
+                              # Jarvis's window — checked once it's back in front); False: no
     password: bool = False
 
 
@@ -66,7 +66,7 @@ def is_write_request(text: str) -> bool:
 
 
 def wants_here(text: str, target, spoken: bool = True) -> bool:
-    """Should this request be typed where the user's cursor is? (Typed into Jervis's own window, a plain "write me
+    """Should this request be typed where the user's cursor is? (Typed into Jarvis's own window, a plain "write me
     a story" is a chat answer; spoken while working in a text app, it's meant for that app.)"""
     if not text or documents.detect_app(text.lower()):
         return False   # an app named ("in Word", "in Google Docs"): the document handlers make a new document
@@ -116,7 +116,7 @@ def landed(before, after, body: str):
 # ---------- Windows ----------
 
 def find_target():
-    """The window the user is working in right now (not Jervis's own) and what has its keyboard focus. None when
+    """The window the user is working in right now (not Jarvis's own) and what has its keyboard focus. None when
     there's no such window (or this isn't Windows)."""
     try:
         import winctl
@@ -124,7 +124,7 @@ def find_target():
             return None
         front = winctl.foreground_window()
         hwnd = front if front and winctl.window_process_name(front) not in OWN_PROCESSES else None
-        if hwnd is None:   # Jervis's own window is in front (just woken): the window right behind it
+        if hwnd is None:   # Jarvis's own window is in front (just woken): the window right behind it
             for h, _title in winctl.list_windows():
                 if winctl.window_process_name(h) not in OWN_PROCESSES:
                     hwnd = h

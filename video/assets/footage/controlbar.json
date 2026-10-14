@@ -1,0 +1,16 @@
+{
+ "name": "controlbar",
+ "frames": 315,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "observing": 27,
+  "thinking": 72,
+  "pause": 117,
+  "resume": 177,
+  "stop": 219
+ },
+ "notes": {},
+ "opened": []
+}

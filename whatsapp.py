@@ -184,12 +184,12 @@ def status() -> tuple:
     except (sqlite3.Error, OSError) as e:
         if "unable to open" in str(e).lower() or "not permitted" in str(e).lower() or "authorization" in str(e).lower():
             return False, ("macOS is blocking me from WhatsApp's data. Open System Settings, Privacy and Security, "
-                           "Full Disk Access, and allow the app that runs Jervis (Terminal or VS Code).")
+                           "Full Disk Access, and allow the app that runs Jarvis (Terminal or VS Code).")
         return False, "I couldn't open WhatsApp's data right now. Try again in a moment."
     return True, ""
 
 
-# ---------- what Jervis says ----------
+# ---------- what Jarvis says ----------
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}{'' if n == 1 else 's'}"
 

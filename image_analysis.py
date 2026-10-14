@@ -3,7 +3,7 @@ is, and where windows glow. The vision model judges WHAT things are; these numbe
 called a lit Tokyo shopfront at night "golden hour" and put a villa's horizon at 80% of the height; the pixels
 said otherwise.
 
-Pure numpy + Pillow, so it runs anywhere Jervis does and is cheap (a few ms on a 1 MP picture)."""
+Pure numpy + Pillow, so it runs anywhere Jarvis does and is cheap (a few ms on a 1 MP picture)."""
 import math
 
 import numpy as np

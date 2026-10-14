@@ -1,4 +1,4 @@
-"""Spatial reasoning for Jervis's 3D scenes: what the things in a scene are, where they stand, which way they face, and
+"""Spatial reasoning for Jarvis's 3D scenes: what the things in a scene are, where they stand, which way they face, and
 what "beside the house", "in front of it" or "a path from the door to the pool" mean in metres.
 
 Why: a small model asked for "a pool beside the villa" picks coordinates by itself, and sometimes puts the pool inside
@@ -6,8 +6,8 @@ the building. Relations are geometry, not guesswork: this module turns them into
 paths around buildings, and checks the finished scene (intersections, outdoor things inside buildings, floating or
 sunk things, broken paths, wrong relative placement, odd sizes) with a concrete repair for each problem it can fix.
 
-Pure Python, no bpy: Jervis uses it outside Blender to plan and verify, and the building kit loads the very same code
-inside Blender (agent_blender.kit_source) so spot_near()/walkway() there and Jervis's checks agree to the centimetre.
+Pure Python, no bpy: Jarvis uses it outside Blender to plan and verify, and the building kit loads the very same code
+inside Blender (agent_blender.kit_source) so spot_near()/walkway() there and Jarvis's checks agree to the centimetre.
 
 Space: metres, z up, the ground is z = 0, x left(-)/right(+), y front(-)/back(+) — the camera looks from the front.
 A footprint is an axis-aligned rectangle (x0, y0, x1, y1). The input is scene_state()'s list of objects

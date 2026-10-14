@@ -7,7 +7,7 @@ keys" or "find me a good book" never opens a browser. app.py does the opening.
 import re
 from urllib.parse import quote
 
-_LEAD = (r"^(?:(?:hey |ok |okay )?(?:jervis|jarvis) )?(?:(?:please|can you|could you|would you|go ahead and|just|"
+_LEAD = (r"^(?:(?:hey |ok |okay )?(?:jarvis|jervis) )?(?:(?:please|can you|could you|would you|go ahead and|just|"
          r"i want you to|i want to|i need to) )*")
 _ENGINE = r"(?P<engine>google|youtube|you tube|the web|the internet|online)"
 _VERB = r"(?:search|look up|look for|find|search up)"

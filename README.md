@@ -1,35 +1,40 @@
-# Jervis
+# Jarvis
 
-A voice assistant for your computer: say "Hey Jervis", then ask for music, videos, shows, timers, documents and more,
+A voice assistant for your computer: say "Hey Jarvis", then ask for music, videos, shows, timers, documents and more,
 or have him use the mouse and keyboard for you. His AI runs on your own computer: no account and no API key.
 Runs on **Windows 10/11** and **macOS** (Apple silicon). Made by Ariel & Shalev.
 
 ## Install
 
 Download the installer from <https://arielzaha.github.io/jervis/> (or the
-[latest release](https://github.com/ArielZaha/jervis-app/releases/latest)):
+[latest release](https://github.com/TheJarvis-App/jarvis-app/releases/latest)):
 
-- **Windows:** run `Jervis Setup.exe`. If SmartScreen still says "Windows protected your PC" (a signed installer can
+- **Windows:** run `Jarvis Setup.exe`. If SmartScreen still says "Windows protected your PC" (a signed installer can
   take a little reputation-building time with Microsoft after each new release), click *More info*, then
-  *Run anyway*. No administrator rights needed; Jervis is added to the Start menu and the desktop.
-- **macOS:** open the `.dmg`, drag Jervis to Applications, open it. The first time, macOS says it can't check it for
+  *Run anyway*. No administrator rights needed; Jarvis is added to the Start menu and the desktop.
+- **macOS:** open the `.dmg`, drag Jarvis to Applications, open it. The first time, macOS says it can't check it for
   malware: open *System Settings > Privacy & Security* and click *Open Anyway*.
 
-On the first start Jervis downloads his AI engine ([Ollama](https://ollama.com)), the `llama3.2` model and an offline
-speech model (about 3.5 GB on Windows, 2.5 GB on a Mac), with the progress in his window. Everything that doesn't need
-the AI works meanwhile. If you already run Ollama, he uses yours. Then say **"Hey Jervis"**.
+On the first start Jarvis downloads his AI engine ([Ollama](https://ollama.com)), the `llama3.2` model and an offline
+speech model, with the progress in his window: about 2.3 GB on a Mac; on Windows about 3.6 GB, of which about 2.3 GB is
+kept (the engine's NVIDIA libraries, 1.8 GB, are only unpacked on a PC with an NVIDIA graphics card). Everything that
+doesn't need the AI works meanwhile. If you already run Ollama, he uses yours. Then say **"Hey Jarvis"**.
+
+On a computer with 16 GB of memory he can also see pictures and the screen without the internet. That needs a 3 GB
+vision model, which he downloads the first time it's needed, not at setup (Settings, AI, can turn it on or off).
+The app itself is about 190 MB to download and about 460 MB installed.
 
 Everything else is in **Settings** (the gear at the top right): microphone, voice, the wake phrase, which AI answers,
 computer control, the weather city, privacy, optional services, and starting when you sign in. Settings, logs,
-transcripts and pictures live in `%APPDATA%\Jervis` (Windows) or `~/Library/Application Support/Jervis` (macOS).
+transcripts and pictures live in `%APPDATA%\Jarvis` (Windows) or `~/Library/Application Support/Jarvis` (macOS).
 
 ## Spotify
 
-Jervis controls the Spotify app on the computer; no keys and no Premium needed. "Play My Favorite Songs on Spotify"
+Jarvis controls the Spotify app on the computer; no keys and no Premium needed. "Play My Favorite Songs on Spotify"
 opens Spotify's Quick Search, types the request and presses Shift+Enter (Spotify's own "play the selected result"), then
 checks the music changed; your own playlists come first. Pause, resume, next and previous use Spotify's AppleScript on a
 Mac and the media keys on Windows; jumping to a minute works on a Mac. On a Mac this needs the Accessibility permission
-(without it Jervis opens the search and you press play). Your own Spotify developer keys in Settings, Optional services,
+(without it Jarvis opens the search and you press play). Your own Spotify developer keys in Settings, Optional services,
 switch to Spotify's online interface instead (Premium).
 
 ## Which AI answers
@@ -42,8 +47,8 @@ switch to Spotify's online interface instead (Premium).
   planning, code and computer control use `qwen2.5-coder:7b` (else `qwen2.5:7b`, `llama3.1:8b`, `qwen3:8b`...), and
   chat uses the same one, since an 8 GB GPU holds one 7B model at a time and swapping costs ~4 s (the Settings
   default `OLLAMA_MODEL=llama3.2` doesn't count as a choice; any other value does). Hebrew is translated by DictaLM
-  (below). Override with `JERVIS_AGENT_MODEL` / `JERVIS_CHAT_MODEL` / `JERVIS_HEBREW_MODEL` /
-  `JERVIS_TRANSLATE_MODEL` / `JERVIS_NLU_MODEL` in `.env`.
+  (below). Override with `JARVIS_AGENT_MODEL` / `JARVIS_CHAT_MODEL` / `JARVIS_HEBREW_MODEL` /
+  `JARVIS_TRANSLATE_MODEL` / `JARVIS_NLU_MODEL` in `.env`.
   Every call names its context size (16k; 4k for DictaLM so it stays on the GPU), so Ollama never reloads a
   model between chat and commands, and never picks its own 32k-64k default (llama3.2 at 64k: 10 GB, partly on CPU).
 - **Understanding what you mean** (`nlu.py`): speech → text → a deterministic rewrite (Hebrew and mixed commands —
@@ -53,7 +58,7 @@ switch to Spotify's online interface instead (Premium).
   **structured intent** from a closed list (`open_app`, `object_resize`, `undo`, `clarify`...; never code), checked
   against what was actually said, and turned back into the canonical English command for the same handlers.
   Unclear ("make it", "take it to a level") gets one short question, and the answer completes it ("taller").
-  Chit-chat never becomes an action. `python nlu_eval.py [--heldout|--fresh] [models...]` scores models on Jervis's
+  Chit-chat never becomes an action. `python nlu_eval.py [--heldout|--fresh] [models...]` scores models on Jarvis's
   own language test set (English, Hebrew, mixed, speech slips, follow-ups, noise).
 - **Hebrew** (`language.py`, `stt_local.py`): speak Hebrew, English, or both in one sentence ("תפתח Blender
   ותיצור detailed house") — no setting to switch.
@@ -62,7 +67,7 @@ switch to Spotify's online interface instead (Premium).
     mixed-in English words included. Only the model for the language you're speaking stays on the GPU (Hebrew: 1.8 GB,
     English: 1.6 GB); switching language loads the other one in the background (a few seconds; meanwhile the loaded
     one still answers). Measured on real recorded Hebrew (FLEURS): 15.8% word errors (20.6% with background noise),
-    vs 17.3% / 26.0% for ivrit.ai's turbo, for ~0.2 s more on a short command. `JERVIS_HEBREW_SPEECH=turbo` (Settings,
+    vs 17.3% / 26.0% for ivrit.ai's turbo, for ~0.2 s more on a short command. `JARVIS_HEBREW_SPEECH=turbo` (Settings,
     advanced) picks the turbo. Recordings are resampled properly (libswresample) before Whisper hears them. Without a
     usable GPU: `small` (Hebrew, weaker) + `base.en`. Settings, Voice, "Languages I speak: English only" goes back to
     `base.en` alone.
@@ -78,21 +83,21 @@ switch to Spotify's online interface instead (Premium).
     English kept if a translation fails its checks) and spoken by a **natural Hebrew voice**: the Piper voice "Shaul"
     with the phonikud diacritizer and pronunciation (`hebrew_voice.py`, ~0.2 s a sentence on the CPU, 380 MB
     downloaded once with the Hebrew models). Heard back by Whisper it comes through with 3.3% letter errors, vs 6.0%
-    for Windows' Asaf, which stays the fallback (and `JERVIS_HEBREW_VOICE=windows` picks it). English words in a Hebrew
+    for Windows' Asaf, which stays the fallback (and `JARVIS_HEBREW_VOICE=windows` picks it). English words in a Hebrew
     sentence are said through CMUdict, with an accent. Licenses: the voice is CC BY-NC (non-commercial use only),
-    phonikud CC BY 4.0, CMUdict BSD. He answers in the language you last spoke (Settings, Voice, "Jervis answers in"
+    phonikud CC BY 4.0, CMUdict BSD. He answers in the language you last spoke (Settings, Voice, "Jarvis answers in"
     can fix it).
   - *On an 8 GB GPU* (`local_llm.gpu_slot`): Ollama can't see the GPU memory other programs use (the speech
     models' ~1.8 GB, Discord, a game), loaded whole models anyway, and Windows moved the overflow to system RAM —
-    answers became 20-50x slower (minutes, in a real session). Now, before a model loads, Jervis unloads his other
+    answers became 20-50x slower (minutes, in a real session). Now, before a model loads, Jarvis unloads his other
     model, measures what's really free (`nvidia-smi`) and asks for only the layers that fit (the rest run on the CPU:
     slower, never stuck); one model loads at a time. Plain talk (no tools, numbers or pictures) is answered by the
     bilingual DictaLM in one call — Hebrew from the Hebrew, English while DictaLM is the model loaded — so a Hebrew
     conversation doesn't swap models; the agent's coder model is loaded only for commands, building and code (a swap
     of ~4-7 s). The two translation directions share one prompt, so it stays cached between them. A translator that
-    fails is reported at once (in Hebrew) instead of queuing more calls. `JERVIS_GPU_FIT=off` /
-    `JERVIS_GPU_MARGIN_MB` adjust it. "היי ג'רביס" still wakes him.
-  - *Timing:* every request leaves one line in `logs/jervis.log` — `Turn 7 (spoken, he): stt 0.8s · understand 1.8s
+    fails is reported at once (in Hebrew) instead of queuing more calls. `JARVIS_GPU_FIT=off` /
+    `JARVIS_GPU_MARGIN_MB` adjust it. "היי ג'רביס" still wakes him.
+  - *Timing:* every request leaves one line in `logs/jarvis.log` — `Turn 7 (spoken, he): stt 0.8s · understand 1.8s
     (model) · command 0.0s · reply-translate 1.1s · speak 2.3s · total 6.0s [program task running]` — never the words;
     every model call logs its load, prompt and generation time, and every GPU plan how many layers fit.
 - **Exact numbers:** for a question with numbers in it ("3 apples plus 2 dozen, minus 7?"), the model writes a tiny
@@ -104,7 +109,7 @@ switch to Spotify's online interface instead (Premium).
 ## Computer control
 
 Ask for something on screen, like "click Save", "scroll down", "type hello into the search box" or "use my computer
-to turn on dark mode in Chrome". Jervis works in a loop: he reads the window in front through the system's
+to turn on dark mode in Chrome". Jarvis works in a loop: he reads the window in front through the system's
 accessibility interface (UI Automation on Windows, the Accessibility API on macOS), picks one action, does it, waits
 for the screen to settle and checks what changed before the next step.
 
@@ -117,7 +122,7 @@ for the screen to settle and checks what changed before the next step.
 - **Never:** types into password fields, presses the emergency shortcut, or runs more than 25 steps per task.
 - **Privacy:** screenshots are only ever looked at by the local vision model, never sent anywhere, unless you turn on
   *Settings, Computer control, "Look at the screen with" > Online* yourself (some apps, like Spotify, don't expose
-  anything to accessibility at all, so this is the only way Jervis can find things in them without a local vision
+  anything to accessibility at all, so this is the only way Jarvis can find things in them without a local vision
   model). With a Groq key, the list of buttons and fields in the window (not a picture of the screen) goes to Groq
   along with the request either way.
 
@@ -125,14 +130,14 @@ for the screen to settle and checks what changed before the next step.
   `pointer_motion.py`) instead of jumping, and only clicks once it has arrived. Grab the mouse during a glide and he
   stops at once, without clicking, and pauses.
 
-On macOS, turn on Jervis in *System Settings > Privacy & Security > Accessibility*; macOS asks the first time.
+On macOS, turn on Jarvis in *System Settings > Privacy & Security > Accessibility*; macOS asks the first time.
 
 **Write where your cursor is** (`write_here.py`). Put the cursor in a document, an email, a chat box or a code
 editor and say "write me a story about someone who discovers a secret island" (or "type a short reply here"). He
 writes exactly the text asked for, brings that window back (the app puts its own caret back), checks the cursor is
 still in an editable, non-password field, types it (short text) or pastes it (long text and code — your clipboard is
 put back afterwards), then **reads the field back** to check the text really arrived. A plain "write me a story"
-typed into Jervis's own window stays a chat answer; "write it here", or saying it while you're in a text app, types it.
+typed into Jarvis's own window stays a chat answer; "write it here", or saying it while you're in a text app, types it.
 
 **Questions about your screen** (`screen_reader.py`): "what's on my screen?", "what does this error say?", "explain
 this error". He reads the window you're working in through the accessibility interface (app, window, dialogs,
@@ -170,7 +175,7 @@ curving `path()` (trunks, branches, curved legs), `lathe()` (vases, columns), `e
 `opening()`/`hollow()` (real window and door holes), `taper`/`bend`/`roughen`, bevels and subdivision, seeded variation
 (`rng`, `points_on_sphere`...), construction helpers that get the geometry right (`legs_under()`, `supports()`), and
 textured procedural materials (`bark`, `wood`, `leaves`, `stone`, `brick`, `roof tiles`, `plaster`, `glass`...). After a
-build Jervis **inspects** how each part was actually made and judges it, then **refines** it:
+build Jarvis **inspects** how each part was actually made and judges it, then **refines** it:
 - *Malformed* (fixed during verification, any quality level): legs not under the seat, parts below the ground, a
   chair that would tip over, a trunk that doesn't reach the ground, a roof off its walls.
 - *Too primitive* (one or two improvement rounds): a cylinder-and-sphere "tree", too few parts, razor-sharp boxes,
@@ -243,7 +248,7 @@ game yet; it needs cheats on (Open to LAN, "Allow Cheats").
 
 "Write a Python program that prints the first 15 prime numbers", then "make it also print their sum", "run it again"
 (`agent_code.py`). The code is never assumed to work: the local coding model writes the program (non-interactive,
-ending with its own self-checks), Jervis **runs** it in its own folder (*projects* in his data folder) with a time
+ending with its own self-checks), Jarvis **runs** it in its own folder (*projects* in his data folder) with a time
 limit, **inspects** the exit code, any traceback, the self-checks and the expected output, and on a failure gives the
 model the real error to **fix** it and runs it again (up to three fixes). He reports only what was verified ("it ran
 and its self-checks passed; it printed ...") and shows the code in the window. Code that deletes files, starts
@@ -251,53 +256,53 @@ programs or uses the network runs only after you say yes. Python and JavaScript 
 
 ## Listening
 
-- Say the request with the wake phrase in one breath — "Hey Jervis, create a house in Blender" — and it's done
+- Say the request with the wake phrase in one breath — "Hey Jarvis, create a house in Blender" — and it's done
   right away (it used to wake up and drop the request).
-- However the name is heard ("hey Gravis", "okay Gervis", "Jarvis"), after a greeting it's Jervis; inside a sentence
+- However the name is heard ("hey Gravis", "okay Gervis", "Jarvis"), after a greeting it's Jarvis; inside a sentence
   ("customer service", a friend called Travis) it's just a word.
 - A sentence cut off by a pause ("put a palm tree next to the..." "...house") is waited on for a few seconds and
   joined, instead of acting on half a command.
-- Tests can play WAV recordings to the real listening loop instead of the microphone (`JERVIS_TEST_AUDIO`).
+- Tests can play WAV recordings to the real listening loop instead of the microphone (`JARVIS_TEST_AUDIO`).
 
 ## Phone control
 
 Turned off by default (Settings, Computer control, *"Let your phone control this computer"*).
 
-**Pairing a phone, the first time:** say **"connect my phone"** — Jervis asks, out loud and in the window, *"Want to
+**Pairing a phone, the first time:** say **"connect my phone"** — Jarvis asks, out loud and in the window, *"Want to
 connect your phone, so you can talk to me and control this computer from it?"*, and only on "yes" does a QR code show
 up on screen ("Scan the QR code on your screen with your phone to connect."). Scan it with your phone's camera (same
 Wi-Fi as the computer) and it pairs on its own — no typing. Can't scan it? The address and code are shown as text
 too. This is a one-time step per phone, always over your own Wi-Fi — it's also when your phone gets its own
 encryption key (see "Away from Wi-Fi" below).
 
-**Connecting an already-paired phone:** say "connect my phone" again and Jervis instead sends a push notification —
-*"Jervis wants to connect to this computer"* — with **Confirmed** / **Not Confirmed** buttons right on it. Tap
-Confirmed and Jervis says "Your phone is connected"; the phone's page opens to a screen with a press-and-hold mic
-button. Hold it, talk, let go — Jervis answers exactly as he would if you'd spoken to him directly, and the reply
+**Connecting an already-paired phone:** say "connect my phone" again and Jarvis instead sends a push notification —
+*"Jarvis wants to connect to this computer"* — with **Confirmed** / **Not Confirmed** buttons right on it. Tap
+Confirmed and Jarvis says "Your phone is connected"; the phone's page opens to a screen with a press-and-hold mic
+button. Hold it, talk, let go — Jarvis answers exactly as he would if you'd spoken to him directly, and the reply
 shows up on the phone too (read aloud there, using your phone's own voice). The quick-action buttons (open an app,
 play a song, pause music, play on YouTube, search Google) still work as before. Say "disconnect my phone", or tap
 **Disconnect** on the phone, to end it — it otherwise stays connected until one of you does.
 
 Say "what phones are paired" or "forget my paired phones" to check or undo pairing.
 
-**Notifications:** tap "Enable notifications" on the phone page (works even before pairing) and Jervis reaches your
+**Notifications:** tap "Enable notifications" on the phone page (works even before pairing) and Jarvis reaches your
 phone with a real system notification — including every "connect my phone" request — even if the page isn't open.
 This uses your phone browser's own push service (the same one every other site's notifications use already), not
-any server of Jervis's own. **On iPhone, Safari only delivers these to a page added to the Home Screen** (Share,
+any server of Jarvis's own. **On iPhone, Safari only delivers these to a page added to the Home Screen** (Share,
 *Add to Home Screen*) — a plain Safari tab can't receive push notifications at all; that's an Apple platform rule,
-not something Jervis can work around.
+not something Jarvis can work around.
 
-If you say "connect my phone" and Jervis can't reach any paired phone (notifications never got turned on), he
+If you say "connect my phone" and Jarvis can't reach any paired phone (notifications never got turned on), he
 tells you exactly where to go — with a relay configured, that's the relay's own stable link (works from anywhere,
 never changes with your computer's local IP); without one, your computer's local address. Either way it's a
 one-time step: open it, tap "Enable notifications," done.
 
 Prefer a real text message instead, with no page visit ever needed? Fill in the four Twilio fields (Settings,
-Optional services) — a free account at twilio.com. Jervis then texts you the "connect my phone" question directly
+Optional services) — a free account at twilio.com. Jarvis then texts you the "connect my phone" question directly
 (for the *first-ever* pairing only; the notification-and-tap flow needs push notifications, since a text can't
 carry tappable buttons).
 
-**Away from Wi-Fi:** works out of the box — Jervis ships pointed at a shared relay by default (Settings, Computer
+**Away from Wi-Fi:** works out of the box — Jarvis ships pointed at a shared relay by default (Settings, Computer
 control, advanced, "Relay address"), so an already-paired phone can connect from anywhere, not just this Wi-Fi, with
 nothing to set up. The notification-and-tap flow above works exactly the same way whether your phone is next to the
 computer or on cellular data across town. Clear that field to keep phone control same-Wi-Fi only, or point it at
@@ -307,7 +312,7 @@ between them, never anything it can read (see `phone_crypto.py` if you want the 
 
 *"The phone page couldn't be loaded" (fixed):* the installed engine was built without `phone_client.html`,
 `phone_sw.js` and `confirm.html`, so the page every phone (and the Connect window) asks for answered with an error.
-They're now packaged, `jervis-backend --selftest` checks every bundled file, and `tests/test_packaging.py` fails if
+They're now packaged, `jarvis-backend --selftest` checks every bundled file, and `tests/test_packaging.py` fails if
 code reads a file the build doesn't include.
 
 ## What works where
@@ -328,19 +333,19 @@ code reads a file the build doesn't include.
 | Edit a document he wrote | yes | Word, Notepad, Google Docs |
 
 ### Permissions
-- **macOS** asks the first time Jervis uses the microphone and the first time he controls Chrome, Word, Notes,
+- **macOS** asks the first time Jarvis uses the microphone and the first time he controls Chrome, Word, Notes,
   Stremio and so on: click Allow. In Chrome, turn on *View > Developer > Allow JavaScript from Apple Events* for
   pause / resume / jump. Computer control, Google Docs and Stremio key presses need *System Settings > Privacy &
   Security > Accessibility*.
 - **Windows** needs no special permissions. Word must be installed for Word documents. Because Windows has no
-  scripting interface for browsers, Jervis controls them like a person would (finds the window, presses shortcuts), so
+  scripting interface for browsers, Jarvis controls them like a person would (finds the window, presses shortcuts), so
   keep the tab you want controlled as the active tab of its window.
 
 ## When something goes wrong
 
-If the engine stops by itself, the window says "Jervis's engine keeps stopping" and the details are in the log
+If the engine stops by itself, the window says "Jarvis's engine keeps stopping" and the details are in the log
 (*Settings, Diagnostics*). A crash inside a native library (audio, speech, the AI runtime) used to leave nothing in
-the log; now every thread's stack is written to `logs/crash.log` as it happens and copied into `logs/jervis.log` on the
+the log; now every thread's stack is written to `logs/crash.log` as it happens and copied into `logs/jarvis.log` on the
 next start, and the window's own log (`logs/window.log`) keeps the last error output of the engine with a readable
 exit code. (The crash behind "the engine keeps stopping" since September: two threads starting the audio system at the
 same moment — the Settings device list and the microphone — crash PortAudio. All audio-system use now goes through one
@@ -352,15 +357,17 @@ For development. You need Python 3.12 (3.11–3.14 work on macOS; on Windows PyA
 Node.js 20. On macOS, `brew install portaudio` first.
 
 ```
-python3 run.py                 # makes venv/, installs requirements.txt and the window, starts Jervis
+python3 run.py                 # makes venv/, installs requirements.txt and the window, starts Jarvis
 venv/bin/python -m pytest -q   # the tests (no microphone, network or real apps needed)
 ```
 
-When running from source, Jervis keeps his files in this folder, and a `.env` file here is imported into Settings the
-first time. `python3 run.py --local-images` adds local picture generation (PyTorch + Diffusers, several GB).
+When running from source, Jarvis keeps his files in this folder, and a `.env` file here is imported into Settings the
+first time. One line in `.env` keeps deciding after that: `LLM_BACKEND=groq`, `ollama` or `auto` chooses which AI
+answers (choosing it in Settings rewrites the line). With `groq`, Jarvis closes Ollama when he starts and frees the
+memory its model held (about 2.5 GB); there is then no offline backup. `python3 run.py --local-images` adds local picture generation (PyTorch + Diffusers, several GB).
 
 Installers are built by GitHub Actions (`.github/workflows/build.yml`) on real Windows and macOS machines: tests, then
-the engine (`jervis-backend.spec`, PyInstaller) and its `--selftest`, then the installer (electron-builder, config in
+the engine (`jarvis-backend.spec`, PyInstaller) and its `--selftest`, then the installer (electron-builder, config in
 `package.json`), then a fresh install test (`tests/installer/`): install, start, quit, check nothing is left running,
 uninstall. Pushing a tag like `v1.0.1` publishes a release. To build locally:
 
@@ -377,7 +384,7 @@ If you have two Google accounts in Chrome (each in its own Chrome profile), name
     GOOGLE_ACCOUNT_LEARNING=school account
     GOOGLE_ACCOUNT_PERSONAL=personal account
 
-Jervis then opens everything in the right profile, silently: learning things (school documents, Drive, Classroom, lectures and
+Jarvis then opens everything in the right profile, silently: learning things (school documents, Drive, Classroom, lectures and
 tutorials, learning sites) under the learning account, and everything else (Gmail, trailers, Netflix, fun documents) under the
 personal one. He decides from what you say ("for school" or "personal" settles it) and each decision is written to
 `logs/routing.log`. If one lands in the wrong account, say "wrong account" or "open it in my school account".
@@ -390,24 +397,24 @@ personal one. He decides from what you say ("for school" or "personal" settles i
 ## Solving equations
 
 "Solve 2x + 4 = 24", "x in: 3x^2 + 6x + 4", "what are the roots of x squared minus 9", "find x when 3x + 1 = 10". Linear and quadratic equations are
-solved by Jervis himself (exact fractions and roots, complex answers when there are no real ones), as a worksheet with the steps, instead of
+solved by Jarvis himself (exact fractions and roots, complex answers when there are no real ones), as a worksheet with the steps, instead of
 trusting the AI's arithmetic. Other equations still go to the AI.
 
 ## Full screen
 
-When you wake Jervis ("Hey Jervis") his window opens full screen. Press F to switch full screen on and off, Esc to leave it.
+When you wake Jarvis ("Hey Jarvis") his window opens full screen. Press F to switch full screen on and off, Esc to leave it.
 
 ## Graphs
 
-Give Jervis any function of x, spoken or typed: "graph 2x squared plus 4x plus 6", "plot sine of x over x", "graph e to the minus x squared",
+Give Jarvis any function of x, spoken or typed: "graph 2x squared plus 4x plus 6", "plot sine of x over x", "graph e to the minus x squared",
 "graph the absolute value of x minus 2", "graph 1 over x squared minus 1", "graph the natural log of x", "graph tan x", "plot y = sqrt(4 - x^2)".
 Polynomials, powers, roots, trigonometric and inverse trig, exponentials, logarithms, absolute value, fractions and combinations of them work
 (y equals something with x; circles and other curves that are not a function of x do not). Use brackets when the wording is ambiguous, e.g.
-"x over (x squared plus 1)"; the title above the graph always shows how Jervis read it.
+"x over (x squared plus 1)"; the title above the graph always shows how Jarvis read it.
 
 A window opens and draws the curve with a glow, on a grid that fits the function, with the x-intercepts, the highs and lows, the y-intercept and
 the asymptotes marked (parabolas also get their vertex and axis of symmetry). Move the mouse over it to read any point. **Save image** stores a PNG,
-Esc or "close the graph" closes it. Every graph stays: each one is also a small clickable picture in the conversation, ‹ › (or the arrow keys) step between them, G shows or hides the last one, and "show the graph again", "the previous graph", "the next graph" work by voice, as often as you like (kept until you restart Jervis). Only what is on screen is analysed: the window shows the interesting part of the graph, not all of it.
+Esc or "close the graph" closes it. Every graph stays: each one is also a small clickable picture in the conversation, ‹ › (or the arrow keys) step between them, G shows or hides the last one, and "show the graph again", "the previous graph", "the next graph" work by voice, as often as you like (kept until you restart Jarvis). Only what is on screen is analysed: the window shows the interesting part of the graph, not all of it.
 
 ## Weather
 
@@ -429,13 +436,13 @@ Everything it uses is free, with no account, no key and no paid plan that could 
 | Location without a city | [GeoJS](https://www.geojs.io) | Free, no key |
 | Drawing the map | [MapLibre GL](https://maplibre.org) 5.24 (bundled in vendor/maplibre) | BSD licence |
 
-If Jervis were ever sold or made part of a paid product, Open-Meteo (non-commercial) and RainViewer (personal use)
+If Jarvis were ever sold or made part of a paid product, Open-Meteo (non-commercial) and RainViewer (personal use)
 would need replacing; MET Norway and OpenFreeMap already allow that.
 
 ## Distance on a 3D globe
 
 "What is the distance between New York and Tel Aviv?", "how far is Paris from Tokyo", "show me the distance between Rome and
-Berlin on the globe". Jervis looks up both places (a free geocoding service, no key needed), works out the straight-line
+Berlin on the globe". Jarvis looks up both places (a free geocoding service, no key needed), works out the straight-line
 (great-circle) distance, and opens a spinning 3D globe — real, richly coloured Earth imagery (bundled, works offline)
 with drifting clouds, a day/night terminator and an atmosphere glow, not a wireframe — with a glowing arc between them. Drag to rotate it yourself, scroll to
 zoom, **Save image** stores a PNG. Every globe stays, exactly like the graphs: click its picture in the chat, use ‹ › or the
@@ -453,7 +460,7 @@ Naming what you want in the same breath ("open Netflix and play the office") ski
 
 Setup once: get a free Desktop app OAuth client from Google Cloud Console (with the Calendar API turned on) and paste
 its client ID and secret into Settings, Optional services (turn on *Show advanced settings*); `.env.example` has the
-exact steps. The very first time you use it, a browser tab opens once for you to sign in; after that Jervis remembers
+exact steps. The very first time you use it, a browser tab opens once for you to sign in; after that Jarvis remembers
 it in a local file, `.calendar_token.json`, in his data folder, never shared.
 
 "Open my calendar" (or "check my calendar", "create a calendar event" on their own) then asks: hear the next events, or
@@ -466,13 +473,13 @@ make a new one?
 
 ## Writing without saying what, up front
 
-"Open a document on Google Drive", "open a blank Word document" (no content yet): Jervis opens it and asks "What would
+"Open a document on Google Drive", "open a blank Word document" (no content yet): Jarvis opens it and asks "What would
 you like to write?" Say what you want, and he writes it in there. "Never mind" cancels. Saying the content up front
 ("open a document and write a poem about the sea") still works in one go, without the extra question.
 
 ## Planets
 
-"Tell me about Mars", "show me Saturn", "what is Neptune like", "tell me about the Sun" or "the Moon". Jervis tells you the
+"Tell me about Mars", "show me Saturn", "what is Neptune like", "tell me about the Sun" or "the Moon". Jarvis tells you the
 key facts (size, day and year length, distance from the Sun, moons, temperature) and opens a real, lit, spinning 3D model
 next to a starfield — the same look as the Earth-distance globe, textures bundled so it works offline, with real rings on
 Saturn. Every model stays, exactly like the graphs and the globe: click its picture in the chat, ‹ › or the arrow keys, P
@@ -489,10 +496,10 @@ responsive first and sharpens back up automatically the moment you let go.
 Calculations come back as a worksheet: a one-line spoken answer, then the Problem, numbered Steps (one formula each, typeset like a
 textbook with fractions, roots and powers) and a highlighted Answer box. Formulas are typeset by KaTeX (bundled in `vendor/katex`, works offline).
 
-## Typing to Jervis
+## Typing to Jarvis
 
 Under the orb there is a box: type anything, words or numbers, and press Enter. It works exactly like saying it, so it also works
-while the microphone is muted or Jervis is asleep, and if he is talking he stops to answer. Press `/` to jump to the box, the up and
+while the microphone is muted or Jarvis is asleep, and if he is talking he stops to answer. Press `/` to jump to the box, the up and
 down arrows bring back what you typed before, and Escape leaves the box (the M and Space shortcuts are off while you type).
 
 ## Voice-reactive core
@@ -503,7 +510,7 @@ use the microphone: allow it. If you say no, everything else still works and the
 
 ## Google Classroom
 
-"Check Google Classroom for work I didn't submit" (or "do I have missing homework?"). Jervis opens Classroom in your school
+"Check Google Classroom for work I didn't submit" (or "do I have missing homework?"). Jarvis opens Classroom in your school
 account, shows it, and tells you which assignments are missing (overdue) and which are still to turn in. He reads the page in
 Chrome, so turn on Chrome's **View > Developer > Allow JavaScript from Apple Events** once, in the school profile's window.
 Without it he still opens Classroom and tells you how to turn it on. Reading works on macOS; on Windows he only opens the page.
@@ -512,10 +519,10 @@ What he read is saved in `logs/classroom_last.json`.
 ## WhatsApp (macOS)
 
 "Do I have unread WhatsApp messages?", then "read them", or "what did Dana write me?" / "read my messages from Mom".
-Jervis reads WhatsApp Desktop's local chat data on your Mac, read-only: he cannot send, reply or mark anything as read.
+Jarvis reads WhatsApp Desktop's local chat data on your Mac, read-only: he cannot send, reply or mark anything as read.
 Message text is only spoken and shown in the window. It is never sent to the online AI, never added to his memory, and never
-written to the transcript files. If macOS blocks access, allow the app that runs Jervis in System Settings > Privacy & Security >
-Full Disk Access. Turn it off in Settings, Privacy. WhatsApp only updates its data while it is open, so Jervis
+written to the transcript files. If macOS blocks access, allow the app that runs Jarvis in System Settings > Privacy & Security >
+Full Disk Access. Turn it off in Settings, Privacy. WhatsApp only updates its data while it is open, so Jarvis
 says so when what he reads may be old.
 
 ## Images
@@ -525,9 +532,9 @@ about it, or just say what you want — a spoken command alone works too if you 
 part of the conversation, so a follow-up like "what's wrong with it?" or "what should I do about it?" still refers to the
 last one you shared, exactly like the graphs and globes already do for equations and places.
 
-**Understanding a picture** (works out of the box — no extra key, same `GROQ_API_KEY` as the rest of Jervis):
+**Understanding a picture** (works out of the box — no extra key, same `GROQ_API_KEY` as the rest of Jarvis):
 - "What's in this picture?", "describe this image", "look at this screenshot" — a plain description.
-- "What does this error mean?", "what's wrong with this screenshot, and how do I fix it?" — Jervis looks at it *and*
+- "What does this error mean?", "what's wrong with this screenshot, and how do I fix it?" — Jarvis looks at it *and*
   reasons about what you asked, not just a caption.
 - "Read the text in this image", "what does this screenshot say", "extract the text" — OCR.
 - "Compare these two images", "what changed between these screenshots?" — once at least two pictures have been shared.
@@ -542,9 +549,9 @@ For higher quality, and for **editing** an existing picture (Pollinations only c
 you show it), paste an OpenAI key into Settings, Optional services
 (create one at <https://platform.openai.com> — "API keys" in your account, and add a small amount of billing credit
 there too, since image generation isn't covered by any free OpenAI tier; `OPENAI_IMAGE_MODEL` in `.env.example` lets
-you pick a different model). When it's set, Jervis prefers it for generating; if it ever fails (no credits, a bad
+you pick a different model). When it's set, Jarvis prefers it for generating; if it ever fails (no credits, a bad
 key, a service hiccup), generation quietly falls back to the free Pollinations service instead of giving up — and
-says so, so it's never a silent switch. Editing always needs the OpenAI key; without it Jervis says so plainly
+says so, so it's never a silent switch. Editing always needs the OpenAI key; without it Jarvis says so plainly
 instead of pretending to edit something.
 
 **Generating unlimited pictures for free, on this computer**, needs no key or account either, but is a bigger
@@ -552,11 +559,11 @@ install (a few GB) and needs real free memory to run well:
 
     python3 run.py --local-images
 
-That installs PyTorch and Diffusers (see `requirements-local-images.txt`) and, the first time you ask Jervis to draw
-something afterward, downloads the model itself (a few GB more, once). When it's set up, Jervis prefers it over
+That installs PyTorch and Diffusers (see `requirements-local-images.txt`) and, the first time you ask Jarvis to draw
+something afterward, downloads the model itself (a few GB more, once). When it's set up, Jarvis prefers it over
 OpenAI and Pollinations — it's genuinely unlimited and never leaves this computer. **This needs real free memory to
 run well** (16 GB total RAM is the comfortable floor; 8 GB machines can work but may be slow or, if the system is
-already low on free memory, time out and fall back to the free cloud service instead — Jervis gives up after about
+already low on free memory, time out and fall back to the free cloud service instead — Jarvis gives up after about
 2 minutes rather than hang forever, so a bad fit here never blocks anything, it just quietly uses Pollinations that
 time; tested on an actual 8 GB machine under memory pressure, that recovery took under 2.5 minutes worst case). Only
 worth setting up if this computer has memory to spare; otherwise the free cloud service is the better fit. Unlike
@@ -567,11 +574,11 @@ OpenAI, the local model has no content filter — it's running only on this comp
 - "Open this image", "save this image" — opens the most recent picture in your normal photo viewer, or copies it to
   your Desktop (or Downloads).
 
-Pictures you attach, and everything Jervis makes or edits, are saved under `images/` (`uploads/`, `generated/`,
-`edited/`) — nothing is uploaded anywhere without you asking Jervis to look at, generate, or edit it. A picture over
+Pictures you attach, and everything Jarvis makes or edits, are saved under `images/` (`uploads/`, `generated/`,
+`edited/`) — nothing is uploaded anywhere without you asking Jarvis to look at, generate, or edit it. A picture over
 20 MB, or one that isn't really an image (corrupted, wrong format), is rejected with a clear reason rather than
 crashing anything; PNG, JPEG, WEBP, GIF and BMP are all supported.
 
 **A known rough edge:** reading text out of a busy or high-contrast screenshot occasionally repeats part of the
-transcription (a quirk of the current vision model, not something Jervis's own code introduces) — the text itself is
+transcription (a quirk of the current vision model, not something Jarvis's own code introduces) — the text itself is
 still accurate, just sometimes said twice. Ask again if it happens.

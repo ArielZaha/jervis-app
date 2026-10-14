@@ -1,0 +1,27 @@
+{
+ "name": "phone",
+ "frames": 649,
+ "fps": 30,
+ "width": 788,
+ "height": 1704,
+ "marks": {
+  "choose": 0,
+  "computer": 67,
+  "sent:Play Radiohead on Spotify": 171,
+  "reply:Play Radiohead on Spotify": 183,
+  "switch": 273,
+  "sent:Open Spotify": 351,
+  "reply:Open Spotify": 363,
+  "sent:Graph x^2 - 4": 480,
+  "reply:Graph x^2 - 4": 492,
+  "graph": 493
+ },
+ "notes": {
+  "computer": "JARVIS\n4:24 PM\n\nPlaying No Surprises by Radiohead on Spotify.",
+  "phone": "JARVIS\n4:24 PM\n\nOpened Spotify.",
+  "graph": "Here's your parabola. It opens upward, its lowest point is at x equals 0 and y equals negative 4, and it crosses the x-axis at x equals negative 2 and x equals 2.\n\nEquation: y = x2 - 4\nVertex: (0, -4)\nAxis of symmetry: x = 0\nY-intercept: (0, -4)\nRoots: x = -2 and x = 2"
+ },
+ "opened": [
+  "spotify://"
+ ]
+}

@@ -1,4 +1,4 @@
-"""The scene Jervis is working on (scene_state.py): the reference picture kept apart from the current scene, and
+"""The scene Jarvis is working on (scene_state.py): the reference picture kept apart from the current scene, and
 the words people use for things resolved by meaning, position as the camera sees it, and the conversation."""
 import pytest
 

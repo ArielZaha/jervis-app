@@ -1,7 +1,7 @@
-"""Run Jervis's command handling without letting it touch the computer.
+"""Run Jarvis's command handling without letting it touch the computer.
 
-Every way Jervis acts on the machine (starting programs, AppleScript, PowerShell, opening web pages, notifications,
-network calls) is replaced by a recorder, so a test can check what Jervis *would* have done, and a sentence that
+Every way Jarvis acts on the machine (starting programs, AppleScript, PowerShell, opening web pages, notifications,
+network calls) is replaced by a recorder, so a test can check what Jarvis *would* have done, and a sentence that
 wrongly triggers a command shows up as a recorded action instead of opening an app on the developer's computer.
 """
 import os
@@ -14,13 +14,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-os.environ.setdefault("JERVIS_DATA_DIR", tempfile.mkdtemp(prefix="jervis-test-"))
-os.environ.setdefault("JERVIS_AUDIO", "off")
+os.environ.setdefault("JARVIS_DATA_DIR", tempfile.mkdtemp(prefix="jarvis-test-"))
+os.environ.setdefault("JARVIS_AUDIO", "off")
 os.environ["GROQ_API_KEY"] = ""           # tests never call an online AI
 os.environ["SPOTIFY_CLIENT_ID"] = ""      # nor Spotify
 os.environ["LLM_BACKEND"] = "ollama"
 
-actions = []   # what Jervis tried to do, as short strings
+actions = []   # what Jarvis tried to do, as short strings
 
 
 class _FakeProcess:

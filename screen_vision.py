@@ -18,7 +18,7 @@ GROUNDING_MAX = images.LOCAL_VISION_MAX_DIMENSION
 
 
 def _mode() -> str:
-    return (os.getenv("JERVIS_SCREEN_VISION") or "local").strip().lower()
+    return (os.getenv("JARVIS_SCREEN_VISION") or "local").strip().lower()
 
 
 def _local_available() -> bool:
@@ -30,7 +30,11 @@ def _local_available() -> bool:
             return False
         wanted = os.getenv("OLLAMA_VISION_MODEL") or "qwen2.5vl:3b"
         tags = requests.get(f"{local_llm.URL}/api/tags", timeout=2).json().get("models", [])
-        return any(local_ai.LocalAI._has([m.get("name", "")], wanted) for m in tags)
+        if any(local_ai.LocalAI._has([m.get("name", "")], wanted) for m in tags):
+            return True
+        if local_ai.MANAGER:
+            local_ai.MANAGER.fetch_vision()   # first time the screen is needed: fetch the model for next time
+        return False
     except Exception:
         return False
 

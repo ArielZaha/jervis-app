@@ -95,7 +95,7 @@ def _alive():
 
 
 def test_blender_agent_work_asks_no_mouse_permission(monkeypatch):
-    monkeypatch.setenv("JERVIS_COMPUTER_CONTROL", "ask")
+    monkeypatch.setenv("JARVIS_COMPUTER_CONTROL", "ask")
     monkeypatch.setattr(app.blender_control.BlenderBridge, "ping", lambda self, timeout=3: True)
     monkeypatch.setattr(app, "computer_environment", lambda: type("Env", (), {"available": lambda s: (True, "")})())
     started = threading.Event()
@@ -142,7 +142,7 @@ MODELS = ["llama3.2:latest", "qwen2.5-coder:7b", "qwen2.5vl:3b", "qwen3:8b"]
 
 
 def test_roles_pick_the_strong_model_for_agent_work_and_the_vision_model_for_screens(monkeypatch):
-    for var in ("JERVIS_CHAT_MODEL", "JERVIS_AGENT_MODEL", "OLLAMA_MODEL", "OLLAMA_VISION_MODEL"):
+    for var in ("JARVIS_CHAT_MODEL", "JARVIS_AGENT_MODEL", "OLLAMA_MODEL", "OLLAMA_VISION_MODEL"):
         monkeypatch.delenv(var, raising=False)
     assert local_llm.model_for("agent", MODELS) == "qwen2.5-coder:7b"
     assert local_llm.model_for("chat", MODELS) == "qwen2.5-coder:7b"     # one warm model: no swapping on an 8 GB GPU
@@ -152,7 +152,7 @@ def test_roles_pick_the_strong_model_for_agent_work_and_the_vision_model_for_scr
 
 def test_the_settings_default_chat_model_is_not_a_choice(monkeypatch):
     """Settings always fills in OLLAMA_MODEL=llama3.2: that default must not split chat onto a second model."""
-    for var in ("JERVIS_CHAT_MODEL", "JERVIS_AGENT_MODEL", "JERVIS_HEBREW_MODEL"):
+    for var in ("JARVIS_CHAT_MODEL", "JARVIS_AGENT_MODEL", "JARVIS_HEBREW_MODEL"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("OLLAMA_MODEL", "llama3.2")
     assert local_llm.model_for("chat", MODELS) == "qwen2.5-coder:7b"
@@ -163,9 +163,9 @@ def test_the_settings_default_chat_model_is_not_a_choice(monkeypatch):
 
 
 def test_roles_can_be_overridden(monkeypatch):
-    monkeypatch.setenv("JERVIS_CHAT_MODEL", "llama3.2")
+    monkeypatch.setenv("JARVIS_CHAT_MODEL", "llama3.2")
     assert local_llm.model_for("chat", MODELS) == "llama3.2:latest"
-    monkeypatch.setenv("JERVIS_AGENT_MODEL", "qwen3:8b")
+    monkeypatch.setenv("JARVIS_AGENT_MODEL", "qwen3:8b")
     assert local_llm.model_for("agent", MODELS) == "qwen3:8b"
 
 

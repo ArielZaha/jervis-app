@@ -1,0 +1,16 @@
+{
+ "name": "android",
+ "frames": 344,
+ "fps": 30,
+ "width": 824,
+ "height": 1832,
+ "marks": {
+  "sent:Distance between Paris and Rome": 91,
+  "reply:Distance between Paris and Rome": 103,
+  "globe": 104
+ },
+ "notes": {
+  "globe": "The distance between Paris, Île-de-France Region, France and Rome, Lazio, Italy is about 1,107 kilometers, or 688 miles, in a straight line.\n\nFrom: Paris, Île-de-France Region, France\nTo: Rome, Lazio, Italy\nStraight-line (great-circle) distance: 1,107 km (688 mi)\nInitial heading: 130.6° from Paris, Île-de-France Region, France\nDirect flight (estimate): about 1,162 km flown, roughly 1 h 55 min\nPasses over: France, Switzerland and Italy"
+ },
+ "opened": []
+}

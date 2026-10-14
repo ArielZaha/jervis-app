@@ -1,4 +1,4 @@
-"""Jervis language evaluation: realistic commands (English, Hebrew, mixed, speech-recognition slips, follow-ups,
+"""Jarvis language evaluation: realistic commands (English, Hebrew, mixed, speech-recognition slips, follow-ups,
 ambiguity, chit-chat) run through the language-understanding layer, scored against the intent that's right.
 
     python nlu_eval.py                          the deterministic layer + every installed candidate model
@@ -60,7 +60,7 @@ CASES = [
     ("תחזור ל-Blender", SPOTIFY, "switch_app", {"app": "blender"}),
     # speech-recognition slips
     ("Open blend ever", {}, "open_app", {"app": "blender"}),
-    ("Jervis stay control", {}, "control_start", {}),
+    ("Jarvis stay control", {}, "control_start", {}),
     ("make the cube girl", BLENDER, "object_resize", {"change": "bigger"}),
     ("open spot if I", {}, "open_app", {"app": "spotify"}),
     # genuinely unclear / not commands
@@ -189,7 +189,7 @@ def _command_ok(intent, slots, command) -> bool:
 
 
 def pipeline_correct(case, got) -> bool:
-    """What Jervis really does: the deterministic rewrite when it recognises the command, else the model's intent
+    """What Jarvis really does: the deterministic rewrite when it recognises the command, else the model's intent
     through nlu.decide (clarify when an action lacks what it needs, chat for an unasked-for search)."""
     said, _, intent, slots = case
     rewritten = nlu.rewrite(said)

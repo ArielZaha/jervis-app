@@ -1,0 +1,132 @@
+{
+  "expo": {
+    "name": "Jarvis",
+    "slug": "jarvis",
+    "scheme": "jarvis",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#05070F",
+    "ios": {
+      "bundleIdentifier": "io.github.arielzaha.jervis",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Jarvis connects to Jarvis on your computer over your Wi-Fi.",
+        "NSSpeechRecognitionUsageDescription": "Jarvis turns what you say into text when you tap the microphone.",
+        "LSApplicationQueriesSchemes": [
+          "spotify",
+          "youtube",
+          "youtubemusic",
+          "google",
+          "googlechrome",
+          "comgooglemaps",
+          "waze",
+          "whatsapp",
+          "instagram",
+          "fb",
+          "fb-messenger",
+          "tg",
+          "tiktok",
+          "twitter",
+          "snapchat",
+          "nflx",
+          "discord",
+          "zoomus",
+          "msteams",
+          "ms-outlook",
+          "uber",
+          "linkedin",
+          "reddit",
+          "soundcloud",
+          "googlegmail"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "io.github.arielzaha.jervis",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#05070F"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.READ_CONTACTS",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.POST_NOTIFICATIONS",
+        "com.android.alarm.permission.SET_ALARM"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/icon.png",
+      "name": "Jarvis",
+      "themeColor": "#05070F",
+      "backgroundColor": "#05070F"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#05070F",
+          "image": "./assets/icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain"
+        }
+      ],
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Jarvis listens only while you hold or tap the microphone."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Jarvis uses the camera to scan your computer's pairing code, and when you ask it to take a photo.",
+          "barcodeScannerEnabled": true
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Jarvis looks up who you ask it to call or message."
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Jarvis adds events you ask it to.",
+          "remindersPermission": "Jarvis adds reminders you ask it to."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Jarvis uses the camera when you ask it to take a photo."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#4FD8FF"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "./plugins/withLauncherQueries.js",
+      "expo-asset"
+    ]
+  }
+}

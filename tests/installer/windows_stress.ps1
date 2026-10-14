@@ -1,6 +1,6 @@
 # How reliable is the Windows installer? Installs and uninstalls it several times, and for any failure prints which
 # module crashed (from Windows' crash records). Diagnostic only.
-#     pwsh tests/installer/windows_stress.ps1 -Installer "release/Jervis Setup.exe" -Rounds 6
+#     pwsh tests/installer/windows_stress.ps1 -Installer "release/Jarvis Setup.exe" -Rounds 6
 param([Parameter(Mandatory = $true)][string]$Installer, [int]$Rounds = 6)
 $failures = 0
 for ($round = 1; $round -le $Rounds; $round++) {
@@ -15,9 +15,9 @@ for ($round = 1; $round -le $Rounds; $round++) {
   } else {
     Write-Host "round ${round}: installed in ${seconds}s"
   }
-  $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'Jervis.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+  $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'Jarvis.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($exe) {
-    Start-Process -FilePath (Join-Path $exe.DirectoryName 'Uninstall Jervis.exe') -ArgumentList '/S' -Wait
+    Start-Process -FilePath (Join-Path $exe.DirectoryName 'Uninstall Jarvis.exe') -ArgumentList '/S' -Wait
     for ($i = 0; $i -lt 30 -and (Test-Path $exe.FullName); $i++) { Start-Sleep -Seconds 1 }
   }
 }

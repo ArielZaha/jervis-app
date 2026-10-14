@@ -1,4 +1,4 @@
-"""The living environment of a Jervis scene, inside Blender: time of day that changes everything it should (sun,
+"""The living environment of a Jarvis scene, inside Blender: time of day that changes everything it should (sun,
 sky, exposure, windows, signs, street lamps), fog / mist / haze as ONE adjustable volume, weather (rain that wets,
 storms, snow that settles), water and wind that can be made calmer or stronger, animation that can be paused or
 removed, materials changed by meaning ("the windows", "the roof"), cameras matched to a photo and moved safely —
@@ -6,7 +6,7 @@ and the semantic memory each object carries (what it IS, not just its name).
 
 Edits MODIFY what exists — a second "add fog" thickens the fog rather than stacking another volume; "make it
 sunset" retunes the one sun. The environment's state lives on the scene (scene["jervis_env"]), so it survives
-saving and is read back by Jervis (env_state()).
+saving and is read back by Jarvis (env_state()).
 
 Runs inside Blender after blender_kit / blender_assets / blender_motion / blender_places / blender_props."""
 import json
@@ -43,12 +43,12 @@ def _env_set(**changes) -> dict:
 
 
 def env_state() -> str:
-    """The environment as JSON: what Jervis set (time, weather, wind, fog, water...) and what Blender shows now
+    """The environment as JSON: what Jarvis set (time, weather, wind, fog, water...) and what Blender shows now
     (the sun's strength, the fog's density, rain present, lights on)."""
     env = _env()
     s = _scene()   # noqa: F821
     sun = next((o for o in bpy.data.objects if o.type == "LIGHT" and o.data.type == "SUN" and o.users_collection), None)
-    fog_obj = bpy.data.objects.get("Jervis Fog")
+    fog_obj = bpy.data.objects.get("Jarvis Fog")
     lit = [o.name for o in bpy.data.objects if o.type == "LIGHT" and o.users_collection and o.data.type != "SUN"
            and o.data.energy > 0.01]
     live = {"sun_energy": round(sun.data.energy, 3) if sun else None,
@@ -65,7 +65,7 @@ def env_state() -> str:
 # ---------- what things are ----------
 
 def tag_semantic(obj, kind, role=None, ref=None, source="user", **extra):
-    """Mark what a thing IS (its kind in Jervis's ontology, its role in the scene — 'main building', 'the pool' —
+    """Mark what a thing IS (its kind in Jarvis's ontology, its role in the scene — 'main building', 'the pool' —
     which element of the reference picture it rebuilds) so it can be found by meaning later, whatever it's named."""
     o = get(obj)   # noqa: F821
     info = {"kind": kind, "role": role, "ref": ref, "source": source}
@@ -79,7 +79,7 @@ def tag_semantic(obj, kind, role=None, ref=None, source="user", **extra):
 
 
 def semantic_registry() -> str:
-    """Every thing Jervis knows the meaning of, as JSON: name, stable id, kind, role, where it is and how big, its
+    """Every thing Jarvis knows the meaning of, as JSON: name, stable id, kind, role, where it is and how big, its
     lights and its animation — the scene's semantic memory, read fresh from Blender."""
     out = []
     for o in bpy.data.objects:
@@ -136,7 +136,7 @@ def _parts_named(root, words, exclude=()):
 
 # ---------- light that comes from inside: windows, signs, lamps ----------
 
-def _own_material(obj, base=None, prefix="Jervis"):
+def _own_material(obj, base=None, prefix="Jarvis"):
     """The object's own copy of its material (so changing it never changes anything else that shared it)."""
     mat = obj.active_material
     if mat is None:
@@ -226,19 +226,19 @@ def window_glow(building, on=True, level=0.7, share=0.5, warmth=2800, vary=True,
     strength = max(0.0, float(level)) * 1.2 if on else 0.0
     for pane in panes:
         _pane_values(pane)
-        mat = _own_material(pane, prefix="Jervis lit glass")
+        mat = _own_material(pane, prefix="Jarvis lit glass")
         nt = mat.node_tree
         bsdf = _bsdf(mat)
         emit = _emission_input(bsdf)
         if emit is None:
             continue
-        mask = nt.nodes.get("Jervis glow mask")
+        mask = nt.nodes.get("Jarvis glow mask")
         if mask is None and vary:
             attr = nt.nodes.new("ShaderNodeAttribute")
             attr.attribute_name = "jervis_pane"
             lit = nt.nodes.new("ShaderNodeMath")
             lit.operation = "LESS_THAN"
-            lit.name = "Jervis glow share"
+            lit.name = "Jarvis glow share"
             nt.links.new(attr.outputs["Fac"], lit.inputs[0])
             # each lit pane its own brightness: a second number from the same one (its fraction times 7)
             spread = nt.nodes.new("ShaderNodeMath")
@@ -253,18 +253,18 @@ def window_glow(building, on=True, level=0.7, share=0.5, warmth=2800, vary=True,
             shade.inputs["To Min"].default_value, shade.inputs["To Max"].default_value = 0.45, 1.0
             mask = nt.nodes.new("ShaderNodeMath")
             mask.operation = "MULTIPLY"
-            mask.name = "Jervis glow mask"
+            mask.name = "Jarvis glow mask"
             nt.links.new(lit.outputs[0], mask.inputs[0])
             nt.links.new(shade.outputs["Result"], mask.inputs[1])
             power = nt.nodes.new("ShaderNodeMath")
             power.operation = "MULTIPLY"
-            power.name = "Jervis glow power"
+            power.name = "Jarvis glow power"
             nt.links.new(mask.outputs[0], power.inputs[0])
             nt.links.new(power.outputs[0], bsdf.inputs["Emission Strength"])
-        share_node = nt.nodes.get("Jervis glow share")
+        share_node = nt.nodes.get("Jarvis glow share")
         if share_node is not None:
             share_node.inputs[1].default_value = max(0.0, min(1.0, float(share)))
-        power = nt.nodes.get("Jervis glow power")
+        power = nt.nodes.get("Jarvis glow power")
         if power is not None:
             power.inputs[1].default_value = strength
         else:
@@ -273,7 +273,7 @@ def window_glow(building, on=True, level=0.7, share=0.5, warmth=2800, vary=True,
     if interior:
         inside = _parts_named(root, ("interior",))
         for part in inside:
-            mat = _own_material(part, prefix="Jervis lit interior")
+            mat = _own_material(part, prefix="Jarvis lit interior")
             b = _bsdf(mat)
             if b is not None and _emission_input(b) is not None:
                 _emission_input(b).default_value = (*rgb, 1.0)
@@ -303,7 +303,7 @@ def sign_glow(target=None, on=True, strength=1.4):
     done = []
     for root in roots:
         for part in _parts_named(root, ("sign", "lantern")):
-            mat = _own_material(part, prefix="Jervis sign")
+            mat = _own_material(part, prefix="Jarvis sign")
             b = _bsdf(mat)
             if b is None or _emission_input(b) is None:
                 continue
@@ -361,18 +361,18 @@ def _physical_sky(look, sun):
     colour (night is mostly its colour, day mostly the real sky): gradients, a bright horizon, a sunset glow."""
     w, bg = _world()   # noqa: F821
     nt = w.node_tree
-    tex = nt.nodes.get("Jervis sky texture")
-    mix = nt.nodes.get("Jervis sky mix")
+    tex = nt.nodes.get("Jarvis sky texture")
+    mix = nt.nodes.get("Jarvis sky mix")
     if tex is None:
         tex = nt.nodes.new("ShaderNodeTexSky")
-        tex.name = "Jervis sky texture"
+        tex.name = "Jarvis sky texture"
         try:
             tex.sky_type = "NISHITA"
         except TypeError:
             pass
         mix = nt.nodes.new("ShaderNodeMix")
         mix.data_type = "RGBA"
-        mix.name = "Jervis sky mix"
+        mix.name = "Jarvis sky mix"
         nt.links.new(tex.outputs["Color"], mix.inputs["A"])
     if not bg.inputs["Color"].is_linked:
         nt.links.new(mix.outputs["Result"], bg.inputs["Color"])
@@ -398,11 +398,11 @@ def sky_clouds(cover=0.4, remove=False):
     remove=True clears the sky. They're tinted again whenever the time of day changes."""
     w, bg = _world()   # noqa: F821
     nt = w.node_tree
-    mixn = nt.nodes.get("Jervis clouds mix")
+    mixn = nt.nodes.get("Jarvis clouds mix")
     if remove:
         if mixn is not None:
             src = mixn.inputs["A"].links[0].from_socket if mixn.inputs["A"].is_linked else None
-            for n in [n for n in nt.nodes if n.name.startswith("Jervis clouds")]:
+            for n in [n for n in nt.nodes if n.name.startswith("Jarvis clouds")]:
                 nt.nodes.remove(n)
             if src is not None:
                 nt.links.new(src, bg.inputs["Color"])
@@ -412,33 +412,33 @@ def sky_clouds(cover=0.4, remove=False):
     if mixn is None:
         if not bg.inputs["Color"].is_linked:   # a flat sky: its colour, as a node the clouds can sit over
             flat = nt.nodes.new("ShaderNodeRGB")
-            flat.name = "Jervis flat sky"   # (stays when the clouds go)
+            flat.name = "Jarvis flat sky"   # (stays when the clouds go)
             flat.outputs[0].default_value = tuple(bg.inputs["Color"].default_value)
             nt.links.new(flat.outputs[0], bg.inputs["Color"])
         src = bg.inputs["Color"].links[0].from_socket
         coord = nt.nodes.new("ShaderNodeTexCoord")
-        coord.name = "Jervis clouds coord"
+        coord.name = "Jarvis clouds coord"
         sep = nt.nodes.new("ShaderNodeSeparateXYZ")
-        sep.name = "Jervis clouds sep"
+        sep.name = "Jarvis clouds sep"
         nt.links.new(coord.outputs["Generated"], sep.inputs["Vector"])
         # the view direction projected onto a cloud deck overhead: (x/z, y/z) — clouds shrink toward the horizon
         zc = nt.nodes.new("ShaderNodeMath")
-        zc.name, zc.operation = "Jervis clouds z", "MAXIMUM"
+        zc.name, zc.operation = "Jarvis clouds z", "MAXIMUM"
         zc.inputs[1].default_value = 0.035
         nt.links.new(sep.outputs["Z"], zc.inputs[0])
         parts = []
         for axis in ("X", "Y"):
             d = nt.nodes.new("ShaderNodeMath")
-            d.name, d.operation = f"Jervis clouds {axis}", "DIVIDE"
+            d.name, d.operation = f"Jarvis clouds {axis}", "DIVIDE"
             nt.links.new(sep.outputs[axis], d.inputs[0])
             nt.links.new(zc.outputs[0], d.inputs[1])
             parts.append(d)
         comb = nt.nodes.new("ShaderNodeCombineXYZ")
-        comb.name = "Jervis clouds deck"
+        comb.name = "Jarvis clouds deck"
         nt.links.new(parts[0].outputs[0], comb.inputs["X"])
         nt.links.new(parts[1].outputs[0], comb.inputs["Y"])
         drift = nt.nodes.new("ShaderNodeMapping")
-        drift.name = "Jervis clouds drift"
+        drift.name = "Jarvis clouds drift"
         nt.links.new(comb.outputs["Vector"], drift.inputs["Vector"])
         try:   # slowly across the sky, with the timeline (a driver: no keys to clash with a shot's)
             fc = drift.inputs["Location"].driver_add("default_value", 0)
@@ -447,46 +447,46 @@ def sky_clouds(cover=0.4, remove=False):
         except (TypeError, AttributeError):
             pass
         noise = nt.nodes.new("ShaderNodeTexNoise")
-        noise.name = "Jervis clouds noise"
+        noise.name = "Jarvis clouds noise"
         # (finer than this read as streaks of cirrus; these are heaps of cumulus)
         noise.inputs["Scale"].default_value = 0.55
         noise.inputs["Detail"].default_value = 5.0
         noise.inputs["Roughness"].default_value = 0.62
         nt.links.new(drift.outputs["Vector"], noise.inputs["Vector"])
         shape = nt.nodes.new("ShaderNodeMapRange")
-        shape.name = "Jervis clouds shape"
+        shape.name = "Jarvis clouds shape"
         shape.inputs["To Min"].default_value, shape.inputs["To Max"].default_value = 0.0, 1.0
         nt.links.new(noise.outputs["Fac"], shape.inputs["Value"])
         # thinning out right at the horizon, and none below it
         fade = nt.nodes.new("ShaderNodeMapRange")
-        fade.name = "Jervis clouds horizon"
+        fade.name = "Jarvis clouds horizon"
         # (seen edge-on, a cloud deck piles up into a grey band at the horizon: thin it out low down, as the haze
         # of distance does, so the sky near the horizon stays sky)
         fade.inputs["From Min"].default_value, fade.inputs["From Max"].default_value = 0.02, 0.3
         nt.links.new(sep.outputs["Z"], fade.inputs["Value"])
         mask = nt.nodes.new("ShaderNodeMath")
-        mask.name, mask.operation = "Jervis clouds mask", "MULTIPLY"
+        mask.name, mask.operation = "Jarvis clouds mask", "MULTIPLY"
         nt.links.new(shape.outputs["Result"], mask.inputs[0])
         nt.links.new(fade.outputs["Result"], mask.inputs[1])
         mixn = nt.nodes.new("ShaderNodeMix")
         mixn.data_type = "RGBA"
-        mixn.name = "Jervis clouds mix"
+        mixn.name = "Jarvis clouds mix"
         nt.links.new(src, mixn.inputs["A"])
         nt.links.new(mask.outputs[0], mixn.inputs["Factor"])
         # a cloud is the sky's own light made white and brighter (a fixed colour came out darker than a physical
         # sky's blue), then tinted by the hour
         white = nt.nodes.new("ShaderNodeHueSaturation")
-        white.name = "Jervis clouds white"
+        white.name = "Jarvis clouds white"
         white.inputs["Saturation"].default_value = 0.12
         nt.links.new(src, white.inputs["Color"])
         tint = nt.nodes.new("ShaderNodeMix")
         tint.data_type, tint.blend_type = "RGBA", "MULTIPLY"
-        tint.name = "Jervis clouds tint"
+        tint.name = "Jarvis clouds tint"
         tint.inputs["Factor"].default_value = 1.0
         nt.links.new(white.outputs["Color"], tint.inputs["A"])
         nt.links.new(tint.outputs["Result"], mixn.inputs["B"])
         nt.links.new(mixn.outputs["Result"], bg.inputs["Color"])
-    shape = nt.nodes["Jervis clouds shape"]
+    shape = nt.nodes["Jarvis clouds shape"]
     edge = 0.64 - 0.3 * cover   # noise above this is cloud: more of the sky as cover grows
     shape.inputs["From Min"].default_value, shape.inputs["From Max"].default_value = edge, edge + 0.07
     _env_set(clouds=round(cover, 3))
@@ -499,7 +499,7 @@ def _clouds_tint():
     always brighter than the sky around them."""
     w, bg = _world()   # noqa: F821
     nt = w.node_tree
-    tint, white = nt.nodes.get("Jervis clouds tint"), nt.nodes.get("Jervis clouds white")
+    tint, white = nt.nodes.get("Jarvis clouds tint"), nt.nodes.get("Jarvis clouds white")
     if tint is None or white is None:
         return
     look = _env().get("time") or "day"
@@ -514,7 +514,7 @@ def _clouds_tint():
 def sky_color(color, mix=0.85, strength=None):
     """The sky's colour made `color` (blended over the physical sky by `mix`) — to match a photo's sky."""
     w, bg = _world()   # noqa: F821
-    mixn = w.node_tree.nodes.get("Jervis sky mix")
+    mixn = w.node_tree.nodes.get("Jarvis sky mix")
     if mixn is None:
         bg.inputs["Color"].default_value = (*rgb_of(color), 1.0)   # noqa: F821
     else:
@@ -594,7 +594,7 @@ def time_of_day(look="day", sun_side=None, windows=None, lamps_on=None, pool_lig
                 pool_lights(root.name, on=True)   # noqa: F821
             for lt in _lights_of(root.name):   # noqa: F821
                 lt.data.energy = float(lt.get("jervis_energy") or 120.0) if pool_lights_on else 0.0
-            glow = bpy.data.materials.get("Jervis pool light")
+            glow = bpy.data.materials.get("Jarvis pool light")
             if glow is not None and _bsdf(glow) is not None:
                 _bsdf(glow).inputs["Emission Strength"].default_value = 6.0 if pool_lights_on else 0.0
     _env_set(time=look)
@@ -630,7 +630,7 @@ def _interior_daylight(look):
             lt = light(nm, "area", at=at, energy=900 * day, color=6200 if look not in ("sunset", "golden hour") else 3600,   # noqa: F821
                        size=2.0, aim=aim)
             lt["jervis_light_for"] = room.name
-        fixture = bpy.data.materials.get("Jervis ceiling light")
+        fixture = bpy.data.materials.get("Jarvis ceiling light")
         dark = look in ("dusk", "night")
         if fixture is not None and _bsdf(fixture) is not None:
             _bsdf(fixture).inputs["Emission Strength"].default_value = 4.0 if dark else 0.0
@@ -659,21 +659,21 @@ def _fog_ambient():
     """Fog lit by the sky around it: EEVEE's volumes take little of the world's light, so fog only darkened what was
     behind it (mist at sunset was a brown band). Its glow is the light it would scatter from the sky — the sky's
     colour and brightness at this time of day, tinted by the fog's own colour, in proportion to how thick it is."""
-    obj = bpy.data.objects.get("Jervis Fog")
+    obj = bpy.data.objects.get("Jarvis Fog")
     if obj is None or obj.active_material is None:
         return
     nt = obj.active_material.node_tree
-    vol, dens = nt.nodes.get("Jervis fog volume"), nt.nodes.get("Jervis fog density")
+    vol, dens = nt.nodes.get("Jarvis fog volume"), nt.nodes.get("Jarvis fog density")
     if vol is None or dens is None or "Emission Strength" not in vol.inputs:
         return
     k = cinema.SKY.get(_env().get("time") or "day", cinema.SKY["day"])   # noqa: F821
     tint = tuple(vol.inputs["Color"].default_value)[:3]
     vol.inputs["Emission Color"].default_value = tuple(k["sky"][i] * tint[i] for i in range(3)) + (1.0,)
-    glow = nt.nodes.get("Jervis fog glow")
+    glow = nt.nodes.get("Jarvis fog glow")
     if glow is None:
         glow = nt.nodes.new("ShaderNodeMath")
         glow.operation = "MULTIPLY"
-        glow.name = "Jervis fog glow"
+        glow.name = "Jarvis fog glow"
         nt.links.new(dens.outputs[0], glow.inputs[0])
         nt.links.new(glow.outputs[0], vol.inputs["Emission Strength"])
     # (tuned by eye: ~0.5 by day, a little more at a dim sunset; much more washed the near palms out)
@@ -682,7 +682,7 @@ def _fog_ambient():
 
 def _fog_density(obj):
     try:
-        node = obj.active_material.node_tree.nodes.get("Jervis fog density")
+        node = obj.active_material.node_tree.nodes.get("Jarvis fog density")
         return float(node.inputs[1].default_value)
     except Exception:
         return 0.0
@@ -692,7 +692,7 @@ def fog(kind=None, density=None, height=None, color=None, factor=None, remove=Fa
     """Fog in the air, as ONE volume over the whole scene (made once, then changed): kind 'fog' | 'mist' |
     'ground fog' (thick near the ground, thinning by `height` metres) | 'haze' (light, far: distant things fade) |
     'smoke' | 'dust'. factor=1.6 thickens what's there, 0.5 thins it; remove=True clears the air."""
-    obj = bpy.data.objects.get("Jervis Fog")
+    obj = bpy.data.objects.get("Jarvis Fog")
     if remove:
         if obj is not None:
             bpy.data.objects.remove(obj, do_unlink=True)
@@ -720,8 +720,8 @@ def fog(kind=None, density=None, height=None, color=None, factor=None, remove=Fa
     cx, cy = (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2
     top = (float(height) * 2.5 if height else max(40.0, hi[2] + 20.0))
     if obj is None:
-        mesh = bpy.data.meshes.new("Jervis Fog")
-        obj = bpy.data.objects.new("Jervis Fog", mesh)
+        mesh = bpy.data.meshes.new("Jarvis Fog")
+        obj = bpy.data.objects.new("Jarvis Fog", mesh)
         _scene().collection.objects.link(obj)   # noqa: F821
         import bmesh as _bm
         bm = _bm.new()
@@ -731,21 +731,21 @@ def fog(kind=None, density=None, height=None, color=None, factor=None, remove=Fa
         obj["jervis_role"] = "sky"
         obj.hide_select = True
         obj.display_type = "BOUNDS"
-        mat = bpy.data.materials.new("Jervis Fog")
+        mat = bpy.data.materials.new("Jarvis Fog")
         mat.use_nodes = True
         nt = mat.node_tree
         for n in list(nt.nodes):
             nt.nodes.remove(n)
         out = nt.nodes.new("ShaderNodeOutputMaterial")
         vol = nt.nodes.new("ShaderNodeVolumePrincipled")
-        vol.name = "Jervis fog volume"
+        vol.name = "Jarvis fog volume"
         coords = nt.nodes.new("ShaderNodeTexCoord")
         sep = nt.nodes.new("ShaderNodeSeparateXYZ")
         # density falls off with height: d * clamp(1 - z_world / height)  (or d everywhere when height == 0)
         geo = nt.nodes.new("ShaderNodeNewGeometry")
         nt.links.new(geo.outputs["Position"], sep.inputs["Vector"])
         fall = nt.nodes.new("ShaderNodeMapRange")
-        fall.name = "Jervis fog falloff"
+        fall.name = "Jarvis fog falloff"
         nt.links.new(sep.outputs["Z"], fall.inputs["Value"])
         fall.inputs["To Min"].default_value, fall.inputs["To Max"].default_value = 1.0, 0.0
         noise = nt.nodes.new("ShaderNodeTexNoise")
@@ -760,7 +760,7 @@ def fog(kind=None, density=None, height=None, color=None, factor=None, remove=Fa
         nt.links.new(patchy.outputs["Result"], mul.inputs[1])
         dens = nt.nodes.new("ShaderNodeMath")
         dens.operation = "MULTIPLY"
-        dens.name = "Jervis fog density"
+        dens.name = "Jarvis fog density"
         nt.links.new(mul.outputs[0], dens.inputs[0])
         nt.links.new(dens.outputs[0], vol.inputs["Density"])
         nt.links.new(vol.outputs[0], out.inputs["Volume"])
@@ -768,11 +768,11 @@ def fog(kind=None, density=None, height=None, color=None, factor=None, remove=Fa
     obj.location = (cx, cy, top / 2 - 1.0)
     obj.scale = (reach * 2, reach * 2, top)
     nt = obj.active_material.node_tree
-    nt.nodes["Jervis fog density"].inputs[1].default_value = density
-    fall = nt.nodes["Jervis fog falloff"]
+    nt.nodes["Jarvis fog density"].inputs[1].default_value = density
+    fall = nt.nodes["Jarvis fog falloff"]
     fall.inputs["From Min"].default_value = 0.0
     fall.inputs["From Max"].default_value = float(height) if height else 10000.0
-    vol = nt.nodes["Jervis fog volume"]
+    vol = nt.nodes["Jarvis fog volume"]
     vol.inputs["Color"].default_value = (*rgb, 1.0)
     if "Anisotropy" in vol.inputs:
         vol.inputs["Anisotropy"].default_value = base[3]
@@ -823,14 +823,14 @@ def wet(amount=1.0):
                 mat["jervis_dry_rough"] = float(b.inputs["Roughness"].default_value)
             dry = float(mat["jervis_dry_rough"])
             nt = mat.node_tree
-            puddles = nt.nodes.get("Jervis puddles")
+            puddles = nt.nodes.get("Jarvis puddles")
             if puddles is None and not b.inputs["Roughness"].is_linked:
                 noise = nt.nodes.new("ShaderNodeTexNoise")
                 noise.inputs["Scale"].default_value = 0.35
                 coords = nt.nodes.new("ShaderNodeTexCoord")
                 nt.links.new(coords.outputs["Object"], noise.inputs["Vector"])
                 puddles = nt.nodes.new("ShaderNodeMapRange")
-                puddles.name = "Jervis puddles"
+                puddles.name = "Jarvis puddles"
                 nt.links.new(noise.outputs["Fac"], puddles.inputs["Value"])
                 puddles.inputs["From Min"].default_value, puddles.inputs["From Max"].default_value = 0.45, 0.62
                 nt.links.new(puddles.outputs["Result"], b.inputs["Roughness"])
@@ -910,13 +910,13 @@ def snow_cover(amount=0.6):
             if b is None:
                 continue
             nt = mat.node_tree
-            mix = nt.nodes.get("Jervis snow")
+            mix = nt.nodes.get("Jarvis snow")
             if mix is None:
                 if amount <= 0:
                     continue
                 mix = nt.nodes.new("ShaderNodeMix")
                 mix.data_type = "RGBA"
-                mix.name = "Jervis snow"
+                mix.name = "Jarvis snow"
                 src = b.inputs["Base Color"].links[0].from_socket if b.inputs["Base Color"].is_linked else None
                 if src is not None:
                     nt.links.new(src, mix.inputs["A"])
@@ -927,12 +927,12 @@ def snow_cover(amount=0.6):
                 sep = nt.nodes.new("ShaderNodeSeparateXYZ")
                 nt.links.new(geo.outputs["Normal"], sep.inputs["Vector"])
                 up = nt.nodes.new("ShaderNodeMapRange")
-                up.name = "Jervis snow up"
+                up.name = "Jarvis snow up"
                 nt.links.new(sep.outputs["Z"], up.inputs["Value"])
                 up.inputs["From Min"].default_value, up.inputs["From Max"].default_value = 0.55, 0.85
                 nt.links.new(up.outputs["Result"], mix.inputs["Factor"])
                 nt.links.new(mix.outputs["Result"], b.inputs["Base Color"])
-            up = nt.nodes.get("Jervis snow up")
+            up = nt.nodes.get("Jarvis snow up")
             if up is not None:
                 up.inputs["To Max"].default_value = amount
     _env_set(snow_cover=round(amount, 2) if amount > 0 else None)
@@ -1130,7 +1130,7 @@ def material_edit(target=None, part=None, color=None, darker=None, lighter=None,
         raise ValueError(f"I can't find {part or 'parts'} on {target or 'anything'} to change.")
     changed = []
     for p in parts:
-        mat = _own_material(p, prefix="Jervis edit")
+        mat = _own_material(p, prefix="Jarvis edit")
         b = _bsdf(mat)
         if b is None:
             continue
@@ -1726,7 +1726,7 @@ def lights_set(target=None, on=True, factor=None, warmth=None):
                 lt.data.energy = full if on else 0.0
                 if warmth:
                     lt.data.color = _kelvin_rgb(warmth)
-            mat = bpy.data.materials.get("Jervis pool light")
+            mat = bpy.data.materials.get("Jarvis pool light")
             if mat is not None and _bsdf(mat) is not None:
                 _bsdf(mat).inputs["Emission Strength"].default_value = 6.0 if on else 0.0
             done.append(root.name)
@@ -1783,14 +1783,14 @@ def path_lights(path, spacing=3.0, height=0.6, on=True):
             cap.cylinder((0, 0, height), 0.09, 0.08, segments=10)
             z = ground_height(bx, by)   # noqa: F821
             p_obj = post.done(f"{nm} Post", (bx, by, z), "dark metal", smooth=True)
-            c_obj = cap.done(f"{nm} Lens", (bx, by, z), material("#fff1d0", name="Jervis bollard glass",   # noqa: F821
+            c_obj = cap.done(f"{nm} Lens", (bx, by, z), material("#fff1d0", name="Jarvis bollard glass",   # noqa: F821
                                                                    emission=2.0 if on else 0.0), smooth=True)
             root_l = assemble(nm, [p_obj.name, c_obj.name], at=(bx, by, z))   # noqa: F821
             lt = light(f"{nm} Bulb", "point", at=(bx, by, z + height + 0.05), energy=30, color=2800, size=0.05,   # noqa: F821
                        on=on)
             _adopt(lt, root_l)   # noqa: F821
             lt["jervis_light_for"] = root_l.name
-            lt["jervis_glow_material"] = "Jervis bollard glass"
+            lt["jervis_glow_material"] = "Jarvis bollard glass"
             root_l["jervis_tags"] = "light_source_night"
             tag_semantic(root_l.name, "path light", role=f"light along {t['name']}")
             made.append(root_l.name)

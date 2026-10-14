@@ -13,7 +13,7 @@ Engines (chosen by what the computer has):
     hence the pair.
   * Bilingual on the CPU (no usable GPU): "small" hears the language and writes Hebrew (2-4 s, much weaker), and
     base.en writes English. Large models on this CPU take 8-17 s a sentence: only a last resort.
-  * English only (JERVIS_STT_LANGUAGE=en): base.en on the CPU, as before.
+  * English only (JARVIS_STT_LANGUAGE=en): base.en on the CPU, as before.
 
 The online recognizers (Whisper on Groq, Google's free one) stay available in app.py as before.
 Models are downloaded once, during first-run setup, into the data folder (an ASCII path: see paths.models_dir).
@@ -25,14 +25,14 @@ from dataclasses import dataclass
 
 import paths
 
-# The models come from Hugging Face; keep their downloads quiet in Jervis's log.
+# The models come from Hugging Face; keep their downloads quiet in Jarvis's log.
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("HF_HUB_VERBOSITY", "error")
 
 # "auto" (default): English and Hebrew, whichever is spoken. "en": English only (lighter: no Hebrew models).
 # "he" is accepted for older settings files and means the same as "auto".
-LANGUAGE = (os.getenv("JERVIS_STT_LANGUAGE") or "auto").strip().lower()
+LANGUAGE = (os.getenv("JARVIS_STT_LANGUAGE") or "auto").strip().lower()
 if LANGUAGE not in ("auto", "en", "he"):
     LANGUAGE = "auto"
 BILINGUAL = LANGUAGE != "en"
@@ -44,10 +44,10 @@ MODELS = {   # name: (Hugging Face repo, approximate download size)
     "ivrit-turbo": ("ivrit-ai/whisper-large-v3-turbo-ct2", 1.6e9),
     "ivrit-large": ("ivrit-ai/whisper-large-v3-ct2", 3.1e9),
 }
-# Which ivrit.ai model writes Hebrew (Settings: JERVIS_HEBREW_SPEECH). Measured on real Israeli speech (FLEURS, 60
+# Which ivrit.ai model writes Hebrew (Settings: JARVIS_HEBREW_SPEECH). Measured on real Israeli speech (FLEURS, 60
 # sentences): word errors 15.8% (large) vs 17.3% (turbo) clean, and in a noisy room (10 dB) 20.6% vs 26.0%; on a
 # 2.5 s command ~0.17 s slower, and 0.8 GB more GPU memory (3.0 GB with turbo, vs 2.2).
-_HEBREW_CHOICE = (os.getenv("JERVIS_HEBREW_SPEECH") or "large").strip().lower()
+_HEBREW_CHOICE = (os.getenv("JARVIS_HEBREW_SPEECH") or "large").strip().lower()
 HEBREW_MODEL = "ivrit-turbo" if _HEBREW_CHOICE == "turbo" else "ivrit-large"
 # On the GPU: Whisper "small" tells the languages apart (measured on real speech, FLEURS he/en 60+60: no mistakes,
 # also on 2.5 s clips; 63 ms; 0.3 GB), and only the big model for the language being spoken stays loaded beside
@@ -109,8 +109,8 @@ def available() -> bool:
 
 def cuda_dirs() -> list:
     """Folders holding NVIDIA's CUDA 12 libraries that CTranslate2 needs (cuBLAS). Ollama installs exactly these next
-    to itself — the user's Ollama or the one Jervis manages — so nothing extra is downloaded or installed."""
-    candidates = [os.getenv("JERVIS_CUDA_DIR") or ""]
+    to itself — the user's Ollama or the one Jarvis manages — so nothing extra is downloaded or installed."""
+    candidates = [os.getenv("JARVIS_CUDA_DIR") or ""]
     local, program_files = os.environ.get("LOCALAPPDATA", ""), os.environ.get("ProgramFiles", "")
     for root in (os.path.join(local, "Programs", "Ollama"), os.path.join(program_files, "Ollama")):
         candidates.append(os.path.join(root, "lib", "ollama", "cuda_v12"))
@@ -135,9 +135,9 @@ _gpu_known = None
 
 def gpu_possible() -> bool:
     """An NVIDIA GPU CTranslate2 can use, with its libraries found. (Loading can still fail — no free GPU memory —
-    and then the CPU models are used.) JERVIS_STT_DEVICE=cpu turns the GPU off for speech."""
+    and then the CPU models are used.) JARVIS_STT_DEVICE=cpu turns the GPU off for speech."""
     global _gpu_known
-    if not BILINGUAL or _failed_gpu or (os.getenv("JERVIS_STT_DEVICE") or "").lower() == "cpu":
+    if not BILINGUAL or _failed_gpu or (os.getenv("JARVIS_STT_DEVICE") or "").lower() == "cpu":
         return False
     if _gpu_known is not None:
         return _gpu_known
@@ -424,7 +424,7 @@ def _recognise(audio, s: Setup) -> Transcript:
 
 def _speaking_models(s: Setup, language: str) -> tuple:
     """(English model, Hebrew model) for this sentence. With the small detector only one big model is loaded: a few
-    English words in a Hebrew conversation ("OK", "hey Jervis") go to "small" — no switch for them; Hebrew in an
+    English words in a Hebrew conversation ("OK", "hey Jarvis") go to "small" — no switch for them; Hebrew in an
     English conversation goes to turbo (which writes Hebrew too, less well) while ivrit.ai loads in the background
     for what follows. A sentence never waits seconds for a model to load, unless none is loaded at all."""
     if s.device != "cuda" or s.detector != "small":
@@ -441,7 +441,7 @@ def _speaking_models(s: Setup, language: str) -> tuple:
 
 
 def transcribe(wav_bytes: bytes) -> str:
-    """Text of a short WAV recording (16 kHz mono, as Jervis records it)."""
+    """Text of a short WAV recording (16 kHz mono, as Jarvis records it)."""
     return transcribe_full(wav_bytes).text
 
 

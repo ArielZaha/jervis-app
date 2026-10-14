@@ -1,0 +1,387 @@
+{
+ "fps": 30,
+ "bpm": 100,
+ "bar": 2.4,
+ "duration": 158.6,
+ "scenes": [
+  {
+   "id": "opening",
+   "start": 0,
+   "end": 12
+  },
+  {
+   "id": "talk",
+   "start": 12,
+   "end": 21.6
+  },
+  {
+   "id": "media",
+   "start": 21.6,
+   "end": 33.6
+  },
+  {
+   "id": "control",
+   "start": 33.6,
+   "end": 48
+  },
+  {
+   "id": "docs",
+   "start": 48,
+   "end": 60
+  },
+  {
+   "id": "math",
+   "start": 60,
+   "end": 76.8
+  },
+  {
+   "id": "space",
+   "start": 76.8,
+   "end": 96
+  },
+  {
+   "id": "everyday",
+   "start": 96,
+   "end": 110.4
+  },
+  {
+   "id": "phone",
+   "start": 110.4,
+   "end": 129.6
+  },
+  {
+   "id": "trust",
+   "start": 129.6,
+   "end": 141.6
+  },
+  {
+   "id": "closing",
+   "start": 141.6,
+   "end": 156
+  }
+ ],
+ "cues": [
+  {
+   "kind": "orb",
+   "t": 0.9,
+   "scene": "opening"
+  },
+  {
+   "kind": "title",
+   "t": 5,
+   "scene": "opening"
+  },
+  {
+   "kind": "swell",
+   "t": 9.6,
+   "scene": "opening"
+  },
+  {
+   "kind": "whoosh",
+   "t": 10.7,
+   "scene": "opening"
+  },
+  {
+   "kind": "listen",
+   "t": 13.933,
+   "scene": "talk"
+  },
+  {
+   "kind": "tick",
+   "t": 15.833,
+   "scene": "talk"
+  },
+  {
+   "kind": "keys",
+   "t": 18,
+   "scene": "talk",
+   "len": 2
+  },
+  {
+   "kind": "send",
+   "t": 20.1,
+   "scene": "talk"
+  },
+  {
+   "kind": "confirm",
+   "t": 21.7,
+   "scene": "media"
+  },
+  {
+   "kind": "keys",
+   "t": 24.567,
+   "scene": "media",
+   "len": 2.2
+  },
+  {
+   "kind": "send",
+   "t": 26.867,
+   "scene": "media"
+  },
+  {
+   "kind": "confirm",
+   "t": 27.367,
+   "scene": "media"
+  },
+  {
+   "kind": "keys",
+   "t": 33.7,
+   "scene": "control",
+   "len": 1.5
+  },
+  {
+   "kind": "send",
+   "t": 35.22,
+   "scene": "control"
+  },
+  {
+   "kind": "sheet",
+   "t": 35.667,
+   "scene": "control"
+  },
+  {
+   "kind": "click",
+   "t": 39.867,
+   "scene": "control"
+  },
+  {
+   "kind": "whoosh",
+   "t": 40.367,
+   "scene": "control"
+  },
+  {
+   "kind": "tick",
+   "t": 44.083,
+   "scene": "control"
+  },
+  {
+   "kind": "tick",
+   "t": 46.083,
+   "scene": "control"
+  },
+  {
+   "kind": "stop",
+   "t": 47.483,
+   "scene": "control"
+  },
+  {
+   "kind": "keys",
+   "t": 48.1,
+   "scene": "docs",
+   "len": 1.8
+  },
+  {
+   "kind": "send",
+   "t": 49.933,
+   "scene": "docs"
+  },
+  {
+   "kind": "page",
+   "t": 51.033,
+   "scene": "docs"
+  },
+  {
+   "kind": "keys",
+   "t": 54.1,
+   "scene": "docs",
+   "len": 1.2
+  },
+  {
+   "kind": "send",
+   "t": 55.367,
+   "scene": "docs"
+  },
+  {
+   "kind": "confirm",
+   "t": 55.967,
+   "scene": "docs"
+  },
+  {
+   "kind": "keys",
+   "t": 60,
+   "scene": "math",
+   "len": 0.8
+  },
+  {
+   "kind": "send",
+   "t": 60.867,
+   "scene": "math"
+  },
+  {
+   "kind": "draw",
+   "t": 61.367,
+   "scene": "math"
+  },
+  {
+   "kind": "whoosh",
+   "t": 65.3,
+   "scene": "math"
+  },
+  {
+   "kind": "send",
+   "t": 66.733,
+   "scene": "math"
+  },
+  {
+   "kind": "draw",
+   "t": 67.233,
+   "scene": "math"
+  },
+  {
+   "kind": "whoosh",
+   "t": 71.9,
+   "scene": "math"
+  },
+  {
+   "kind": "steps",
+   "t": 72.7,
+   "scene": "math"
+  },
+  {
+   "kind": "keys",
+   "t": 76.8,
+   "scene": "space",
+   "len": 0.7
+  },
+  {
+   "kind": "send",
+   "t": 77.6,
+   "scene": "space"
+  },
+  {
+   "kind": "globe",
+   "t": 78.1,
+   "scene": "space"
+  },
+  {
+   "kind": "swell",
+   "t": 85.8,
+   "scene": "space"
+  },
+  {
+   "kind": "whoosh",
+   "t": 86.9,
+   "scene": "space"
+  },
+  {
+   "kind": "whoosh",
+   "t": 91.4,
+   "scene": "space"
+  },
+  {
+   "kind": "whoosh",
+   "t": 95.8,
+   "scene": "everyday"
+  },
+  {
+   "kind": "slide",
+   "t": 98.4,
+   "scene": "everyday"
+  },
+  {
+   "kind": "slide",
+   "t": 100.8,
+   "scene": "everyday"
+  },
+  {
+   "kind": "slide",
+   "t": 103.2,
+   "scene": "everyday"
+  },
+  {
+   "kind": "slide",
+   "t": 105.6,
+   "scene": "everyday"
+  },
+  {
+   "kind": "slide",
+   "t": 108,
+   "scene": "everyday"
+  },
+  {
+   "kind": "whoosh",
+   "t": 110.2,
+   "scene": "phone"
+  },
+  {
+   "kind": "click",
+   "t": 112.233,
+   "scene": "phone"
+  },
+  {
+   "kind": "send",
+   "t": 115.9,
+   "scene": "phone"
+  },
+  {
+   "kind": "confirm",
+   "t": 116.3,
+   "scene": "phone"
+  },
+  {
+   "kind": "switch",
+   "t": 119.3,
+   "scene": "phone"
+  },
+  {
+   "kind": "send",
+   "t": 121.9,
+   "scene": "phone"
+  },
+  {
+   "kind": "confirm",
+   "t": 122.3,
+   "scene": "phone"
+  },
+  {
+   "kind": "whoosh",
+   "t": 123.3,
+   "scene": "phone"
+  },
+  {
+   "kind": "draw",
+   "t": 126.633,
+   "scene": "phone"
+  },
+  {
+   "kind": "whoosh",
+   "t": 129.4,
+   "scene": "trust"
+  },
+  {
+   "kind": "slide",
+   "t": 133.6,
+   "scene": "trust"
+  },
+  {
+   "kind": "slide",
+   "t": 137.6,
+   "scene": "trust"
+  },
+  {
+   "kind": "whoosh",
+   "t": 141.4,
+   "scene": "closing"
+  },
+  {
+   "kind": "orb",
+   "t": 141.9,
+   "scene": "closing"
+  },
+  {
+   "kind": "link",
+   "t": 143.9,
+   "scene": "closing"
+  },
+  {
+   "kind": "final",
+   "t": 148.8,
+   "scene": "closing"
+  },
+  {
+   "kind": "end",
+   "t": 156,
+   "scene": "closing"
+  }
+ ]
+}

@@ -151,7 +151,7 @@ MAX_GROUND_KINDS = 12
 
 class Asker:
     """The vision model, as visual_scene uses it (replaceable in tests). Its answers about a picture are kept (by
-    the picture's content and the exact question), so the same picture asked again — or re-reasoned after Jervis
+    the picture's content and the exact question), so the same picture asked again — or re-reasoned after Jarvis
     is updated — costs nothing; a different picture, question or model is asked afresh."""
 
     def __init__(self, cache=True):

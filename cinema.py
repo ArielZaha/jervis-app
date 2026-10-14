@@ -1,4 +1,4 @@
-"""Cinematic direction for Jervis's 3D scenes: what a request says about time, cameras, lights and motion, and where
+"""Cinematic direction for Jarvis's 3D scenes: what a request says about time, cameras, lights and motion, and where
 the camera must be to frame what it should — measured on the scene's real geometry (spatial.py), never a preset.
 
   "a 10-second cinematic where the camera approaches the villa, the pool lights turn on halfway through, and the
@@ -9,7 +9,7 @@ the camera must be to frame what it should — measured on the scene's real geom
      clear line of sight, eased into keyframes
   -> natural_motion(): which things move by themselves (water, fire, wind in trees, flags...)
 
-Pure Python, no bpy: Jervis plans and verifies with it outside Blender, and the kit loads the very same code inside
+Pure Python, no bpy: Jarvis plans and verifies with it outside Blender, and the kit loads the very same code inside
 Blender (agent_blender.kit_source), so what is planned and what is checked agree.
 
 Space: metres, z up, the ground is z = 0, x left(-)/right(+), y front(-)/back(+). A "thing" is spatial.things()'s dict.
@@ -449,7 +449,7 @@ def _is_framing_only(clause, duration):
                              clause.strip(), re.I))
 
 
-_BUILD = re.compile(r"^(?:(?:please|now|also|then|and|first|jervis|hey|ok|okay|can you|could you)\b[\s,]*)*"
+_BUILD = re.compile(r"^(?:(?:please|now|also|then|and|first|jarvis|jervis|hey|ok|okay|can you|could you)\b[\s,]*)*"
                     r"(?:create|build|make|add|generate|model|design|put|place|give me|i want|i'd like|set up|"
                     r"construct|plant|draw)\b\s+(?:me\s+|us\s+)?(?P<rest>.*)$", re.I)
 _INDEFINITE = re.compile(r"^(?:a|an|some|two|three|four|five|six|several|another|a few|a pair of|\d+)\b", re.I)

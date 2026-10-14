@@ -22,7 +22,7 @@ def set_url(url: str) -> None:
     _last_good["at"] = 0.0
 DEFAULT_MODEL = "llama3.2"
 DICTALM = "hf.co/dicta-il/dictalm2.0-instruct-GGUF:Q4_K_M"   # Hebrew (see ROLE_PREFERENCES); 4.4 GB, Apache-2.0
-# The best small models for a voice assistant, in the order Jervis prefers to pick from what is installed.
+# The best small models for a voice assistant, in the order Jarvis prefers to pick from what is installed.
 PREFERRED = ["llama3.2", "llama3.1", "qwen2.5", "qwen3", "gemma3", "phi4-mini", "mistral", "llama3", "gemma2", "phi3"]
 
 
@@ -96,8 +96,8 @@ def status() -> tuple:
 
 # ---------- which model does which job ----------
 # An 8 GB GPU holds one 7B model at a time (Ollama swaps them in ~4 s), so the strong model also answers chat when
-# it's installed: one warm model is faster overall than a small chat model plus swaps. JERVIS_CHAT_MODEL /
-# JERVIS_AGENT_MODEL override the choice.
+# it's installed: one warm model is faster overall than a small chat model plus swaps. JARVIS_CHAT_MODEL /
+# JARVIS_AGENT_MODEL override the choice.
 ROLE_PREFERENCES = {
     "agent": ["qwen2.5-coder:7b", "qwen2.5-coder", "qwen2.5:7b", "qwen2.5", "llama3.1:8b", "llama3.1", "qwen3:8b",
               "qwen3", "gemma3", "mistral"],
@@ -108,14 +108,14 @@ ROLE_PREFERENCES = {
     # DictaLM 2.0 (Dicta, the Israeli NLP centre: Mistral-7B trained further on Hebrew, Apache-2.0) writes natural,
     # correct Hebrew; qwen3:8b is the next best. gemma3 often answers Hebrew in English. Only multilingual models.
     "hebrew": [DICTALM, "qwen3:8b", "qwen3:14b", "gemma3:12b", "gemma3:4b", "gemma3"],
-    # Hebrew <-> English translation (language.py). Measured on spoken commands and on Jervis's replies: DictaLM kept
+    # Hebrew <-> English translation (language.py). Measured on spoken commands and on Jarvis's replies: DictaLM kept
     # every detail and flagged garbled speech; qwen3:8b invented details ("railing", "orange trees") and the coder
     # model invented whole commands; neither writes usable Hebrew. So: DictaLM, else qwen3 (Hebrew -> English only,
     # and language.py then asks before acting on it).
     "translate": [DICTALM, "qwen3:8b", "qwen3:14b"],
 }
-ROLE_ENV = {"agent": "JERVIS_AGENT_MODEL", "chat": "JERVIS_CHAT_MODEL", "vision": "OLLAMA_VISION_MODEL",
-            "nlu": "JERVIS_NLU_MODEL", "hebrew": "JERVIS_HEBREW_MODEL", "translate": "JERVIS_TRANSLATE_MODEL"}
+ROLE_ENV = {"agent": "JARVIS_AGENT_MODEL", "chat": "JARVIS_CHAT_MODEL", "vision": "OLLAMA_VISION_MODEL",
+            "nlu": "JARVIS_NLU_MODEL", "hebrew": "JARVIS_HEBREW_MODEL", "translate": "JARVIS_TRANSLATE_MODEL"}
 # Context per role. The Hebrew model is a second model: at 16k qwen3:8b needs 7.8 GB and spills onto the CPU on an
 # 8 GB card; at 8k it's 6.2 GB, all on the GPU.
 ROLE_CONTEXT = {"hebrew": 8192, "translate": 8192}
@@ -196,13 +196,13 @@ def _context_for(model: str, wanted: int = None) -> int:
 
 # ---------- fitting a model into the GPU ----------
 # Ollama decides how much of a model goes on the GPU from the free memory it sees, and on Windows it doesn't see the
-# memory other programs use — not Jervis's own speech models (2.2 GB), not Discord, a game or the browser. It then
+# memory other programs use — not Jarvis's own speech models (2.2 GB), not Discord, a game or the browser. It then
 # loads the whole model anyway, Windows quietly moves GPU memory out to system RAM, and every answer becomes 20-50x
 # slower (measured on an 8 GB RTX 4060: a 90 s translation timeout, a 2-minute chat reply). So before Ollama loads
-# a model, Jervis measures what's really free (nvidia-smi sees every process), makes room by unloading his other
+# a model, Jarvis measures what's really free (nvidia-smi sees every process), makes room by unloading his other
 # model (one 7B model at a time on such a GPU), and asks for only as many layers on the GPU as fit — the rest run on
 # the CPU, slower but steady (~2x for a few layers, never the 20-50x of spilling).
-GPU_MARGIN_MB = int(os.getenv("JERVIS_GPU_MARGIN_MB") or 350)   # for the window, other apps growing, speech scratch
+GPU_MARGIN_MB = int(os.getenv("JARVIS_GPU_MARGIN_MB") or 350)   # for the window, other apps growing, speech scratch
 _COMPUTE_MB = 300          # the model's working buffers besides its layers and cache
 _gpu_plans = {}            # model -> (num_ctx, num_gpu or None for "all"): kept while loaded, so no call reloads it
 _gpu_lock = threading.Lock()
@@ -276,7 +276,7 @@ def _loaded() -> dict:
 def gpu_options(model: str, num_ctx: int) -> dict:
     """The options a call to `model` needs so it fits in the GPU: {} when there's no NVIDIA GPU to plan for, or
     {"num_gpu": n} with the layers that fit. Planned once per load (the same options every call: no reloads)."""
-    if (os.getenv("JERVIS_GPU_FIT") or "on").lower() == "off":
+    if (os.getenv("JARVIS_GPU_FIT") or "on").lower() == "off":
         return {}
     with _gpu_lock:
         loaded = _loaded()
@@ -351,7 +351,7 @@ class gpu_slot:
         self.model, self.num_ctx, self.held, self.turn = model, num_ctx, False, False
 
     def __enter__(self) -> dict:
-        if (os.getenv("JERVIS_GPU_FIT") or "on").lower() != "off":
+        if (os.getenv("JARVIS_GPU_FIT") or "on").lower() != "off":
             with _turns:
                 ticket = next(_tickets)
                 _queue.append([ticket, self.model])
@@ -514,7 +514,7 @@ def _native_messages(messages) -> list:
 
 
 def _openai_shape(data: dict, model: str) -> dict:
-    """Ollama's chat answer in the OpenAI response shape the rest of Jervis reads."""
+    """Ollama's chat answer in the OpenAI response shape the rest of Jarvis reads."""
     import json
     message = data.get("message") or {}
     calls = [{"id": f"call_{i}_{int(time.time() * 1000)}", "type": "function",
@@ -571,4 +571,15 @@ def chat(**kwargs):
         raise LocalAIUnavailable(f"the local AI answered with an error ({response.status_code}): {response.text[:200]}")
     data = response.json()
     print(f"Local AI ({model}, {role}) answered in {time.time() - started:.1f}s{_timing(data)}", flush=True)
-    return _wrap(_openai_shape(data, model))
+    answer = _openai_shape(data, model)
+    for choice in answer.get("choices") or []:
+        message = choice.get("message") or {}
+        if isinstance(message.get("content"), str):
+            message["content"] = clean_reply(message["content"])
+    return _wrap(answer)
+
+
+def clean_reply(text: str) -> str:
+    """Small local models sometimes begin an answer with their own role's name ("assistant It's the number 2."), and
+    once that is in the conversation they copy it, one more each time ("assistant assistant …"). Never part of the answer."""
+    return re.sub(r"^(?:\s*(?:<\|?)?assistant\b(?:\|?>)?\s*:?\s*)+(?=\S)", "", text or "", flags=re.I)

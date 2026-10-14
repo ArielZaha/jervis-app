@@ -12,20 +12,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY relay/server.py .
 COPY phone_client.html phone_sw.js confirm.html phone_manifest.webmanifest phone_agent.js ./
 COPY phone_icons ./phone_icons
-# graphs, the 3D globe and planets on the phone (relay/server.py's VISUAL_FILES). On this branch the three drawing
-# scripts the phone needs live in relay/web/: they are newer than this branch's desktop window (index.html) expects,
-# so the window's own copies at the repo root are left exactly as they are.
-COPY sphere_gl.js ./
-COPY relay/web/graph.js relay/web/earth.js relay/web/planet.js ./
+# graphs, the 3D globe and planets on the phone (relay/server.py's VISUAL_FILES)
+COPY sphere_gl.js graph.js earth.js planet.js ./
 COPY vendor/earth ./vendor/earth
 COPY vendor/planets ./vendor/planets
-# the phone app's code scanner (pairing inside the app) and its display font
 COPY vendor/jsqr ./vendor/jsqr
 COPY vendor/fonts ./vendor/fonts
-# Jarvis's brain for the phone (relay/server.py's BRAIN): the worker that runs it in the phone's browser, and the
-# modules and map data it loads. Kept under relay/web/brain here so the relay serves the versions the phone app
-# was built against, whatever the engine's own copies are.
+# Jarvis's brain for the phone (relay/server.py's BRAIN): the worker that runs it, the modules, the map data
 COPY phone_brain_worker.js ./
-COPY relay/web/brain ./brain
+COPY typos.py functions.py equations.py graphs.py geo.py earth.py planets.py timers.py forecast.py music.py phone_brain.py ./brain/
+COPY geo_data/countries_50m.json geo_data/places_10m.json ./brain/geo_data/
 EXPOSE 8080
 CMD ["python", "server.py"]

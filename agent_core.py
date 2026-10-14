@@ -1,4 +1,4 @@
-"""Jervis's agent: understand a request, plan it, act, check the real result, and fix what went wrong.
+"""Jarvis's agent: understand a request, plan it, act, check the real result, and fix what went wrong.
 
     request -> PLAN (one call to the local AI: steps, each with code + checks, and checks for the whole request)
             -> for each step: ACT (the app adapter runs the code) -> OBSERVE (read the app's real state)
@@ -217,7 +217,7 @@ def repair_schema(types) -> dict:
         "checks": {"type": "array", "items": _check_schema(types)}},
         "required": ["diagnosis", "code", "checks_were_wrong"]}
 
-AGENT_RULES = """You are the planning and coding brain of Jervis, a voice assistant that operates apps on the \
+AGENT_RULES = """You are the planning and coding brain of Jarvis, a voice assistant that operates apps on the \
 user's computer. You receive a request, the app's REAL current state, and context. You answer with JSON only.
 
 Plan:

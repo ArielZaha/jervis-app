@@ -4,6 +4,7 @@ import os
 import platform
 import re
 import subprocess
+import time
 
 import google_accounts
 import osal
@@ -176,6 +177,35 @@ def reply_to_document(reply: str):
     return title, body or text
 
 
+def asks_to_write(text: str) -> bool:
+    """"Write a short story", "make me a poem", "draft an email to Dana": asks for something to be written."""
+    n = " ".join(re.sub(r"[^a-z0-9' ]", " ", (text or "").lower()).split())
+    return bool(_WRITE.search(n)) and not re.match(r"^(?:i |we |he |she |they |you )", n)
+
+
+_APP_WORDS = (r"(?:google (?:docs?|documents?|drive)|microsoft(?: office)? word|ms word|apple pages|text ?edit|note ?pad|"
+              r"(?:the )?text editor|(?:the |my )?notes(?: app)?|(?:the )?docs|word|pages)")
+_APP_PHRASES = [
+    re.compile(rf"^\s*(?:(?:please|can you|could you|jarvis)[ ,]+)*(?:open|launch|start)(?: up)? (?:a |an |my |the )?(?:new |blank |empty )?"
+               rf"{_APP_WORDS}(?: (?:document|doc|file|page))?\s*(?:,|\.|;)?\s*(?:and then|then|and)\s+", re.I),
+    re.compile(rf"\s*,?\s*\b(?:in|into|to|using|inside)(?: of)? (?:a |an |my |the )?(?:new |blank |empty )?{_APP_WORDS}"
+               rf"(?: (?:document|doc|file|page))?(?=\s*(?:[.,!?;]|$|\b(?:about|on|for|with|that|and|please)\b))", re.I),
+    re.compile(rf"\s*,?\s*\b(?:on|with) (?:a |an |my |the )?(?:new |blank |empty )?{_APP_WORDS}"   # "an essay on Google Docs and…" is a topic
+               rf"(?: (?:document|doc|file|page))?(?=\s*(?:[.,!?;]|$|please\b))", re.I),
+    re.compile(r"\s*\b(?:in|into|to) (?:a |the |that |this )(?:new |blank |empty )?(?:document|doc|file)(?: (?:you|i) (?:just )?opened)?\b", re.I),
+]
+
+
+def what_to_write(text: str) -> str:
+    """The request without the part about the app ("write a story about a dragon in Google Docs" -> "write a story
+    about a dragon"), so the app's name never ends up in the story. The sentence comes back whole if nothing is left."""
+    out = text or ""
+    for pattern in _APP_PHRASES:
+        out = pattern.sub(" ", out)
+    out = " ".join(out.split()).strip(" ,;")
+    return out if len(out.split()) >= 2 else (text or "").strip()
+
+
 def detect_request(text: str):
     """Return the app key when the sentence asks to write something into a document app, else None."""
     n = " ".join(re.sub(r"[^a-z0-9' ]", " ", (text or "").lower()).split())
@@ -199,6 +229,44 @@ def split_title(text: str):
     return title, body or title
 
 
+GDOCS_PASTED = "pasted"   # insert()'s answer for a Google Doc that has the text in it (else "": it's on the clipboard)
+_GDOCS_PASTE = '''tell application "Google Chrome" to activate
+delay 0.3
+tell application "System Events" to keystroke "v" using command down'''
+_NEW_DOC_URL = re.compile(r"docs\.google\.com/document/(?:u/\d+/)?d/")
+
+
+def _paste_into_new_google_doc(wait: float = 25.0) -> bool:
+    """Once the new document is open in the front browser tab and its editor has loaded, paste the clipboard into it."""
+    deadline = time.time() + wait
+    if osal.IS_WIN:
+        time.sleep(6)   # no tab list on Windows: give the editor time to load, then paste into the front window
+        try:
+            import winctl
+            winctl.press("ctrl", "v")
+            return True
+        except Exception:
+            return False
+    try:
+        from youtube_browser import _mac_tabs
+    except ImportError:
+        return False
+    while time.time() < deadline:
+        try:
+            front = [t for t in _mac_tabs() if t.window == 1 and t.active]
+        except Exception:
+            front = []
+        if front and _NEW_DOC_URL.search(front[0].url):
+            time.sleep(2.5)   # the address changes before the editor is ready to take text
+            try:
+                _run(_GDOCS_PASTE)
+                return True
+            except RuntimeError:
+                return False   # no Accessibility permission to type: the text is still on the clipboard
+        time.sleep(0.5)
+    return False
+
+
 def _run(script: str, *args: str) -> str:
     result = subprocess.run(["osascript", "-e", script, *args], capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
@@ -210,20 +278,20 @@ _WIN_WORD_CREATE = r"""
 $w = New-Object -ComObject Word.Application
 $w.Visible = $true
 $d = $w.Documents.Add()
-$d.Content.Text = $env:JERVIS_TEXT
+$d.Content.Text = $env:JARVIS_TEXT
 $w.Activate()
 $d.Name
 """
 _WIN_WORD_UPDATE = r"""
 $w = [Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application')
-$d = $w.Documents.Item($env:JERVIS_REF)
-$d.Content.Text = $env:JERVIS_TEXT
+$d = $w.Documents.Item($env:JARVIS_REF)
+$d.Content.Text = $env:JARVIS_TEXT
 $w.Activate()
 """
 
 
 def _win_word(script: str, text: str, ref: str = "") -> str:
-    code, out, err = osal.run_powershell(script, {"JERVIS_TEXT": text, "JERVIS_REF": ref}, timeout=90)
+    code, out, err = osal.run_powershell(script, {"JARVIS_TEXT": text, "JARVIS_REF": ref}, timeout=90)
     if code != 0:
         if "80040154" in err or "class not registered" in err.lower():
             raise RuntimeError("Microsoft Word isn't installed on this PC.")
@@ -233,7 +301,7 @@ def _win_word(script: str, text: str, ref: str = "") -> str:
 
 def _win_notepad_file(title: str) -> str:
     os.makedirs(DOCS_DIR, exist_ok=True)
-    name = re.sub(r'[\\/:*?"<>|]+', " ", title).strip()[:50] or "Jervis note"
+    name = re.sub(r'[\\/:*?"<>|]+', " ", title).strip()[:50] or "Jarvis note"
     path = os.path.join(DOCS_DIR, f"{name}.txt")
     n = 2
     while os.path.exists(path):
@@ -272,11 +340,12 @@ def insert(app_key: str, title: str, body: str, context: str = "") -> str:
     if app_key == "notes":
         return _run(_NOTES, title, _notes_html(title, body))
     if app_key == "gdocs":
-        # Google prefills a new document from these URL parameters. The text is also copied, as a fallback.
+        # Google Docs has no way to fill a new document from its link (and no scripting interface): open a new one in
+        # the right Google account, wait for its editor, and paste the text in. It stays on the clipboard either way.
         osal.set_clipboard(full)
-        google_accounts.open_page(f"https://docs.google.com/document/create?title={quote(title)}&body={quote(body)}",
+        google_accounts.open_page(f"https://docs.google.com/document/create?title={quote(title)}",
                                   context or f"{title} {body[:200]}")
-        return ""
+        return GDOCS_PASTED if _paste_into_new_google_doc() else ""
     raise RuntimeError(f"I don't know how to write into {app_key}.")
 
 

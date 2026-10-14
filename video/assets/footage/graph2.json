@@ -1,0 +1,12 @@
+{
+ "name": "graph2",
+ "frames": 377,
+ "fps": 30,
+ "width": 2880,
+ "height": 1620,
+ "marks": {
+  "sent:Compare y = x^2 and y = x + 1": 80,
+  "reply:Compare y = x^2 and y = x + 1": 95
+ },
+ "opened": []
+}

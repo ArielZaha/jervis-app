@@ -1,0 +1,21 @@
+{
+  "voice": "troy",
+  "note": "Optional voice-over. Each line starts `at` seconds after its scene begins (scene names are the film's own, see audio/cues.json).",
+  "lines": [
+    {"id": "01", "scene": "opening", "at": 5.2, "say": "Meet Jarvis. Your personal AI assistant."},
+    {"id": "02", "scene": "talk", "at": 1.0, "say": "Say, hey Jarvis, or simply type. He listens, thinks, and answers, out loud and in writing."},
+    {"id": "03", "scene": "media", "at": 0.8, "say": "Ask for music, and it plays. Ask for a trailer, and it's on. Spotify, YouTube, Netflix and more, one request away."},
+    {"id": "04", "scene": "control", "at": 0.8, "say": "Need something done on your computer? With your permission, Jarvis takes the mouse and keyboard himself."},
+    {"id": "05", "scene": "control", "at": 8.6, "say": "And you can pause or stop him at any moment."},
+    {"id": "06", "scene": "docs", "at": 0.9, "say": "Ask for a story, an essay, or a summary. He writes it straight into a document, then reworks it when you ask."},
+    {"id": "07", "scene": "math", "at": 0.9, "say": "Math becomes something you can see. Graph a function, compare two, and find exactly where they meet."},
+    {"id": "08", "scene": "math", "at": 12.4, "say": "Every equation, solved step by step."},
+    {"id": "09", "scene": "space", "at": 1.2, "say": "Then zoom out. A living, three D Earth shows the journey between any two places."},
+    {"id": "10", "scene": "space", "at": 10.8, "say": "And beyond it, the planets."},
+    {"id": "11", "scene": "everyday", "at": 0.4, "say": "Weather. Timers. Your calendar. Pictures made from a sentence, and answers about pictures of your own."},
+    {"id": "12", "scene": "phone", "at": 0.9, "say": "And Jarvis goes where you go. From your phone, send a request to your computer."},
+    {"id": "13", "scene": "phone", "at": 8.6, "say": "Or switch modes, and let the phone handle it by itself."},
+    {"id": "14", "scene": "trust", "at": 0.6, "say": "He can run on a local AI, on your own computer. Phones pair with a one time code. And he asks before taking control."},
+    {"id": "15", "scene": "closing", "at": 7.4, "say": "Jarvis. One assistant. Your computer. Your phone."}
+  ]
+}
