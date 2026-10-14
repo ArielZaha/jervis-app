@@ -116,7 +116,9 @@ def install() -> None:
     subprocess.Popen = _FakeProcess
     subprocess.run = _fake_run
     subprocess.call = _fake_call
-    subprocess.check_output = lambda *a, **k: (actions.append(f"run {_describe(a[0] if a else '')}") or b"")
+    # empty output of the type asked for: the stdlib's platform module calls it with text=True and breaks on bytes
+    subprocess.check_output = lambda *a, **k: (actions.append(f"run {_describe(a[0] if a else '')}")
+                                               or ("" if k.get("text") or k.get("universal_newlines") or k.get("encoding") else b""))
     webbrowser.open = _fake_open
     webbrowser.open_new_tab = _fake_open
     if hasattr(os, "startfile"):

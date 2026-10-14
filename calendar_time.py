@@ -148,12 +148,17 @@ def combine(date: dt.date, hour: int, minute: int) -> dt.datetime:
     return dt.datetime.combine(date, dt.time(hour, minute)).astimezone()
 
 
+def clock(moment) -> str:
+    """"7:05 PM" (strftime's %-I and %-d are POSIX-only: on Windows they raise ValueError)."""
+    return f"{moment.hour % 12 or 12}:{moment.minute:02d} {'AM' if moment.hour < 12 else 'PM'}"
+
+
 def format_when(start: dt.datetime, end: dt.datetime = None, all_day: bool = False) -> str:
     """"Tuesday, October 6 at 3:00 PM" (or with an end time / "all day"), for speech and for the screen."""
-    day = start.strftime("%A, %B %-d" if hasattr(start, "strftime") else "")
+    day = f"{start.strftime('%A, %B')} {start.day}" if hasattr(start, "strftime") else ""
     if all_day:
         return f"{day} (all day)"
-    time_str = start.strftime("%-I:%M %p").lstrip("0")
+    time_str = clock(start)
     if end and end.date() == start.date() and (end.hour, end.minute) != (start.hour, start.minute):
-        time_str += f" to {end.strftime('%-I:%M %p').lstrip('0')}"
+        time_str += f" to {clock(end)}"
     return f"{day} at {time_str}"

@@ -26,7 +26,8 @@ def backend(tmp_path_factory):
     data = tmp_path_factory.mktemp("data")
     env = {**os.environ, "JARVIS_SUPERVISED": "1", "JARVIS_WS_PORT": str(port), "JARVIS_WS_TOKEN": TOKEN,
            "JARVIS_DATA_DIR": str(data), "JARVIS_AUDIO": "off", "JARVIS_NO_AI_SETUP": "1", "GROQ_API_KEY": "",
-           "PYTHONUNBUFFERED": "1"}
+           # a closed port: without it the engine asks the developer's own Ollama, if one is running
+           "OLLAMA_URL": "http://127.0.0.1:9", "PYTHONUNBUFFERED": "1"}
     env.pop("JARVIS_ALLOW_ORIGINS", None)
     process = subprocess.Popen([sys.executable, os.path.join(ROOT, "app.py")], cwd=ROOT, env=env,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

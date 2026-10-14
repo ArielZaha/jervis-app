@@ -185,7 +185,9 @@ def test_move_next_to_resolves_both_objects_and_verifies_location_changed():
     bridge = FakeBridge(responses=[{"ok": True, "output": "(3.0, 0, 0)|(3.0, 0, 0)|(0, 0, 0)"}])
     # first object ("it" -> Cube.001), moved relative to the other ("the first one" -> Cube)
     steps = bc.steps_for("move it next to the first one", session, bridge)
-    bridge._responses = [{"ok": True, "output": "(3.0, 0, 0)|(0.0, 0.0, 0.0)"}]
+    # both remembered objects are first confirmed to still be in the scene, then the move runs
+    bridge._responses = [{"ok": True, "output": "1"}, {"ok": True, "output": "1"},
+                         {"ok": True, "output": "(3.0, 0, 0)|(0.0, 0.0, 0.0)"}]
     result = steps[0][1]()
     assert "Done" in result
 
@@ -223,7 +225,7 @@ def test_create_then_undo_removes_the_object_it_created():
 
 
 def test_resize_then_undo_restores_the_previous_scale():
-    bridge = FakeBridge(responses=[{"ok": True, "output": "(1.0, 1.0, 1.0)|(1.0, 1.0, 1.4)"}])
+    bridge = FakeBridge(responses=[{"ok": True, "output": "1"}, {"ok": True, "output": "(1.0, 1.0, 1.0)|(1.0, 1.0, 1.4)"}])
     session = new_session()
     session.remember_blender_object("Cube", "cube")
     bc.steps_for("make it taller", session, bridge)[0][1]()
@@ -286,7 +288,8 @@ def test_move_next_to_reports_honest_success_when_already_there():
     session = new_session()
     session.remember_blender_object("Cube", "cube")
     session.remember_blender_object("Cube.001", "cube")
-    bridge = FakeBridge(responses=[{"ok": True, "output": "(3.0, 0, 0)|(3.0, 0, 0)"}])
+    bridge = FakeBridge(responses=[{"ok": True, "output": "1"}, {"ok": True, "output": "1"},
+                                   {"ok": True, "output": "(3.0, 0, 0)|(3.0, 0, 0)"}])
     steps = bc.steps_for("move it next to the first one", session, bridge)
     result = steps[0][1]()
     assert "already" in result.lower() and "Done" in result

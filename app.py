@@ -2766,7 +2766,7 @@ def _sun_answer(what: str, place):
         local, zone = _local(now, place)
         state = "daytime" if elevation > 0 else "twilight" if elevation > -6 else "night"
         info = earth.build_sun(what, place, sun, f"{name}, right now")
-        return info, (f"It's {state} in {name} right now: {local.strftime('%-I:%M %p')} {zone}, with the Sun "
+        return info, (f"It's {state} in {name} right now: {calendar_time.clock(local)} {zone}, with the Sun "
                       f"{abs(elevation):.0f}° {'above' if elevation > 0 else 'below'} the horizon.")
     local_now, zone = _local(now, place)
     for offset in (0, 1):
@@ -2783,8 +2783,8 @@ def _sun_answer(what: str, place):
     when_word = "today" if local.date() == local_now.date() else "tomorrow"
     at = {**geo.subsolar_point(moment), "at": moment.strftime("%Y-%m-%dT%H:%M:%SZ")}
     info = earth.build_sun(what, place, at, f"{what.title()} over {name}")
-    return info, (f"The Sun {'rises' if what == 'sunrise' else 'sets'} in {name} at {local.strftime('%-I:%M %p')} "
-                  f"{zone} {when_word}, {local.strftime('%B %-d')}. Here's the globe at that moment, with the "
+    return info, (f"The Sun {'rises' if what == 'sunrise' else 'sets'} in {name} at {calendar_time.clock(local)} "
+                  f"{zone} {when_word}, {local.strftime('%B')} {local.day}. Here's the globe at that moment, with the "
                   f"{'dawn' if what == 'sunrise' else 'dusk'} line passing over it.")
 
 

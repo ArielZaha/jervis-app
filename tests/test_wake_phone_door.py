@@ -3,6 +3,7 @@ starts him. Driven over a real socket, with launching replaced by a recorder."""
 import asyncio
 import json
 import os
+import shutil
 import socket
 import sys
 import time
@@ -26,9 +27,10 @@ def _free_port():
 
 @pytest.fixture
 def door(tmp_path, monkeypatch):
+    # copies, not symlinks: Windows refuses symlinks without Developer Mode or admin rights
     for name in ("phone_client.html", "phone_sw.js", "phone_manifest.webmanifest", "phone_agent.js"):
-        os.symlink(os.path.join(ROOT, name), tmp_path / name)
-    os.symlink(os.path.join(ROOT, "phone_icons"), tmp_path / "phone_icons")
+        shutil.copy(os.path.join(ROOT, name), tmp_path / name)
+    shutil.copytree(os.path.join(ROOT, "phone_icons"), tmp_path / "phone_icons")
     (tmp_path / "settings.json").write_text(json.dumps({"values": {"JARVIS_PHONE_CONTROL": "on"}}))
     device = phone_control.DeviceRegistry(path=str(tmp_path / "phone_devices.json")).add("iPhone")
     config = {"project": str(tmp_path), "electron": "/nonexistent"}
